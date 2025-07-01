@@ -7,9 +7,9 @@ from fastapi.responses import HTMLResponse
 import uvicorn
 
 # Initialize FastAPI app
-app = FastAPI(title="AI Content Creation Agent - Powered by Claude")
+app = FastAPI(title="Zee SEO Tool - AI Content Creation Agent")
 
-# AI Configuration - You'll need to set these environment variables or replace with your API keys
+# AI Configuration
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "your-anthropic-api-key-here")
 
 class ClaudeAgent:
@@ -23,7 +23,6 @@ class ClaudeAgent:
     def call_claude(self, messages: List[Dict], model: str = "claude-3-haiku-20240307", max_tokens: int = 1000):
         """Make API call to Claude"""
         try:
-            # Convert messages to Claude format
             if messages and messages[0].get("role") == "user":
                 user_message = messages[0]["content"]
             else:
@@ -45,17 +44,17 @@ class ClaudeAgent:
             if response.status_code == 200:
                 return response.json()["content"][0]["text"]
             else:
-                return f"Claude API Error: {response.status_code} - {response.text}"
+                return f"Using demo mode - Claude API Error: {response.status_code}"
                 
         except Exception as e:
-            return f"Claude Error: {str(e)}"
+            return f"Using demo mode - Claude Error: {str(e)}"
 
+# AI Analysis Classes
 class IntentClassifier:
     def __init__(self, claude_agent):
         self.claude_agent = claude_agent
         
     def classify_intent(self, topic: str) -> Dict[str, Any]:
-        """Classify user intent and search stage using Claude"""
         prompt = f"""
         Analyze this content topic and classify the user intent: "{topic}"
         
@@ -73,7 +72,6 @@ class IntentClassifier:
         response = self.claude_agent.call_claude(messages)
         
         try:
-            # Extract JSON from Claude's response
             if "{" in response and "}" in response:
                 json_start = response.find("{")
                 json_end = response.rfind("}") + 1
@@ -95,7 +93,6 @@ class JourneyMapper:
         self.claude_agent = claude_agent
         
     def map_customer_journey(self, topic: str, intent_data: Dict) -> Dict[str, Any]:
-        """Map customer journey stage and pain points using Claude"""
         prompt = f"""
         For the topic "{topic}" with intent "{intent_data.get('primary_intent', 'informational')}", 
         map the customer journey stage and identify key pain points.
@@ -135,7 +132,6 @@ class RedditResearcher:
         self.claude_agent = claude_agent
         
     def research_topic(self, topic: str, subreddits: List[str]) -> Dict[str, Any]:
-        """Simulate Reddit research with Claude-generated insights"""
         prompt = f"""
         Simulate research from Reddit communities about "{topic}" in subreddits like {subreddits}.
         Generate realistic customer insights that would be found on Reddit.
@@ -183,7 +179,6 @@ class ContentTypeClassifier:
         self.claude_agent = claude_agent
         
     def classify_content_type(self, topic: str, intent_data: Dict, business_context: Dict) -> Dict[str, Any]:
-        """Determine optimal content type using Claude"""
         prompt = f"""
         Given topic "{topic}", intent "{intent_data.get('primary_intent')}", and business type "{business_context.get('business_type')}", 
         recommend the best content type.
@@ -227,7 +222,6 @@ class EEATAssessor:
         self.claude_agent = claude_agent
         
     def assess_content_eeat_requirements(self, topic: str, content_type: str, business_context: Dict, human_inputs: Dict) -> Dict[str, Any]:
-        """Assess E-E-A-T requirements and score using Claude"""
         experience_score = 8 if human_inputs.get('customer_insights', {}).get('success_story') else 6
         expertise_score = 9 if business_context.get('industry') else 7
         authoritativeness_score = 8 if business_context.get('unique_value_prop') else 6
@@ -251,8 +245,24 @@ class ContentGenerator:
         
     def generate_complete_content(self, topic: str, content_type: str, reddit_insights: Dict, 
                                 journey_data: Dict, business_context: Dict, human_inputs: Dict, 
-                                eeat_assessment: Dict) -> str:
-        """Generate comprehensive content using Claude"""
+                                eeat_assessment: Dict, ai_instructions: Dict) -> str:
+        
+        # Build AI instructions prompt
+        ai_prompt_additions = []
+        
+        if ai_instructions.get('writing_style'):
+            ai_prompt_additions.append(f"Writing style: {ai_instructions['writing_style']}")
+            
+        if ai_instructions.get('target_word_count'):
+            ai_prompt_additions.append(f"Target word count: {ai_instructions['target_word_count']} words")
+            
+        if ai_instructions.get('language_preference'):
+            ai_prompt_additions.append(f"Language preference: {ai_instructions['language_preference']}")
+            
+        if ai_instructions.get('additional_notes'):
+            ai_prompt_additions.append(f"Additional instructions: {ai_instructions['additional_notes']}")
+        
+        ai_instructions_text = "\n".join(ai_prompt_additions) if ai_prompt_additions else ""
         
         prompt = f"""
         Create a comprehensive, high-quality {content_type} about "{topic}".
@@ -273,8 +283,11 @@ class ContentGenerator:
         - Customer Language: {reddit_insights.get('customer_voice', {}).get('common_language')}
         - Community Questions: {reddit_insights.get('customer_voice', {}).get('frequent_questions')}
         
+        AI WRITING INSTRUCTIONS:
+        {ai_instructions_text}
+        
         REQUIREMENTS:
-        1. Write 800-1200 words
+        1. Follow the AI writing instructions above carefully
         2. Include E-E-A-T elements (expertise, authority, trust)
         3. Use customer language from Reddit research
         4. Address specific pain points mentioned
@@ -289,7 +302,7 @@ class ContentGenerator:
         """
         
         messages = [{"role": "user", "content": prompt}]
-        return self.claude_agent.call_claude(messages, max_tokens=2000)
+        return self.claude_agent.call_claude(messages, max_tokens=2500)
 
 class QualityScorer:
     def __init__(self, claude_agent):
@@ -297,9 +310,7 @@ class QualityScorer:
         
     def score_content_quality(self, content: str, topic: str, business_context: Dict, 
                             human_inputs: Dict, eeat_assessment: Dict) -> Dict[str, Any]:
-        """Score content quality and predict performance using Claude analysis"""
         
-        # Calculate scores based on content analysis
         word_count = len(content.split())
         has_headings = content.count('#') > 3 or content.count('\n\n') > 5
         mentions_business = business_context.get('unique_value_prop', '').lower() in content.lower()
@@ -307,7 +318,6 @@ class QualityScorer:
                                   for pain in human_inputs.get('customer_insights', {}).get('customer_pain_points', '').split(',')
                                   if pain.strip())
         
-        # Quality scoring
         content_score = 8.5 if word_count > 500 else 6.0
         structure_score = 9.0 if has_headings else 7.0
         relevance_score = 9.5 if mentions_business and addresses_pain_points else 7.5
@@ -315,15 +325,14 @@ class QualityScorer:
         
         overall_score = (content_score + structure_score + relevance_score + eeat_score) / 4
         
-        # Performance prediction
         if overall_score >= 8.5:
-            performance = "High performance expected - Claude's superior reasoning creates 3-5x better content than standard AI"
+            performance = "High performance expected - Zee SEO Tool creates 3-5x better content than standard AI"
             traffic_multiplier = "3-5x"
         elif overall_score >= 7.5:
-            performance = "Good performance expected - Claude's analysis drives 2-3x better engagement"
+            performance = "Good performance expected - Zee SEO Tool drives 2-3x better engagement"
             traffic_multiplier = "2-3x"
         else:
-            performance = "Standard performance - Claude provides solid content foundation"
+            performance = "Standard performance - Zee SEO Tool provides solid content foundation"
             traffic_multiplier = "1-2x"
             
         return {
@@ -335,14 +344,14 @@ class QualityScorer:
             "performance_prediction": performance,
             "traffic_multiplier_estimate": traffic_multiplier,
             "critical_improvements": [
-                "Claude's advanced reasoning provides deeper customer understanding",
+                "Zee SEO Tool's advanced reasoning provides deeper customer understanding",
                 "Superior context awareness creates more relevant content", 
                 "Enhanced business intelligence integration",
-                "Claude's nuanced writing improves engagement and trust"
+                "Zee SEO Tool's nuanced writing improves engagement and trust"
             ]
         }
 
-# Initialize Claude Agent and Components
+# Initialize Components
 claude_agent = ClaudeAgent()
 intent_classifier = IntentClassifier(claude_agent)
 journey_mapper = JourneyMapper(claude_agent)
@@ -354,227 +363,435 @@ quality_scorer = QualityScorer(claude_agent)
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    """Home page with form"""
+    """Home page with enhanced form and branding"""
     html_content = """
     <!DOCTYPE html>
     <html>
     <head>
-        <title>AI Content Creation Agent - Powered by Claude</title>
+        <title>Zee SEO Tool - AI Content Creation That Bridges Human & AI</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            
             body { 
-                font-family: Arial, sans-serif; 
-                max-width: 1000px; 
-                margin: 0 auto; 
-                padding: 20px; 
-                background-color: #f5f5f5;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 20px;
             }
+            
+            .header {
+                text-align: center;
+                color: white;
+                margin-bottom: 30px;
+            }
+            
+            .logo {
+                font-size: 48px;
+                font-weight: bold;
+                margin-bottom: 10px;
+                text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            }
+            
+            .tagline {
+                font-size: 20px;
+                opacity: 0.9;
+                margin-bottom: 5px;
+            }
+            
+            .subtitle {
+                font-size: 16px;
+                opacity: 0.8;
+                font-style: italic;
+            }
+            
             .container {
+                max-width: 1200px;
+                margin: 0 auto;
                 background-color: white;
-                padding: 30px;
-                border-radius: 10px;
-                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                padding: 40px;
+                border-radius: 20px;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.1);
             }
+            
             .ai-badge {
                 background: linear-gradient(135deg, #8B5CF6 0%, #A855F7 100%);
                 color: white;
-                padding: 10px 20px;
-                border-radius: 20px;
+                padding: 12px 25px;
+                border-radius: 25px;
                 display: inline-block;
-                margin-bottom: 20px;
+                margin-bottom: 25px;
                 font-weight: bold;
+                font-size: 16px;
             }
+            
+            .form-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 30px;
+                margin-bottom: 30px;
+            }
+            
+            .form-section {
+                background-color: #f8f9fa;
+                padding: 25px;
+                border-radius: 15px;
+                border-left: 5px solid #8B5CF6;
+            }
+            
             .form-group { 
                 margin-bottom: 20px; 
             }
+            
             label { 
                 display: block; 
                 margin-bottom: 8px; 
-                font-weight: bold; 
+                font-weight: 600; 
                 color: #333;
+                font-size: 14px;
             }
+            
             input, textarea, select { 
                 width: 100%; 
-                padding: 12px; 
-                border: 2px solid #ddd; 
-                border-radius: 6px; 
-                font-size: 16px;
-                box-sizing: border-box;
+                padding: 12px 15px; 
+                border: 2px solid #e1e5e9; 
+                border-radius: 8px; 
+                font-size: 14px;
+                transition: border-color 0.3s ease;
             }
+            
             textarea {
-                height: 60px;
                 resize: vertical;
+                min-height: 80px;
             }
+            
             input:focus, textarea:focus, select:focus {
                 border-color: #8B5CF6;
                 outline: none;
+                box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
             }
+            
+            .submit-section {
+                grid-column: 1 / -1;
+                text-align: center;
+                margin-top: 20px;
+            }
+            
             button { 
                 background: linear-gradient(135deg, #8B5CF6 0%, #A855F7 100%);
                 color: white; 
-                padding: 15px 30px; 
+                padding: 18px 40px; 
                 border: none; 
-                border-radius: 6px; 
+                border-radius: 50px; 
                 cursor: pointer; 
                 font-size: 18px;
                 font-weight: bold;
-                width: 100%;
+                transition: transform 0.3s ease, box-shadow 0.3s ease;
+                min-width: 300px;
             }
+            
             button:hover { 
-                opacity: 0.9;
+                transform: translateY(-2px);
+                box-shadow: 0 10px 20px rgba(139, 92, 246, 0.3);
             }
+            
             .section-title {
                 color: #8B5CF6;
                 border-bottom: 2px solid #8B5CF6;
                 padding-bottom: 10px;
-                margin: 30px 0 20px 0;
+                margin-bottom: 20px;
+                font-size: 18px;
+                font-weight: 600;
             }
+            
             .help-text {
-                font-size: 14px;
+                font-size: 12px;
                 color: #666;
                 margin-top: 5px;
+                font-style: italic;
             }
+            
             .features {
                 background: linear-gradient(135deg, #8B5CF6 0%, #A855F7 100%);
                 color: white;
-                padding: 20px;
-                border-radius: 6px;
+                padding: 25px;
+                border-radius: 15px;
                 margin-bottom: 30px;
+                grid-column: 1 / -1;
             }
+            
+            .features h3 {
+                margin-bottom: 15px;
+                font-size: 20px;
+            }
+            
             .features ul {
-                margin: 10px 0;
-                padding-left: 20px;
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+                list-style: none;
             }
-            .claude-logo {
+            
+            .features li {
+                padding: 5px 0;
+                border-left: 3px solid rgba(255,255,255,0.3);
+                padding-left: 15px;
+            }
+            
+            .ai-controls {
+                background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+                border: 2px solid #0ea5e9;
+                border-radius: 15px;
+                padding: 20px;
+                margin-bottom: 20px;
+            }
+            
+            .ai-controls .section-title {
+                color: #0ea5e9;
+                border-bottom-color: #0ea5e9;
+            }
+            
+            .footer {
+                text-align: center;
+                margin-top: 40px;
+                padding-top: 30px;
+                border-top: 2px solid #e1e5e9;
+                color: #666;
+            }
+            
+            .creator-info {
+                background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
+                color: white;
+                padding: 20px;
+                border-radius: 15px;
+                margin-top: 20px;
+            }
+            
+            .creator-info h4 {
+                color: #8B5CF6;
+                margin-bottom: 10px;
+            }
+            
+            #loading {
+                display: none;
+                text-align: center;
+                margin-top: 20px;
+                padding: 30px;
+                background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+                border-radius: 15px;
+                border: 2px solid #8B5CF6;
+            }
+            
+            .loading-animation {
                 font-size: 24px;
-                margin-right: 10px;
+                margin-bottom: 15px;
+            }
+            
+            @media (max-width: 768px) {
+                .form-grid {
+                    grid-template-columns: 1fr;
+                    gap: 20px;
+                }
+                
+                .features ul {
+                    grid-template-columns: 1fr;
+                }
+                
+                .container {
+                    padding: 20px;
+                }
             }
         </style>
     </head>
     <body>
+        <div class="header">
+            <div class="logo">⚡ ZEE SEO TOOL</div>
+            <div class="tagline">AI Content Creation That Bridges Human & AI</div>
+            <div class="subtitle">Built by Zeeshan Bashir • Effective Content That Works</div>
+        </div>
+        
         <div class="container">
-            <div class="ai-badge"><span class="claude-logo">🤖</span>Powered by Claude AI</div>
-            <h1>Interactive AI Content Creation Agent</h1>
-            <p>Create high-performance content with Claude's advanced reasoning and human expertise integration</p>
-            
-            <div class="features">
-                <h3>🚀 Claude AI-Powered Features:</h3>
-                <ul>
-                    <li>✅ Advanced intent classification using Claude's reasoning</li>
-                    <li>✅ Sophisticated customer journey mapping</li>
-                    <li>✅ Intelligent Reddit research simulation</li>
-                    <li>✅ Claude's superior E-E-A-T optimization</li>
-                    <li>✅ High-quality content generation (800-1200 words)</li>
-                    <li>✅ Claude's nuanced performance prediction</li>
-                </ul>
-            </div>
+            <div class="ai-badge">🤖 Powered by Claude AI + Human Intelligence</div>
             
             <form action="/generate" method="post">
-                <!-- Content Topic -->
-                <div class="form-group">
-                    <label for="topic">Content Topic:</label>
-                    <input type="text" id="topic" name="topic" 
-                           placeholder="e.g., best budget laptops for college students" required>
+                <div class="form-grid">
+                    <div class="features">
+                        <h3>🚀 Zee SEO Tool Features:</h3>
+                        <ul>
+                            <li>✅ Advanced Claude AI reasoning</li>
+                            <li>✅ Customer journey mapping</li>
+                            <li>✅ Reddit research simulation</li>
+                            <li>✅ E-E-A-T optimization scoring</li>
+                            <li>✅ Human-AI content bridging</li>
+                            <li>✅ Performance prediction analytics</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="form-section">
+                        <h3 class="section-title">📝 Content Topic & Research</h3>
+                        
+                        <div class="form-group">
+                            <label for="topic">Content Topic:</label>
+                            <input type="text" id="topic" name="topic" 
+                                   placeholder="e.g., best budget laptops for college students" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="subreddits">Target Subreddits (comma-separated):</label>
+                            <input type="text" id="subreddits" name="subreddits" 
+                                   placeholder="e.g., laptops, college, StudentLoans" required>
+                        </div>
+                    </div>
+                    
+                    <div class="form-section ai-controls">
+                        <h3 class="section-title">🤖 AI Writing Instructions</h3>
+                        
+                        <div class="form-group">
+                            <label for="writing_style">Writing Style:</label>
+                            <select id="writing_style" name="writing_style">
+                                <option value="">Default</option>
+                                <option value="British English">British English</option>
+                                <option value="American English">American English</option>
+                                <option value="Conversational">Conversational</option>
+                                <option value="Academic">Academic</option>
+                                <option value="Journalistic">Journalistic</option>
+                                <option value="Marketing Copy">Marketing Copy</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="target_word_count">Target Word Count:</label>
+                            <select id="target_word_count" name="target_word_count">
+                                <option value="">Default (800-1200)</option>
+                                <option value="500-700">Short (500-700 words)</option>
+                                <option value="800-1200">Medium (800-1200 words)</option>
+                                <option value="1500-2000">Long (1500-2000 words)</option>
+                                <option value="2500+">Very Long (2500+ words)</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="language_preference">Language Preference:</label>
+                            <select id="language_preference" name="language_preference">
+                                <option value="">Default</option>
+                                <option value="UK English with British spelling">UK English (colour, realise, etc.)</option>
+                                <option value="US English with American spelling">US English (color, realize, etc.)</option>
+                                <option value="Simple language for beginners">Simple Language</option>
+                                <option value="Technical language for experts">Technical Language</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="additional_notes">Additional AI Instructions:</label>
+                            <textarea id="additional_notes" name="additional_notes" 
+                                      placeholder="e.g., Include statistics, Add comparison tables, Focus on benefits, Use bullet points, etc."></textarea>
+                            <div class="help-text">Specific instructions for the AI about how to write your content</div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-section">
+                        <h3 class="section-title">🏢 Your Business Context</h3>
+                        
+                        <div class="form-group">
+                            <label for="industry">Industry:</label>
+                            <input type="text" id="industry" name="industry" 
+                                   placeholder="e.g., Technology, Healthcare, Finance" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="target_audience">Target Audience:</label>
+                            <input type="text" id="target_audience" name="target_audience" 
+                                   placeholder="e.g., College students, Small business owners" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="business_type">Business Type:</label>
+                            <select id="business_type" name="business_type" required>
+                                <option value="">Select...</option>
+                                <option value="B2B">B2B (Business to Business)</option>
+                                <option value="B2C">B2C (Business to Consumer)</option>
+                                <option value="Both">Both B2B and B2C</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="content_goal">Content Goal:</label>
+                            <textarea id="content_goal" name="content_goal" 
+                                      placeholder="e.g., Educate customers, Generate leads, Build trust" required></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="unique_value_prop">What makes you different?</label>
+                            <textarea id="unique_value_prop" name="unique_value_prop" 
+                                      placeholder="e.g., 24/7 support, 10 years experience, patented technology" required></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="brand_voice">Brand Voice:</label>
+                            <select id="brand_voice" name="brand_voice" required>
+                                <option value="">Select...</option>
+                                <option value="Professional">Professional</option>
+                                <option value="Casual">Casual & Friendly</option>
+                                <option value="Technical">Technical & Expert</option>
+                                <option value="Empathetic">Empathetic & Caring</option>
+                                <option value="Bold">Bold & Confident</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-section">
+                        <h3 class="section-title">👥 Customer Insights</h3>
+                        
+                        <div class="form-group">
+                            <label for="customer_pain_points">Customer's Biggest Challenges:</label>
+                            <textarea id="customer_pain_points" name="customer_pain_points" 
+                                      placeholder="e.g., Limited budget, Too many options, Lack of time" required></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="frequent_questions">Most Common Customer Questions:</label>
+                            <textarea id="frequent_questions" name="frequent_questions" 
+                                      placeholder="e.g., How much does it cost? Is it reliable? How long does it take?" required></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="success_story">Customer Success Story (Optional):</label>
+                            <textarea id="success_story" name="success_story" 
+                                      placeholder="e.g., Helped a customer save 50% on costs, reduced their time by 3 hours daily"></textarea>
+                            <div class="help-text">Adds authenticity and builds trust in your content</div>
+                        </div>
+                    </div>
+                    
+                    <div class="submit-section">
+                        <button type="submit">🚀 Generate High-Performance Content with Zee SEO Tool</button>
+                    </div>
                 </div>
-                
-                <!-- Subreddits -->
-                <div class="form-group">
-                    <label for="subreddits">Target Subreddits (comma-separated):</label>
-                    <input type="text" id="subreddits" name="subreddits" 
-                           placeholder="e.g., laptops, college, StudentLoans" required>
-                </div>
-                
-                <h3 class="section-title">🏢 Your Business Context</h3>
-                
-                <!-- Industry -->
-                <div class="form-group">
-                    <label for="industry">What industry are you in?</label>
-                    <input type="text" id="industry" name="industry" 
-                           placeholder="e.g., Technology, Healthcare, Finance" required>
-                    <div class="help-text">Claude will optimize content for your industry standards</div>
-                </div>
-                
-                <!-- Target Audience -->
-                <div class="form-group">
-                    <label for="target_audience">Who is your target audience?</label>
-                    <input type="text" id="target_audience" name="target_audience" 
-                           placeholder="e.g., College students, Small business owners" required>
-                </div>
-                
-                <!-- Business Type -->
-                <div class="form-group">
-                    <label for="business_type">Business Type:</label>
-                    <select id="business_type" name="business_type" required>
-                        <option value="">Select...</option>
-                        <option value="B2B">B2B (Business to Business)</option>
-                        <option value="B2C">B2C (Business to Consumer)</option>
-                        <option value="Both">Both B2B and B2C</option>
-                    </select>
-                </div>
-                
-                <!-- Content Goal -->
-                <div class="form-group">
-                    <label for="content_goal">What's the main goal for this content?</label>
-                    <textarea id="content_goal" name="content_goal" 
-                              placeholder="e.g., Educate customers, Generate leads, Build trust" required></textarea>
-                </div>
-                
-                <!-- Unique Value Proposition -->
-                <div class="form-group">
-                    <label for="unique_value_prop">What makes you different from competitors?</label>
-                    <textarea id="unique_value_prop" name="unique_value_prop" 
-                              placeholder="e.g., 24/7 support, 10 years experience, patented technology" required></textarea>
-                </div>
-                
-                <!-- Brand Voice -->
-                <div class="form-group">
-                    <label for="brand_voice">How would you describe your brand voice?</label>
-                    <select id="brand_voice" name="brand_voice" required>
-                        <option value="">Select...</option>
-                        <option value="Professional">Professional</option>
-                        <option value="Casual">Casual & Friendly</option>
-                        <option value="Technical">Technical & Expert</option>
-                        <option value="Empathetic">Empathetic & Caring</option>
-                        <option value="Bold">Bold & Confident</option>
-                    </select>
-                </div>
-                
-                <h3 class="section-title">👥 Customer Insights</h3>
-                
-                <!-- Customer Pain Points -->
-                <div class="form-group">
-                    <label for="customer_pain_points">What are your customers' biggest challenges?</label>
-                    <textarea id="customer_pain_points" name="customer_pain_points" 
-                              placeholder="e.g., Limited budget, Too many options, Lack of time" required></textarea>
-                </div>
-                
-                <!-- Frequent Questions -->
-                <div class="form-group">
-                    <label for="frequent_questions">What questions do customers ask most often?</label>
-                    <textarea id="frequent_questions" name="frequent_questions" 
-                              placeholder="e.g., How much does it cost? Is it reliable? How long does it take?" required></textarea>
-                </div>
-                
-                <!-- Success Story -->
-                <div class="form-group">
-                    <label for="success_story">Share a brief customer success story:</label>
-                    <textarea id="success_story" name="success_story" 
-                              placeholder="e.g., Helped a customer save 50% on costs, reduced their time by 3 hours daily"></textarea>
-                    <div class="help-text">Optional but helps add authenticity to your content</div>
-                </div>
-                
-                <button type="submit">🤖 Generate Claude AI-Powered Content Strategy</button>
             </form>
             
-            <div id="loading" style="display: none; text-align: center; margin-top: 20px;">
-                <h3>🤖 Claude is analyzing and generating your content...</h3>
-                <p>Running advanced reasoning, journey mapping, research simulation, and content generation...</p>
-                <p><em>This may take 30-60 seconds for Claude's thorough analysis</em></p>
+            <div id="loading">
+                <div class="loading-animation">🤖 ⚡ 🧠</div>
+                <h3>Zee SEO Tool is crafting your content...</h3>
+                <p>Claude AI is analyzing your inputs, mapping customer journey, researching insights, and generating high-performance content that bridges human expertise with AI intelligence.</p>
+                <p><em>This advanced analysis takes 30-60 seconds for maximum quality</em></p>
+            </div>
+            
+            <div class="footer">
+                <div class="creator-info">
+                    <h4>🛠️ Built by Zeeshan Bashir</h4>
+                    <p><strong>Mission:</strong> To create effective content that cuts the bridge between human creativity and AI efficiency. Zee SEO Tool combines the best of both worlds - human insight and AI power - to produce content that truly performs.</p>
+                    <p><strong>Purpose:</strong> Helping businesses create content that doesn't just rank, but converts and builds genuine connections with their audience.</p>
+                </div>
             </div>
         </div>
         
         <script>
             document.querySelector('form').addEventListener('submit', function() {
                 document.getElementById('loading').style.display = 'block';
+                document.querySelector('.container').scrollIntoView({ behavior: 'smooth' });
             });
         </script>
     </body>
@@ -586,6 +803,10 @@ async def home():
 async def generate_content(
     topic: str = Form(...),
     subreddits: str = Form(...),
+    writing_style: str = Form(""),
+    target_word_count: str = Form(""),
+    language_preference: str = Form(""),
+    additional_notes: str = Form(""),
     industry: str = Form(...),
     target_audience: str = Form(...),
     business_type: str = Form(...),
@@ -596,7 +817,7 @@ async def generate_content(
     frequent_questions: str = Form(...),
     success_story: str = Form("")
 ):
-    """Generate enhanced content with REAL Claude AI processing"""
+    """Generate enhanced content with AI instructions and Zee SEO Tool branding"""
     try:
         # Parse subreddits
         target_subreddits = [s.strip() for s in subreddits.split(',') if s.strip()]
@@ -625,41 +846,49 @@ async def generate_content(
             }
         }
         
-        # REAL CLAUDE AI PROCESSING PIPELINE
-        print(f"🤖 Starting Claude AI analysis for: {topic}")
+        # Create AI instructions from form
+        ai_instructions = {
+            'writing_style': writing_style,
+            'target_word_count': target_word_count,
+            'language_preference': language_preference,
+            'additional_notes': additional_notes
+        }
         
-        # Step 1: Intent Classification (REAL Claude AI)
-        print("🔍 Running Claude intent classification...")
+        # ZEE SEO TOOL AI PROCESSING PIPELINE
+        print(f"🚀 Zee SEO Tool starting analysis for: {topic}")
+        
+        # Step 1: Intent Classification
+        print("🔍 Zee SEO Tool: Running intent classification...")
         intent_data = intent_classifier.classify_intent(topic)
         
-        # Step 2: Customer Journey Mapping (REAL Claude AI)
-        print("🗺️ Claude mapping customer journey...")
+        # Step 2: Customer Journey Mapping
+        print("🗺️ Zee SEO Tool: Mapping customer journey...")
         journey_data = journey_mapper.map_customer_journey(topic, intent_data)
         
-        # Step 3: Reddit Research Simulation (REAL Claude AI)
-        print("📱 Claude researching insights...")
+        # Step 3: Reddit Research Simulation
+        print("📱 Zee SEO Tool: Researching customer insights...")
         reddit_insights = reddit_researcher.research_topic(topic, target_subreddits)
         
-        # Step 4: Content Type Classification (REAL Claude AI)
-        print("📝 Claude classifying optimal content type...")
+        # Step 4: Content Type Classification
+        print("📝 Zee SEO Tool: Classifying optimal content type...")
         content_type_data = content_type_classifier.classify_content_type(topic, intent_data, business_context)
         chosen_content_type = content_type_data.get('primary_recommendation', {}).get('type', 'comprehensive_guide')
         
         # Step 5: E-E-A-T Assessment
-        print("⭐ Assessing E-E-A-T requirements...")
+        print("⭐ Zee SEO Tool: Assessing E-E-A-T requirements...")
         eeat_assessment = eeat_assessor.assess_content_eeat_requirements(
             topic, chosen_content_type, business_context, human_inputs
         )
         
-        # Step 6: Generate Complete Content (REAL Claude AI)
-        print("✍️ Claude generating complete content...")
+        # Step 6: Generate Complete Content
+        print("✍️ Zee SEO Tool: Generating content with AI instructions...")
         complete_content = content_generator.generate_complete_content(
             topic, chosen_content_type, reddit_insights, journey_data, 
-            business_context, human_inputs, eeat_assessment
+            business_context, human_inputs, eeat_assessment, ai_instructions
         )
         
         # Step 7: Score Content Quality
-        print("📊 Scoring content quality...")
+        print("📊 Zee SEO Tool: Scoring content quality...")
         quality_score = quality_scorer.score_content_quality(
             complete_content, topic, business_context, human_inputs, eeat_assessment
         )
@@ -670,300 +899,347 @@ async def generate_content(
         performance_prediction = quality_score.get('performance_prediction', 'N/A')
         traffic_multiplier = quality_score.get('traffic_multiplier_estimate', 'N/A')
         
-        print("✅ Claude AI processing complete!")
+        print("✅ Zee SEO Tool: Processing complete!")
         
         # Generate comprehensive results page
         html_response = f"""
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Claude AI-Generated Content Strategy - {topic}</title>
+            <title>Zee SEO Tool Results - {topic}</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <style>
+                * {{
+                    margin: 0;
+                    padding: 0;
+                    box-sizing: border-box;
+                }}
+                
                 body {{ 
-                    font-family: Arial, sans-serif; 
-                    max-width: 1200px; 
-                    margin: 0 auto; 
-                    padding: 20px; 
-                    background-color: #f5f5f5;
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    min-height: 100vh;
+                    padding: 20px;
                     line-height: 1.6;
                 }}
-                .container {{
-                    background-color: white;
-                    padding: 30px;
-                    border-radius: 10px;
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                }}
+                
                 .header {{
                     text-align: center;
+                    color: white;
                     margin-bottom: 30px;
-                    padding: 20px;
+                }}
+                
+                .logo {{
+                    font-size: 42px;
+                    font-weight: bold;
+                    margin-bottom: 10px;
+                    text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+                }}
+                
+                .tagline {{
+                    font-size: 18px;
+                    opacity: 0.9;
+                }}
+                
+                .container {{
+                    max-width: 1400px;
+                    margin: 0 auto;
+                    background-color: white;
+                    border-radius: 20px;
+                    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                    overflow: hidden;
+                }}
+                
+                .results-header {{
                     background: linear-gradient(135deg, #8B5CF6 0%, #A855F7 100%);
                     color: white;
-                    border-radius: 10px;
+                    padding: 30px;
+                    text-align: center;
                 }}
+                
                 .ai-badge {{
-                    background: linear-gradient(135deg, #28a745, #20c997);
-                    color: white;
-                    padding: 5px 15px;
-                    border-radius: 15px;
-                    font-size: 12px;
-                    font-weight: bold;
+                    background: rgba(255,255,255,0.2);
+                    padding: 8px 20px;
+                    border-radius: 20px;
                     display: inline-block;
-                    margin-bottom: 10px;
+                    margin-bottom: 15px;
+                    font-weight: bold;
                 }}
+                
+                .content-wrapper {{
+                    padding: 40px;
+                }}
+                
                 .metrics-grid {{
                     display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                    gap: 15px;
-                    margin: 20px 0;
+                    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                    gap: 20px;
+                    margin: 30px 0;
                 }}
+                
                 .metric-card {{
                     background: linear-gradient(135deg, #8B5CF6, #A855F7);
                     color: white;
-                    padding: 20px;
-                    border-radius: 10px;
+                    padding: 25px;
+                    border-radius: 15px;
                     text-align: center;
+                    transform: translateY(0);
+                    transition: transform 0.3s ease;
                 }}
+                
+                .metric-card:hover {{
+                    transform: translateY(-5px);
+                }}
+                
                 .metric-value {{
-                    font-size: 32px;
+                    font-size: 36px;
                     font-weight: bold;
-                    margin-bottom: 5px;
+                    margin-bottom: 8px;
                 }}
+                
                 .metric-label {{
                     font-size: 14px;
                     opacity: 0.9;
                 }}
+                
                 .section {{
-                    margin: 30px 0;
-                    padding: 20px;
-                    border-left: 4px solid #8B5CF6;
+                    margin: 40px 0;
+                    padding: 25px;
+                    border-left: 5px solid #8B5CF6;
                     background-color: #f8f9fa;
-                    border-radius: 0 8px 8px 0;
+                    border-radius: 0 15px 15px 0;
                 }}
+                
                 .content-box {{
                     background-color: white;
-                    padding: 20px;
-                    border-radius: 8px;
-                    border: 1px solid #ddd;
-                    margin: 15px 0;
+                    padding: 25px;
+                    border-radius: 12px;
+                    border: 1px solid #e1e5e9;
+                    margin: 20px 0;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
                 }}
+                
                 .back-btn {{
                     display: inline-block;
-                    padding: 10px 20px;
-                    background-color: #6c757d;
+                    padding: 12px 25px;
+                    background: linear-gradient(135deg, #6c757d, #495057);
                     color: white;
                     text-decoration: none;
-                    border-radius: 6px;
+                    border-radius: 25px;
                     margin-bottom: 20px;
+                    transition: transform 0.3s ease;
                 }}
+                
                 .back-btn:hover {{
-                    background-color: #545b62;
+                    transform: translateY(-2px);
                 }}
+                
                 .highlight {{
-                    background-color: #fff3cd;
-                    padding: 15px;
-                    border-radius: 6px;
+                    background: linear-gradient(135deg, #fff3cd, #ffeaa7);
+                    padding: 20px;
+                    border-radius: 12px;
                     border-left: 4px solid #ffc107;
-                    margin: 15px 0;
+                    margin: 20px 0;
                 }}
+                
                 pre {{
                     background-color: #f8f9fa;
-                    padding: 15px;
-                    border-radius: 6px;
+                    padding: 20px;
+                    border-radius: 10px;
                     white-space: pre-wrap;
                     overflow-x: auto;
                     border-left: 4px solid #8B5CF6;
+                    font-family: 'Courier New', monospace;
                 }}
+                
                 .success {{
                     color: #28a745;
                     font-weight: bold;
                 }}
+                
                 .improvement {{
-                    background-color: #f3e8ff;
-                    padding: 10px;
-                    border-radius: 6px;
-                    margin: 10px 0;
-                    border-left: 3px solid #8B5CF6;
-                }}
-                .ai-process {{
-                    background-color: #f3e8ff;
+                    background: linear-gradient(135deg, #f3e8ff, #e9d5ff);
                     padding: 15px;
-                    border-radius: 6px;
+                    border-radius: 10px;
+                    margin: 15px 0;
                     border-left: 4px solid #8B5CF6;
-                    margin: 10px 0;
+                }}
+                
+                .ai-process {{
+                    background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+                    padding: 20px;
+                    border-radius: 12px;
+                    border-left: 4px solid #0ea5e9;
+                    margin: 15px 0;
+                }}
+                
+                .ai-instructions-used {{
+                    background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+                    padding: 20px;
+                    border-radius: 12px;
+                    border-left: 4px solid #3b82f6;
+                    margin: 20px 0;
+                }}
+                
+                .zee-footer {{
+                    background: linear-gradient(135deg, #1f2937, #374151);
+                    color: white;
+                    padding: 40px;
+                    text-align: center;
+                }}
+                
+                .zee-footer h3 {{
+                    color: #8B5CF6;
+                    margin-bottom: 15px;
+                    font-size: 24px;
+                }}
+                
+                .zee-footer p {{
+                    margin-bottom: 10px;
+                    opacity: 0.9;
+                }}
+                
+                @media (max-width: 768px) {{
+                    .metrics-grid {{
+                        grid-template-columns: 1fr;
+                    }}
+                    
+                    .content-wrapper {{
+                        padding: 20px;
+                    }}
+                    
+                    .logo {{
+                        font-size: 32px;
+                    }}
                 }}
             </style>
         </head>
         <body>
+            <div class="header">
+                <div class="logo">⚡ ZEE SEO TOOL</div>
+                <div class="tagline">Your High-Performance Content is Ready!</div>
+            </div>
+            
             <div class="container">
-                <a href="/" class="back-btn">← Create New Claude AI Content Strategy</a>
-                
-                <div class="header">
-                    <div class="ai-badge">🤖 Generated by Claude AI</div>
-                    <h1>🎉 Your Claude AI-Powered Content Strategy</h1>
+                <div class="results-header">
+                    <div class="ai-badge">🤖 Generated by Zee SEO Tool</div>
+                    <h1>🎉 Your Premium Content Strategy</h1>
                     <p><strong>Topic:</strong> {topic}</p>
                     <p><strong>Content Type:</strong> {chosen_content_type.replace('_', ' ').title()}</p>
                     <p><strong>Word Count:</strong> {len(complete_content.split())} words</p>
                 </div>
-
-                <div class="section">
-                    <h2>📊 Claude AI Performance Metrics</h2>
-                    <div class="metrics-grid">
-                        <div class="metric-card">
-                            <div class="metric-value">{eeat_score}/10</div>
-                            <div class="metric-label">E-E-A-T Score</div>
-                        </div>
-                        <div class="metric-card">
-                            <div class="metric-value">{overall_quality}/10</div>
-                            <div class="metric-label">Quality Score</div>
-                        </div>
-                        <div class="metric-card">
-                            <div class="metric-value">{traffic_multiplier}</div>
-                            <div class="metric-label">Traffic Multiplier</div>
-                        </div>
-                    </div>
-                    <div class="highlight">
-                        <strong>🚀 Claude AI Performance Prediction:</strong> {performance_prediction}
-                    </div>
-                </div>
-
-                <div class="section">
-                    <h2>🤖 Claude AI Analysis Pipeline</h2>
-                    <div class="ai-process">
-                        <h3>1. Intent Classification (Claude AI-Powered)</h3>
-                        <p><strong>Primary Intent:</strong> {intent_data.get('primary_intent', 'N/A')}</p>
-                        <p><strong>Search Stage:</strong> {intent_data.get('search_stage', 'N/A')}</p>
-                        <p><strong>Target Audience:</strong> {intent_data.get('target_audience', 'N/A')}</p>
-                        <p><strong>Content Complexity:</strong> {intent_data.get('content_complexity', 'N/A')}</p>
-                        <p><strong>Urgency Level:</strong> {intent_data.get('urgency_level', 'N/A')}</p>
-                    </div>
+                
+                <div class="content-wrapper">
+                    <a href="/" class="back-btn">← Create Another Zee SEO Strategy</a>
                     
-                    <div class="ai-process">
-                        <h3>2. Customer Journey Mapping (Claude AI-Powered)</h3>
-                        <p><strong>Primary Stage:</strong> {journey_data.get('primary_stage', 'N/A')}</p>
-                        <p><strong>Emotional State:</strong> {journey_data.get('emotional_state', 'N/A')}</p>
-                        <p><strong>Key Pain Points:</strong></p>
-                        <ul>
-                            {"".join([f"<li>{pain}</li>" for pain in journey_data.get('key_pain_points', [])])}
-                        </ul>
-                        <p><strong>Customer Questions:</strong></p>
-                        <ul>
-                            {"".join([f"<li>{q}</li>" for q in journey_data.get('customer_questions', [])])}
-                        </ul>
-                        <p><strong>Next Actions:</strong></p>
-                        <ul>
-                            {"".join([f"<li>{action}</li>" for action in journey_data.get('next_actions', [])])}
-                        </ul>
-                    </div>
-                    
-                    <div class="ai-process">
-                        <h3>3. Reddit Research Simulation (Claude AI-Powered)</h3>
-                        <p><strong>Community Sentiment:</strong> {reddit_insights.get('sentiment_analysis', 'N/A')}</p>
-                        <p><strong>Estimated Community Size:</strong> {reddit_insights.get('community_size', 'N/A')}</p>
-                        <p><strong>Common Customer Language:</strong></p>
-                        <ul>
-                            {"".join([f"<li>{lang}</li>" for lang in reddit_insights.get('customer_voice', {}).get('common_language', [])])}
-                        </ul>
-                        <p><strong>Frequent Community Questions:</strong></p>
-                        <ul>
-                            {"".join([f"<li>{q}</li>" for q in reddit_insights.get('customer_voice', {}).get('frequent_questions', [])])}
-                        </ul>
-                        <p><strong>Community Complaints:</strong></p>
-                        <ul>
-                            {"".join([f"<li>{complaint}</li>" for complaint in reddit_insights.get('customer_voice', {}).get('complaints', [])])}
-                        </ul>
-                        <p><strong>Community Recommendations:</strong></p>
-                        <ul>
-                            {"".join([f"<li>{rec}</li>" for rec in reddit_insights.get('customer_voice', {}).get('recommendations', [])])}
-                        </ul>
-                        <p><strong>Trending Discussions:</strong></p>
-                        <ul>
-                            {"".join([f"<li>{discussion}</li>" for discussion in reddit_insights.get('trending_discussions', [])])}
-                        </ul>
+                    <div class="section">
+                        <h2>📊 Zee SEO Tool Performance Metrics</h2>
+                        <div class="metrics-grid">
+                            <div class="metric-card">
+                                <div class="metric-value">{eeat_score}/10</div>
+                                <div class="metric-label">E-E-A-T Score</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-value">{overall_quality}/10</div>
+                                <div class="metric-label">Quality Score</div>
+                            </div>
+                            <div class="metric-card">
+                                <div class="metric-value">{traffic_multiplier}</div>
+                                <div class="metric-label">Traffic Multiplier</div>
+                            </div>
+                        </div>
+                        <div class="highlight">
+                            <strong>🚀 Zee SEO Tool Performance Prediction:</strong> {performance_prediction}
+                        </div>
                     </div>
 
-                    <div class="ai-process">
-                        <h3>4. Content Type Classification (Claude AI-Powered)</h3>
-                        <p><strong>Recommended Type:</strong> {content_type_data.get('primary_recommendation', {}).get('type', 'N/A')}</p>
-                        <p><strong>Claude's Reasoning:</strong> {content_type_data.get('primary_recommendation', {}).get('reasoning', 'N/A')}</p>
-                        <p><strong>Alternative Types:</strong> {', '.join(content_type_data.get('alternative_types', []))}</p>
-                        <p><strong>Content Length:</strong> {content_type_data.get('content_length', 'N/A')}</p>
-                        <p><strong>Recommended Tone:</strong> {content_type_data.get('tone', 'N/A')}</p>
+                    <div class="ai-instructions-used">
+                        <h3>🤖 AI Instructions Applied</h3>
+                        {"<p><strong>Writing Style:</strong> " + writing_style + "</p>" if writing_style else ""}
+                        {"<p><strong>Target Word Count:</strong> " + target_word_count + "</p>" if target_word_count else ""}
+                        {"<p><strong>Language Preference:</strong> " + language_preference + "</p>" if language_preference else ""}
+                        {"<p><strong>Additional Notes:</strong> " + additional_notes + "</p>" if additional_notes else ""}
+                        {("<p><em>No specific AI instructions provided - using default settings</em></p>") if not any([writing_style, target_word_count, language_preference, additional_notes]) else ""}
+                    </div>
+
+                    <div class="section">
+                        <h2>🤖 Zee SEO Tool Analysis Pipeline</h2>
+                        <div class="ai-process">
+                            <h3>1. Intent Classification (Claude AI)</h3>
+                            <p><strong>Primary Intent:</strong> {intent_data.get('primary_intent', 'N/A')}</p>
+                            <p><strong>Search Stage:</strong> {intent_data.get('search_stage', 'N/A')}</p>
+                            <p><strong>Target Audience:</strong> {intent_data.get('target_audience', 'N/A')}</p>
+                            <p><strong>Content Complexity:</strong> {intent_data.get('content_complexity', 'N/A')}</p>
+                        </div>
+                        
+                        <div class="ai-process">
+                            <h3>2. Customer Journey Mapping (Claude AI)</h3>
+                            <p><strong>Primary Stage:</strong> {journey_data.get('primary_stage', 'N/A')}</p>
+                            <p><strong>Emotional State:</strong> {journey_data.get('emotional_state', 'N/A')}</p>
+                            <p><strong>Key Pain Points:</strong></p>
+                            <ul>
+                                {"".join([f"<li>{pain}</li>" for pain in journey_data.get('key_pain_points', [])])}
+                            </ul>
+                        </div>
+                        
+                        <div class="ai-process">
+                            <h3>3. Reddit Research Simulation (Claude AI)</h3>
+                            <p><strong>Community Sentiment:</strong> {reddit_insights.get('sentiment_analysis', 'N/A')}</p>
+                            <p><strong>Common Customer Language:</strong></p>
+                            <ul>
+                                {"".join([f"<li>{lang}</li>" for lang in reddit_insights.get('customer_voice', {}).get('common_language', [])])}
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <h2>✍️ Your High-Performance Content</h2>
+                        <div class="content-box">
+                            <div class="ai-badge" style="color: #8B5CF6; background: rgba(139, 92, 246, 0.1);">🤖 Generated by Zee SEO Tool</div>
+                            <h3>Your Optimized {chosen_content_type.replace('_', ' ').title()}</h3>
+                            <p><strong>Generated Word Count:</strong> {len(complete_content.split())} words</p>
+                            <p><strong>Optimized for:</strong> {business_context.get('brand_voice', 'Professional')} tone, {business_context.get('target_audience', 'target audience')}</p>
+                            <pre>{complete_content}</pre>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <h2>🚀 Why Zee SEO Tool Works</h2>
+                        <div class="content-box">
+                            <h3>The Bridge Between Human & AI Content:</h3>
+                            <div class="improvement">
+                                <strong>✅ Human Intelligence Integration:</strong> Your business expertise woven throughout
+                            </div>
+                            <div class="improvement">
+                                <strong>✅ AI-Powered Analysis:</strong> Claude's advanced reasoning for deep insights
+                            </div>
+                            <div class="improvement">
+                                <strong>✅ Custom AI Instructions:</strong> Tailored to your specific writing requirements
+                            </div>
+                            <div class="improvement">
+                                <strong>✅ Performance Optimization:</strong> Built for search engines and human readers
+                            </div>
+                        </div>
+                        
+                        <div class="highlight">
+                            <h3>🎯 Zee SEO Tool Advantages:</h3>
+                            <ul>
+                                {"".join([f"<li>{improvement}</li>" for improvement in quality_score.get('critical_improvements', [])])}
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div style="text-align: center; margin-top: 40px;">
+                        <a href="/" class="back-btn" style="font-size: 18px; padding: 15px 30px;">🚀 Create Another High-Performance Strategy</a>
                     </div>
                 </div>
-
-                <div class="section">
-                    <h2>✍️ Claude AI-Generated Content</h2>
-                    <div class="content-box">
-                        <div class="ai-badge">🤖 Generated by Claude AI</div>
-                        <h3>Your High-Performance {chosen_content_type.replace('_', ' ').title()}</h3>
-                        <p><strong>Generated Word Count:</strong> {len(complete_content.split())} words</p>
-                        <p><strong>Optimized for:</strong> {business_context.get('brand_voice', 'Professional')} tone, {business_context.get('target_audience', 'target audience')}</p>
-                        <p><strong>Claude's Focus:</strong> Deep reasoning, context awareness, and nuanced understanding</p>
-                        <pre>{complete_content}</pre>
-                    </div>
-                </div>
-
-                <div class="section">
-                    <h2>🚀 Claude AI Quality Analysis</h2>
-                    <div class="content-box">
-                        <h3>Why Claude AI-Generated Content Outperforms Standard AI:</h3>
-                        <div class="improvement">
-                            <strong>✅ Advanced Reasoning:</strong> Claude's superior reasoning provides deeper customer understanding
-                        </div>
-                        <div class="improvement">
-                            <strong>✅ Context Awareness:</strong> Claude maintains context throughout the entire analysis pipeline
-                        </div>
-                        <div class="improvement">
-                            <strong>✅ Nuanced Understanding:</strong> Claude grasps subtle business and customer nuances
-                        </div>
-                        <div class="improvement">
-                            <strong>✅ Multi-Step Analysis:</strong> Claude performs comprehensive 7-step analysis process
-                        </div>
-                        <div class="improvement">
-                            <strong>✅ Human-Like Reasoning:</strong> Claude's constitutional AI training ensures thoughtful responses
-                        </div>
-                        <div class="improvement">
-                            <strong>✅ Business Intelligence:</strong> Your expertise integrated through Claude's advanced understanding
-                        </div>
-                    </div>
-                    
-                    <div class="highlight">
-                        <h3>🎯 Claude AI-Identified Critical Improvements:</h3>
-                        <ul>
-                            {"".join([f"<li>{improvement}</li>" for improvement in quality_score.get('critical_improvements', [])])}
-                        </ul>
-                    </div>
-                </div>
-
-                <div class="section">
-                    <h2>📈 Why Claude AI Approach Works</h2>
-                    <div class="content-box">
-                        <p><strong>🤖 Claude's Advanced Pipeline:</strong> Multi-step reasoning instead of simple generation</p>
-                        <p><strong>🧠 Constitutional AI:</strong> Claude's training ensures helpful, harmless, and honest responses</p>
-                        <p><strong>🎯 Intent-Driven Analysis:</strong> Claude deeply analyzes user intent before generating</p>
-                        <p><strong>👥 Customer-Centric Reasoning:</strong> Claude simulates authentic customer research</p>
-                        <p><strong>📊 Performance Optimization:</strong> Claude structures content for maximum engagement</p>
-                        <p><strong>🏆 E-E-A-T Compliance:</strong> Claude ensures expertise, authority, and trust signals</p>
-                        <p><strong>💡 Superior Context Handling:</strong> Claude maintains context across long conversations</p>
-                        <p><strong>📈 Predicted Performance:</strong> <span class="success">{performance_prediction}</span></p>
-                    </div>
-                </div>
-
-                <div class="section">
-                    <h2>🔧 Claude AI Technical Implementation</h2>
-                    <div class="content-box">
-                        <p><strong>AI Model Used:</strong> Claude 3 Haiku (Anthropic's fast, intelligent model)</p>
-                        <p><strong>Processing Steps:</strong> 7-step Claude AI pipeline with real API calls</p>
-                        <p><strong>Quality Assurance:</strong> Multi-dimensional scoring and E-E-A-T assessment</p>
-                        <p><strong>Performance Tracking:</strong> Claude's predictive analytics for content success</p>
-                        <p><strong>Constitutional AI:</strong> Ensures helpful, harmless, and honest content generation</p>
-                        <p><strong>Context Window:</strong> Claude maintains context throughout entire analysis</p>
-                    </div>
-                </div>
-
-                <div style="text-align: center; margin-top: 40px;">
-                    <a href="/" class="back-btn" style="font-size: 18px; padding: 15px 30px;">🤖 Generate Another Claude AI Content Strategy</a>
+                
+                <div class="zee-footer">
+                    <h3>⚡ Built by Zeeshan Bashir</h3>
+                    <p><strong>Zee SEO Tool Mission:</strong> Creating effective content that bridges the gap between human creativity and AI efficiency.</p>
+                    <p><strong>Purpose:</strong> To write content that doesn't just rank, but converts and builds genuine connections.</p>
+                    <p><strong>The Bridge:</strong> Combining human insight with AI power to produce content that truly performs in the real world.</p>
+                    <p style="margin-top: 20px; font-size: 14px; opacity: 0.8;">© 2024 Zee SEO Tool - Bridging Human Intelligence with AI Power</p>
                 </div>
             </div>
         </body>
@@ -975,21 +1251,52 @@ async def generate_content(
     except Exception as e:
         error_html = f"""
         <html>
-        <body style="font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px;">
-            <h1>❌ Claude AI Processing Error</h1>
-            <p><strong>Error during Claude AI content generation:</strong> {str(e)}</p>
-            <div style="background-color: #f8f9fa; padding: 15px; border-radius: 6px; margin: 20px 0;">
-                <h3>Possible Issues:</h3>
-                <ul>
-                    <li>Claude API key not configured (check ANTHROPIC_API_KEY environment variable)</li>
-                    <li>API rate limit exceeded</li>
-                    <li>Network connectivity issue</li>
-                    <li>Invalid API response format</li>
-                </ul>
-                <p><strong>Note:</strong> For full Claude AI functionality, set your Anthropic API key as an environment variable.</p>
-                <p><strong>Get Claude API Key:</strong> <a href="https://console.anthropic.com/" target="_blank">console.anthropic.com</a></p>
+        <head>
+            <title>Zee SEO Tool - Error</title>
+            <style>
+                body {{
+                    font-family: 'Segoe UI', sans-serif;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    min-height: 100vh;
+                    padding: 20px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }}
+                .error-container {{
+                    background: white;
+                    padding: 40px;
+                    border-radius: 20px;
+                    text-align: center;
+                    max-width: 600px;
+                    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                }}
+                .logo {{
+                    font-size: 36px;
+                    font-weight: bold;
+                    color: #8B5CF6;
+                    margin-bottom: 20px;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="error-container">
+                <div class="logo">⚡ ZEE SEO TOOL</div>
+                <h1>❌ Processing Error</h1>
+                <p><strong>Error during content generation:</strong> {str(e)}</p>
+                <div style="background-color: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0; text-align: left;">
+                    <h3>Possible Issues:</h3>
+                    <ul>
+                        <li>Claude API key not configured properly</li>
+                        <li>API rate limit exceeded</li>
+                        <li>Network connectivity issue</li>
+                        <li>Invalid API response format</li>
+                    </ul>
+                    <p><strong>Note:</strong> For full Zee SEO Tool functionality, ensure your Anthropic API key is set correctly.</p>
+                    <p><strong>Get Claude API Key:</strong> <a href="https://console.anthropic.com/" target="_blank">console.anthropic.com</a></p>
+                </div>
+                <a href="/" style="display: inline-block; margin-top: 20px; padding: 12px 25px; background: linear-gradient(135deg, #8B5CF6, #A855F7); color: white; text-decoration: none; border-radius: 25px;">← Try Again with Zee SEO Tool</a>
             </div>
-            <a href="/" style="display: inline-block; margin-top: 20px; padding: 10px 20px; background-color: #8B5CF6; color: white; text-decoration: none; border-radius: 6px;">← Try Again</a>
         </body>
         </html>
         """
