@@ -1,14 +1,13 @@
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse
-from src.main import EnhancedContentCreationAgent
-import json
+pythonimport streamlit as st
 
-app = FastAPI(title="Interactive Enhanced AI Content Creation Agent")
+# Streamlit app
+st.title("My AI Application")
+st.write("Welcome to my app!")
 
-# Initialize the enhanced agent
-print("Initializing Enhanced Content Creation Agent...")
-agent = EnhancedContentCreationAgent()
-print("Agent initialized successfully!")
+# Example of user input
+user_input = st.text_input("Enter something:")
+if st.button("Submit"):
+    st.write(f"You entered: {user_input}")
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
