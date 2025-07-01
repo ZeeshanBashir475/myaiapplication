@@ -1,4 +1,4 @@
-pythonimport streamlit as st
+import streamlit as st
 
 # Streamlit app
 st.title("My AI Application")
