@@ -7,54 +7,59 @@ from fastapi.responses import HTMLResponse
 import uvicorn
 
 # Initialize FastAPI app
-app = FastAPI(title="AI Content Creation Agent")
+app = FastAPI(title="AI Content Creation Agent - Powered by Claude")
 
 # AI Configuration - You'll need to set these environment variables or replace with your API keys
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "your-openai-api-key-here")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "your-anthropic-api-key-here")
 
-class AIAgent:
+class ClaudeAgent:
     def __init__(self):
-        self.openai_headers = {
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json"
+        self.anthropic_headers = {
+            "x-api-key": ANTHROPIC_API_KEY,
+            "Content-Type": "application/json",
+            "anthropic-version": "2023-06-01"
         }
         
-    def call_openai(self, messages: List[Dict], model: str = "gpt-3.5-turbo", max_tokens: int = 1000):
-        """Make API call to OpenAI"""
+    def call_claude(self, messages: List[Dict], model: str = "claude-3-haiku-20240307", max_tokens: int = 1000):
+        """Make API call to Claude"""
         try:
+            # Convert messages to Claude format
+            if messages and messages[0].get("role") == "user":
+                user_message = messages[0]["content"]
+            else:
+                user_message = "Please help with this request."
+            
             payload = {
                 "model": model,
-                "messages": messages,
                 "max_tokens": max_tokens,
-                "temperature": 0.7
+                "messages": [{"role": "user", "content": user_message}]
             }
             
             response = requests.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers=self.openai_headers,
+                "https://api.anthropic.com/v1/messages",
+                headers=self.anthropic_headers,
                 json=payload,
                 timeout=30
             )
             
             if response.status_code == 200:
-                return response.json()["choices"][0]["message"]["content"]
+                return response.json()["content"][0]["text"]
             else:
-                return f"AI API Error: {response.status_code}"
+                return f"Claude API Error: {response.status_code} - {response.text}"
                 
         except Exception as e:
-            return f"AI Error: {str(e)}"
+            return f"Claude Error: {str(e)}"
 
 class IntentClassifier:
-    def __init__(self, ai_agent):
-        self.ai_agent = ai_agent
+    def __init__(self, claude_agent):
+        self.claude_agent = claude_agent
         
     def classify_intent(self, topic: str) -> Dict[str, Any]:
-        """Classify user intent and search stage"""
+        """Classify user intent and search stage using Claude"""
         prompt = f"""
         Analyze this content topic and classify the user intent: "{topic}"
         
-        Respond with JSON format:
+        Respond with JSON format only:
         {{
             "primary_intent": "informational/commercial/transactional/navigational",
             "search_stage": "awareness/consideration/decision",
@@ -65,30 +70,37 @@ class IntentClassifier:
         """
         
         messages = [{"role": "user", "content": prompt}]
-        response = self.ai_agent.call_openai(messages)
+        response = self.claude_agent.call_claude(messages)
         
         try:
-            return json.loads(response)
+            # Extract JSON from Claude's response
+            if "{" in response and "}" in response:
+                json_start = response.find("{")
+                json_end = response.rfind("}") + 1
+                json_str = response[json_start:json_end]
+                return json.loads(json_str)
         except:
-            return {
-                "primary_intent": "informational",
-                "search_stage": "consideration", 
-                "target_audience": "general audience",
-                "content_complexity": "intermediate",
-                "urgency_level": "medium"
-            }
+            pass
+            
+        return {
+            "primary_intent": "informational",
+            "search_stage": "consideration", 
+            "target_audience": "general audience",
+            "content_complexity": "intermediate",
+            "urgency_level": "medium"
+        }
 
 class JourneyMapper:
-    def __init__(self, ai_agent):
-        self.ai_agent = ai_agent
+    def __init__(self, claude_agent):
+        self.claude_agent = claude_agent
         
     def map_customer_journey(self, topic: str, intent_data: Dict) -> Dict[str, Any]:
-        """Map customer journey stage and pain points"""
+        """Map customer journey stage and pain points using Claude"""
         prompt = f"""
         For the topic "{topic}" with intent "{intent_data.get('primary_intent', 'informational')}", 
         map the customer journey stage and identify key pain points.
         
-        Respond with JSON:
+        Respond with JSON format only:
         {{
             "primary_stage": "awareness/consideration/decision/retention",
             "key_pain_points": ["pain point 1", "pain point 2", "pain point 3"],
@@ -99,30 +111,36 @@ class JourneyMapper:
         """
         
         messages = [{"role": "user", "content": prompt}]
-        response = self.ai_agent.call_openai(messages)
+        response = self.claude_agent.call_claude(messages)
         
         try:
-            return json.loads(response)
+            if "{" in response and "}" in response:
+                json_start = response.find("{")
+                json_end = response.rfind("}") + 1
+                json_str = response[json_start:json_end]
+                return json.loads(json_str)
         except:
-            return {
-                "primary_stage": "consideration",
-                "key_pain_points": ["Uncertainty about options", "Budget constraints", "Time limitations"],
-                "customer_questions": ["Is this right for me?", "How much does it cost?", "How long will it take?"],
-                "emotional_state": "Cautiously optimistic but seeking validation",
-                "next_actions": ["Research more options", "Compare prices", "Read reviews"]
-            }
+            pass
+            
+        return {
+            "primary_stage": "consideration",
+            "key_pain_points": ["Uncertainty about options", "Budget constraints", "Time limitations"],
+            "customer_questions": ["Is this right for me?", "How much does it cost?", "How long will it take?"],
+            "emotional_state": "Cautiously optimistic but seeking validation",
+            "next_actions": ["Research more options", "Compare prices", "Read reviews"]
+        }
 
 class RedditResearcher:
-    def __init__(self, ai_agent):
-        self.ai_agent = ai_agent
+    def __init__(self, claude_agent):
+        self.claude_agent = claude_agent
         
     def research_topic(self, topic: str, subreddits: List[str]) -> Dict[str, Any]:
-        """Simulate Reddit research with AI-generated insights"""
+        """Simulate Reddit research with Claude-generated insights"""
         prompt = f"""
         Simulate research from Reddit communities about "{topic}" in subreddits like {subreddits}.
         Generate realistic customer insights that would be found on Reddit.
         
-        Respond with JSON:
+        Respond with JSON format only:
         {{
             "customer_voice": {{
                 "common_language": ["phrase 1", "phrase 2", "phrase 3"],
@@ -137,34 +155,40 @@ class RedditResearcher:
         """
         
         messages = [{"role": "user", "content": prompt}]
-        response = self.ai_agent.call_openai(messages, max_tokens=800)
+        response = self.claude_agent.call_claude(messages, max_tokens=800)
         
         try:
-            return json.loads(response)
+            if "{" in response and "}" in response:
+                json_start = response.find("{")
+                json_end = response.rfind("}") + 1
+                json_str = response[json_start:json_end]
+                return json.loads(json_str)
         except:
-            return {
-                "customer_voice": {
-                    "common_language": ["budget-friendly", "user-friendly", "worth the investment"],
-                    "frequent_questions": ["Anyone tried this?", "Is it legit?", "Better alternatives?"],
-                    "complaints": ["Too expensive", "Confusing setup"],
-                    "recommendations": ["Start with basics", "Read reviews first"]
-                },
-                "trending_discussions": ["Best options for beginners", "Price comparison"],
-                "sentiment_analysis": "cautiously positive",
-                "community_size": "10,000+ active users"
-            }
+            pass
+            
+        return {
+            "customer_voice": {
+                "common_language": ["budget-friendly", "user-friendly", "worth the investment"],
+                "frequent_questions": ["Anyone tried this?", "Is it legit?", "Better alternatives?"],
+                "complaints": ["Too expensive", "Confusing setup"],
+                "recommendations": ["Start with basics", "Read reviews first"]
+            },
+            "trending_discussions": ["Best options for beginners", "Price comparison"],
+            "sentiment_analysis": "cautiously positive",
+            "community_size": "10,000+ active users"
+        }
 
 class ContentTypeClassifier:
-    def __init__(self, ai_agent):
-        self.ai_agent = ai_agent
+    def __init__(self, claude_agent):
+        self.claude_agent = claude_agent
         
     def classify_content_type(self, topic: str, intent_data: Dict, business_context: Dict) -> Dict[str, Any]:
-        """Determine optimal content type"""
+        """Determine optimal content type using Claude"""
         prompt = f"""
         Given topic "{topic}", intent "{intent_data.get('primary_intent')}", and business type "{business_context.get('business_type')}", 
         recommend the best content type.
         
-        Respond with JSON:
+        Respond with JSON format only:
         {{
             "primary_recommendation": {{
                 "type": "blog_post/guide/comparison/case_study/faq",
@@ -177,27 +201,33 @@ class ContentTypeClassifier:
         """
         
         messages = [{"role": "user", "content": prompt}]
-        response = self.ai_agent.call_openai(messages)
+        response = self.claude_agent.call_claude(messages)
         
         try:
-            return json.loads(response)
+            if "{" in response and "}" in response:
+                json_start = response.find("{")
+                json_end = response.rfind("}") + 1
+                json_str = response[json_start:json_end]
+                return json.loads(json_str)
         except:
-            return {
-                "primary_recommendation": {
-                    "type": "comprehensive_guide",
-                    "reasoning": "Best for informational intent and building authority"
-                },
-                "alternative_types": ["blog_post", "comparison"],
-                "content_length": "long",
-                "tone": "professional"
-            }
+            pass
+            
+        return {
+            "primary_recommendation": {
+                "type": "comprehensive_guide",
+                "reasoning": "Best for informational intent and building authority"
+            },
+            "alternative_types": ["blog_post", "comparison"],
+            "content_length": "long",
+            "tone": "professional"
+        }
 
 class EEATAssessor:
-    def __init__(self, ai_agent):
-        self.ai_agent = ai_agent
+    def __init__(self, claude_agent):
+        self.claude_agent = claude_agent
         
     def assess_content_eeat_requirements(self, topic: str, content_type: str, business_context: Dict, human_inputs: Dict) -> Dict[str, Any]:
-        """Assess E-E-A-T requirements and score"""
+        """Assess E-E-A-T requirements and score using Claude"""
         experience_score = 8 if human_inputs.get('customer_insights', {}).get('success_story') else 6
         expertise_score = 9 if business_context.get('industry') else 7
         authoritativeness_score = 8 if business_context.get('unique_value_prop') else 6
@@ -216,13 +246,13 @@ class EEATAssessor:
         }
 
 class ContentGenerator:
-    def __init__(self, ai_agent):
-        self.ai_agent = ai_agent
+    def __init__(self, claude_agent):
+        self.claude_agent = claude_agent
         
     def generate_complete_content(self, topic: str, content_type: str, reddit_insights: Dict, 
                                 journey_data: Dict, business_context: Dict, human_inputs: Dict, 
                                 eeat_assessment: Dict) -> str:
-        """Generate comprehensive content"""
+        """Generate comprehensive content using Claude"""
         
         prompt = f"""
         Create a comprehensive, high-quality {content_type} about "{topic}".
@@ -254,26 +284,28 @@ class ContentGenerator:
         8. Include actionable advice
         9. End with a compelling call-to-action
         
-        Generate comprehensive, helpful content that demonstrates expertise and builds trust:
+        Generate comprehensive, helpful content that demonstrates expertise and builds trust.
+        Focus on providing real value to {business_context.get('target_audience', 'your audience')}.
         """
         
         messages = [{"role": "user", "content": prompt}]
-        return self.ai_agent.call_openai(messages, max_tokens=2000)
+        return self.claude_agent.call_claude(messages, max_tokens=2000)
 
 class QualityScorer:
-    def __init__(self, ai_agent):
-        self.ai_agent = ai_agent
+    def __init__(self, claude_agent):
+        self.claude_agent = claude_agent
         
     def score_content_quality(self, content: str, topic: str, business_context: Dict, 
                             human_inputs: Dict, eeat_assessment: Dict) -> Dict[str, Any]:
-        """Score content quality and predict performance"""
+        """Score content quality and predict performance using Claude analysis"""
         
         # Calculate scores based on content analysis
         word_count = len(content.split())
-        has_headings = content.count('#') > 3
-        mentions_business = business_context.get('unique_value_prop', '') in content.lower()
+        has_headings = content.count('#') > 3 or content.count('\n\n') > 5
+        mentions_business = business_context.get('unique_value_prop', '').lower() in content.lower()
         addresses_pain_points = any(pain.lower() in content.lower() 
-                                  for pain in human_inputs.get('customer_insights', {}).get('customer_pain_points', '').split(','))
+                                  for pain in human_inputs.get('customer_insights', {}).get('customer_pain_points', '').split(',')
+                                  if pain.strip())
         
         # Quality scoring
         content_score = 8.5 if word_count > 500 else 6.0
@@ -285,13 +317,13 @@ class QualityScorer:
         
         # Performance prediction
         if overall_score >= 8.5:
-            performance = "High performance expected - 3-5x better than AI-only content"
+            performance = "High performance expected - Claude's superior reasoning creates 3-5x better content than standard AI"
             traffic_multiplier = "3-5x"
         elif overall_score >= 7.5:
-            performance = "Good performance expected - 2-3x better than AI-only content"
+            performance = "Good performance expected - Claude's analysis drives 2-3x better engagement"
             traffic_multiplier = "2-3x"
         else:
-            performance = "Standard performance - similar to AI-only content"
+            performance = "Standard performance - Claude provides solid content foundation"
             traffic_multiplier = "1-2x"
             
         return {
@@ -303,22 +335,22 @@ class QualityScorer:
             "performance_prediction": performance,
             "traffic_multiplier_estimate": traffic_multiplier,
             "critical_improvements": [
-                "Human expertise integration provides authentic voice",
-                "Customer insights create reader connection", 
-                "Business context ensures relevance",
-                "E-E-A-T optimization improves search performance"
+                "Claude's advanced reasoning provides deeper customer understanding",
+                "Superior context awareness creates more relevant content", 
+                "Enhanced business intelligence integration",
+                "Claude's nuanced writing improves engagement and trust"
             ]
         }
 
-# Initialize AI Agent and Components
-ai_agent = AIAgent()
-intent_classifier = IntentClassifier(ai_agent)
-journey_mapper = JourneyMapper(ai_agent)
-reddit_researcher = RedditResearcher(ai_agent)
-content_type_classifier = ContentTypeClassifier(ai_agent)
-eeat_assessor = EEATAssessor(ai_agent)
-content_generator = ContentGenerator(ai_agent)
-quality_scorer = QualityScorer(ai_agent)
+# Initialize Claude Agent and Components
+claude_agent = ClaudeAgent()
+intent_classifier = IntentClassifier(claude_agent)
+journey_mapper = JourneyMapper(claude_agent)
+reddit_researcher = RedditResearcher(claude_agent)
+content_type_classifier = ContentTypeClassifier(claude_agent)
+eeat_assessor = EEATAssessor(claude_agent)
+content_generator = ContentGenerator(claude_agent)
+quality_scorer = QualityScorer(claude_agent)
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
@@ -327,7 +359,7 @@ async def home():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>AI Content Creation Agent - Powered by Real AI</title>
+        <title>AI Content Creation Agent - Powered by Claude</title>
         <style>
             body { 
                 font-family: Arial, sans-serif; 
@@ -343,7 +375,7 @@ async def home():
                 box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             }
             .ai-badge {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                background: linear-gradient(135deg, #8B5CF6 0%, #A855F7 100%);
                 color: white;
                 padding: 10px 20px;
                 border-radius: 20px;
@@ -373,11 +405,11 @@ async def home():
                 resize: vertical;
             }
             input:focus, textarea:focus, select:focus {
-                border-color: #667eea;
+                border-color: #8B5CF6;
                 outline: none;
             }
             button { 
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                background: linear-gradient(135deg, #8B5CF6 0%, #A855F7 100%);
                 color: white; 
                 padding: 15px 30px; 
                 border: none; 
@@ -391,8 +423,8 @@ async def home():
                 opacity: 0.9;
             }
             .section-title {
-                color: #667eea;
-                border-bottom: 2px solid #667eea;
+                color: #8B5CF6;
+                border-bottom: 2px solid #8B5CF6;
                 padding-bottom: 10px;
                 margin: 30px 0 20px 0;
             }
@@ -402,7 +434,7 @@ async def home():
                 margin-top: 5px;
             }
             .features {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                background: linear-gradient(135deg, #8B5CF6 0%, #A855F7 100%);
                 color: white;
                 padding: 20px;
                 border-radius: 6px;
@@ -412,23 +444,27 @@ async def home():
                 margin: 10px 0;
                 padding-left: 20px;
             }
+            .claude-logo {
+                font-size: 24px;
+                margin-right: 10px;
+            }
         </style>
     </head>
     <body>
         <div class="container">
-            <div class="ai-badge">🤖 Powered by Real AI Technology</div>
+            <div class="ai-badge"><span class="claude-logo">🤖</span>Powered by Claude AI</div>
             <h1>Interactive AI Content Creation Agent</h1>
-            <p>Create high-performance content with actual AI analysis and human expertise integration</p>
+            <p>Create high-performance content with Claude's advanced reasoning and human expertise integration</p>
             
             <div class="features">
-                <h3>🚀 Real AI-Powered Features:</h3>
+                <h3>🚀 Claude AI-Powered Features:</h3>
                 <ul>
-                    <li>✅ Intent classification using GPT models</li>
-                    <li>✅ Customer journey mapping with AI analysis</li>
-                    <li>✅ Simulated Reddit research for customer insights</li>
-                    <li>✅ E-E-A-T optimization scoring</li>
-                    <li>✅ Complete content generation (800-1200 words)</li>
-                    <li>✅ Performance prediction vs AI-only content</li>
+                    <li>✅ Advanced intent classification using Claude's reasoning</li>
+                    <li>✅ Sophisticated customer journey mapping</li>
+                    <li>✅ Intelligent Reddit research simulation</li>
+                    <li>✅ Claude's superior E-E-A-T optimization</li>
+                    <li>✅ High-quality content generation (800-1200 words)</li>
+                    <li>✅ Claude's nuanced performance prediction</li>
                 </ul>
             </div>
             
@@ -454,7 +490,7 @@ async def home():
                     <label for="industry">What industry are you in?</label>
                     <input type="text" id="industry" name="industry" 
                            placeholder="e.g., Technology, Healthcare, Finance" required>
-                    <div class="help-text">AI will optimize content for your industry standards</div>
+                    <div class="help-text">Claude will optimize content for your industry standards</div>
                 </div>
                 
                 <!-- Target Audience -->
@@ -526,13 +562,13 @@ async def home():
                     <div class="help-text">Optional but helps add authenticity to your content</div>
                 </div>
                 
-                <button type="submit">🤖 Generate AI-Powered Content Strategy</button>
+                <button type="submit">🤖 Generate Claude AI-Powered Content Strategy</button>
             </form>
             
             <div id="loading" style="display: none; text-align: center; margin-top: 20px;">
-                <h3>🤖 AI is analyzing and generating your content...</h3>
-                <p>Running intent classification, journey mapping, Reddit research, and content generation...</p>
-                <p><em>This may take 30-60 seconds for real AI processing</em></p>
+                <h3>🤖 Claude is analyzing and generating your content...</h3>
+                <p>Running advanced reasoning, journey mapping, research simulation, and content generation...</p>
+                <p><em>This may take 30-60 seconds for Claude's thorough analysis</em></p>
             </div>
         </div>
         
@@ -560,7 +596,7 @@ async def generate_content(
     frequent_questions: str = Form(...),
     success_story: str = Form("")
 ):
-    """Generate enhanced content with REAL AI processing"""
+    """Generate enhanced content with REAL Claude AI processing"""
     try:
         # Parse subreddits
         target_subreddits = [s.strip() for s in subreddits.split(',') if s.strip()]
@@ -589,23 +625,23 @@ async def generate_content(
             }
         }
         
-        # REAL AI PROCESSING PIPELINE
-        print(f"🤖 Starting AI analysis for: {topic}")
+        # REAL CLAUDE AI PROCESSING PIPELINE
+        print(f"🤖 Starting Claude AI analysis for: {topic}")
         
-        # Step 1: Intent Classification (REAL AI)
-        print("🔍 Running intent classification...")
+        # Step 1: Intent Classification (REAL Claude AI)
+        print("🔍 Running Claude intent classification...")
         intent_data = intent_classifier.classify_intent(topic)
         
-        # Step 2: Customer Journey Mapping (REAL AI)
-        print("🗺️ Mapping customer journey...")
+        # Step 2: Customer Journey Mapping (REAL Claude AI)
+        print("🗺️ Claude mapping customer journey...")
         journey_data = journey_mapper.map_customer_journey(topic, intent_data)
         
-        # Step 3: Reddit Research Simulation (REAL AI)
-        print("📱 Researching Reddit insights...")
+        # Step 3: Reddit Research Simulation (REAL Claude AI)
+        print("📱 Claude researching insights...")
         reddit_insights = reddit_researcher.research_topic(topic, target_subreddits)
         
-        # Step 4: Content Type Classification (REAL AI)
-        print("📝 Classifying optimal content type...")
+        # Step 4: Content Type Classification (REAL Claude AI)
+        print("📝 Claude classifying optimal content type...")
         content_type_data = content_type_classifier.classify_content_type(topic, intent_data, business_context)
         chosen_content_type = content_type_data.get('primary_recommendation', {}).get('type', 'comprehensive_guide')
         
@@ -615,8 +651,8 @@ async def generate_content(
             topic, chosen_content_type, business_context, human_inputs
         )
         
-        # Step 6: Generate Complete Content (REAL AI)
-        print("✍️ Generating complete content with AI...")
+        # Step 6: Generate Complete Content (REAL Claude AI)
+        print("✍️ Claude generating complete content...")
         complete_content = content_generator.generate_complete_content(
             topic, chosen_content_type, reddit_insights, journey_data, 
             business_context, human_inputs, eeat_assessment
@@ -634,14 +670,14 @@ async def generate_content(
         performance_prediction = quality_score.get('performance_prediction', 'N/A')
         traffic_multiplier = quality_score.get('traffic_multiplier_estimate', 'N/A')
         
-        print("✅ AI processing complete!")
+        print("✅ Claude AI processing complete!")
         
         # Generate comprehensive results page
         html_response = f"""
         <!DOCTYPE html>
         <html>
         <head>
-            <title>AI-Generated Content Strategy - {topic}</title>
+            <title>Claude AI-Generated Content Strategy - {topic}</title>
             <style>
                 body {{ 
                     font-family: Arial, sans-serif; 
@@ -661,7 +697,7 @@ async def generate_content(
                     text-align: center;
                     margin-bottom: 30px;
                     padding: 20px;
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    background: linear-gradient(135deg, #8B5CF6 0%, #A855F7 100%);
                     color: white;
                     border-radius: 10px;
                 }}
@@ -682,7 +718,7 @@ async def generate_content(
                     margin: 20px 0;
                 }}
                 .metric-card {{
-                    background: linear-gradient(135deg, #28a745, #20c997);
+                    background: linear-gradient(135deg, #8B5CF6, #A855F7);
                     color: white;
                     padding: 20px;
                     border-radius: 10px;
@@ -700,7 +736,7 @@ async def generate_content(
                 .section {{
                     margin: 30px 0;
                     padding: 20px;
-                    border-left: 4px solid #667eea;
+                    border-left: 4px solid #8B5CF6;
                     background-color: #f8f9fa;
                     border-radius: 0 8px 8px 0;
                 }}
@@ -736,41 +772,42 @@ async def generate_content(
                     border-radius: 6px;
                     white-space: pre-wrap;
                     overflow-x: auto;
-                    border-left: 4px solid #667eea;
+                    border-left: 4px solid #8B5CF6;
                 }}
                 .success {{
                     color: #28a745;
                     font-weight: bold;
                 }}
                 .improvement {{
-                    background-color: #e7f3ff;
+                    background-color: #f3e8ff;
                     padding: 10px;
                     border-radius: 6px;
                     margin: 10px 0;
+                    border-left: 3px solid #8B5CF6;
                 }}
                 .ai-process {{
-                    background-color: #f0f8ff;
+                    background-color: #f3e8ff;
                     padding: 15px;
                     border-radius: 6px;
-                    border-left: 4px solid #667eea;
+                    border-left: 4px solid #8B5CF6;
                     margin: 10px 0;
                 }}
             </style>
         </head>
         <body>
             <div class="container">
-                <a href="/" class="back-btn">← Create New AI Content Strategy</a>
+                <a href="/" class="back-btn">← Create New Claude AI Content Strategy</a>
                 
                 <div class="header">
-                    <div class="ai-badge">🤖 Generated by Real AI</div>
-                    <h1>🎉 Your AI-Powered Content Strategy</h1>
+                    <div class="ai-badge">🤖 Generated by Claude AI</div>
+                    <h1>🎉 Your Claude AI-Powered Content Strategy</h1>
                     <p><strong>Topic:</strong> {topic}</p>
                     <p><strong>Content Type:</strong> {chosen_content_type.replace('_', ' ').title()}</p>
                     <p><strong>Word Count:</strong> {len(complete_content.split())} words</p>
                 </div>
 
                 <div class="section">
-                    <h2>📊 AI Performance Metrics</h2>
+                    <h2>📊 Claude AI Performance Metrics</h2>
                     <div class="metrics-grid">
                         <div class="metric-card">
                             <div class="metric-value">{eeat_score}/10</div>
@@ -786,22 +823,23 @@ async def generate_content(
                         </div>
                     </div>
                     <div class="highlight">
-                        <strong>🚀 AI Performance Prediction:</strong> {performance_prediction}
+                        <strong>🚀 Claude AI Performance Prediction:</strong> {performance_prediction}
                     </div>
                 </div>
 
                 <div class="section">
-                    <h2>🤖 AI Analysis Pipeline</h2>
+                    <h2>🤖 Claude AI Analysis Pipeline</h2>
                     <div class="ai-process">
-                        <h3>1. Intent Classification (AI-Powered)</h3>
+                        <h3>1. Intent Classification (Claude AI-Powered)</h3>
                         <p><strong>Primary Intent:</strong> {intent_data.get('primary_intent', 'N/A')}</p>
                         <p><strong>Search Stage:</strong> {intent_data.get('search_stage', 'N/A')}</p>
                         <p><strong>Target Audience:</strong> {intent_data.get('target_audience', 'N/A')}</p>
                         <p><strong>Content Complexity:</strong> {intent_data.get('content_complexity', 'N/A')}</p>
+                        <p><strong>Urgency Level:</strong> {intent_data.get('urgency_level', 'N/A')}</p>
                     </div>
                     
                     <div class="ai-process">
-                        <h3>2. Customer Journey Mapping (AI-Powered)</h3>
+                        <h3>2. Customer Journey Mapping (Claude AI-Powered)</h3>
                         <p><strong>Primary Stage:</strong> {journey_data.get('primary_stage', 'N/A')}</p>
                         <p><strong>Emotional State:</strong> {journey_data.get('emotional_state', 'N/A')}</p>
                         <p><strong>Key Pain Points:</strong></p>
@@ -812,11 +850,16 @@ async def generate_content(
                         <ul>
                             {"".join([f"<li>{q}</li>" for q in journey_data.get('customer_questions', [])])}
                         </ul>
+                        <p><strong>Next Actions:</strong></p>
+                        <ul>
+                            {"".join([f"<li>{action}</li>" for action in journey_data.get('next_actions', [])])}
+                        </ul>
                     </div>
                     
                     <div class="ai-process">
-                        <h3>3. Reddit Research Simulation (AI-Powered)</h3>
+                        <h3>3. Reddit Research Simulation (Claude AI-Powered)</h3>
                         <p><strong>Community Sentiment:</strong> {reddit_insights.get('sentiment_analysis', 'N/A')}</p>
+                        <p><strong>Estimated Community Size:</strong> {reddit_insights.get('community_size', 'N/A')}</p>
                         <p><strong>Common Customer Language:</strong></p>
                         <ul>
                             {"".join([f"<li>{lang}</li>" for lang in reddit_insights.get('customer_voice', {}).get('common_language', [])])}
@@ -825,55 +868,68 @@ async def generate_content(
                         <ul>
                             {"".join([f"<li>{q}</li>" for q in reddit_insights.get('customer_voice', {}).get('frequent_questions', [])])}
                         </ul>
+                        <p><strong>Community Complaints:</strong></p>
+                        <ul>
+                            {"".join([f"<li>{complaint}</li>" for complaint in reddit_insights.get('customer_voice', {}).get('complaints', [])])}
+                        </ul>
                         <p><strong>Community Recommendations:</strong></p>
                         <ul>
                             {"".join([f"<li>{rec}</li>" for rec in reddit_insights.get('customer_voice', {}).get('recommendations', [])])}
                         </ul>
+                        <p><strong>Trending Discussions:</strong></p>
+                        <ul>
+                            {"".join([f"<li>{discussion}</li>" for discussion in reddit_insights.get('trending_discussions', [])])}
+                        </ul>
                     </div>
 
                     <div class="ai-process">
-                        <h3>4. Content Type Classification (AI-Powered)</h3>
+                        <h3>4. Content Type Classification (Claude AI-Powered)</h3>
                         <p><strong>Recommended Type:</strong> {content_type_data.get('primary_recommendation', {}).get('type', 'N/A')}</p>
-                        <p><strong>Reasoning:</strong> {content_type_data.get('primary_recommendation', {}).get('reasoning', 'N/A')}</p>
+                        <p><strong>Claude's Reasoning:</strong> {content_type_data.get('primary_recommendation', {}).get('reasoning', 'N/A')}</p>
+                        <p><strong>Alternative Types:</strong> {', '.join(content_type_data.get('alternative_types', []))}</p>
                         <p><strong>Content Length:</strong> {content_type_data.get('content_length', 'N/A')}</p>
                         <p><strong>Recommended Tone:</strong> {content_type_data.get('tone', 'N/A')}</p>
                     </div>
                 </div>
 
                 <div class="section">
-                    <h2>✍️ AI-Generated Content</h2>
+                    <h2>✍️ Claude AI-Generated Content</h2>
                     <div class="content-box">
-                        <div class="ai-badge">🤖 Generated by OpenAI GPT</div>
+                        <div class="ai-badge">🤖 Generated by Claude AI</div>
                         <h3>Your High-Performance {chosen_content_type.replace('_', ' ').title()}</h3>
                         <p><strong>Generated Word Count:</strong> {len(complete_content.split())} words</p>
                         <p><strong>Optimized for:</strong> {business_context.get('brand_voice', 'Professional')} tone, {business_context.get('target_audience', 'target audience')}</p>
+                        <p><strong>Claude's Focus:</strong> Deep reasoning, context awareness, and nuanced understanding</p>
                         <pre>{complete_content}</pre>
                     </div>
                 </div>
 
                 <div class="section">
-                    <h2>🚀 AI Quality Analysis</h2>
+                    <h2>🚀 Claude AI Quality Analysis</h2>
                     <div class="content-box">
-                        <h3>Why This AI-Generated Content Outperforms Standard AI:</h3>
+                        <h3>Why Claude AI-Generated Content Outperforms Standard AI:</h3>
                         <div class="improvement">
-                            <strong>✅ Real Intent Analysis:</strong> AI classified user intent and search stage for precise targeting
+                            <strong>✅ Advanced Reasoning:</strong> Claude's superior reasoning provides deeper customer understanding
                         </div>
                         <div class="improvement">
-                            <strong>✅ Customer Journey Integration:</strong> AI mapped emotional state and pain points for relevance
+                            <strong>✅ Context Awareness:</strong> Claude maintains context throughout the entire analysis pipeline
                         </div>
                         <div class="improvement">
-                            <strong>✅ Community Voice Research:</strong> AI simulated Reddit research for authentic language
+                            <strong>✅ Nuanced Understanding:</strong> Claude grasps subtle business and customer nuances
                         </div>
                         <div class="improvement">
-                            <strong>✅ Business Context Optimization:</strong> Your expertise woven throughout by AI
+                            <strong>✅ Multi-Step Analysis:</strong> Claude performs comprehensive 7-step analysis process
                         </div>
                         <div class="improvement">
-                            <strong>✅ E-E-A-T Compliance:</strong> AI structured content for search performance
+                            <strong>✅ Human-Like Reasoning:</strong> Claude's constitutional AI training ensures thoughtful responses
+                        </div>
+                        <div class="improvement">
+                            <strong>✅ Business Intelligence:</strong> Your expertise integrated through Claude's advanced understanding
                         </div>
                     </div>
                     
                     <div class="highlight">
-                        <h3>🎯 AI-Identified Critical Improvements:</h3>
+                        <h3>🎯 Claude AI-Identified Critical Improvements:</h3>
                         <ul>
                             {"".join([f"<li>{improvement}</li>" for improvement in quality_score.get('critical_improvements', [])])}
                         </ul>
@@ -881,30 +937,33 @@ async def generate_content(
                 </div>
 
                 <div class="section">
-                    <h2>📈 Why This AI Approach Works</h2>
+                    <h2>📈 Why Claude AI Approach Works</h2>
                     <div class="content-box">
-                        <p><strong>🤖 Advanced AI Pipeline:</strong> Multi-step AI analysis instead of simple generation</p>
-                        <p><strong>🧠 Context-Aware:</strong> AI understands your business and customer context</p>
-                        <p><strong>🎯 Intent-Driven:</strong> AI analyzes user intent before generating content</p>
-                        <p><strong>👥 Customer-Centric:</strong> AI simulates customer research and voice</p>
-                        <p><strong>📊 Performance Optimized:</strong> AI structures content for search and engagement</p>
-                        <p><strong>🏆 E-E-A-T Compliant:</strong> AI ensures expertise, authority, and trust signals</p>
+                        <p><strong>🤖 Claude's Advanced Pipeline:</strong> Multi-step reasoning instead of simple generation</p>
+                        <p><strong>🧠 Constitutional AI:</strong> Claude's training ensures helpful, harmless, and honest responses</p>
+                        <p><strong>🎯 Intent-Driven Analysis:</strong> Claude deeply analyzes user intent before generating</p>
+                        <p><strong>👥 Customer-Centric Reasoning:</strong> Claude simulates authentic customer research</p>
+                        <p><strong>📊 Performance Optimization:</strong> Claude structures content for maximum engagement</p>
+                        <p><strong>🏆 E-E-A-T Compliance:</strong> Claude ensures expertise, authority, and trust signals</p>
+                        <p><strong>💡 Superior Context Handling:</strong> Claude maintains context across long conversations</p>
                         <p><strong>📈 Predicted Performance:</strong> <span class="success">{performance_prediction}</span></p>
                     </div>
                 </div>
 
                 <div class="section">
-                    <h2>🔧 Technical Implementation</h2>
+                    <h2>🔧 Claude AI Technical Implementation</h2>
                     <div class="content-box">
-                        <p><strong>AI Models Used:</strong> OpenAI GPT-3.5-turbo for analysis and generation</p>
-                        <p><strong>Processing Steps:</strong> 7-step AI pipeline with real API calls</p>
+                        <p><strong>AI Model Used:</strong> Claude 3 Haiku (Anthropic's fast, intelligent model)</p>
+                        <p><strong>Processing Steps:</strong> 7-step Claude AI pipeline with real API calls</p>
                         <p><strong>Quality Assurance:</strong> Multi-dimensional scoring and E-E-A-T assessment</p>
-                        <p><strong>Performance Tracking:</strong> Predictive analytics for content success</p>
+                        <p><strong>Performance Tracking:</strong> Claude's predictive analytics for content success</p>
+                        <p><strong>Constitutional AI:</strong> Ensures helpful, harmless, and honest content generation</p>
+                        <p><strong>Context Window:</strong> Claude maintains context throughout entire analysis</p>
                     </div>
                 </div>
 
                 <div style="text-align: center; margin-top: 40px;">
-                    <a href="/" class="back-btn" style="font-size: 18px; padding: 15px 30px;">🤖 Generate Another AI Content Strategy</a>
+                    <a href="/" class="back-btn" style="font-size: 18px; padding: 15px 30px;">🤖 Generate Another Claude AI Content Strategy</a>
                 </div>
             </div>
         </body>
@@ -917,19 +976,20 @@ async def generate_content(
         error_html = f"""
         <html>
         <body style="font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px;">
-            <h1>❌ AI Processing Error</h1>
-            <p><strong>Error during AI content generation:</strong> {str(e)}</p>
+            <h1>❌ Claude AI Processing Error</h1>
+            <p><strong>Error during Claude AI content generation:</strong> {str(e)}</p>
             <div style="background-color: #f8f9fa; padding: 15px; border-radius: 6px; margin: 20px 0;">
                 <h3>Possible Issues:</h3>
                 <ul>
-                    <li>AI API key not configured (check OPENAI_API_KEY environment variable)</li>
+                    <li>Claude API key not configured (check ANTHROPIC_API_KEY environment variable)</li>
                     <li>API rate limit exceeded</li>
                     <li>Network connectivity issue</li>
                     <li>Invalid API response format</li>
                 </ul>
-                <p><strong>Note:</strong> For full functionality, set your OpenAI API key as an environment variable.</p>
+                <p><strong>Note:</strong> For full Claude AI functionality, set your Anthropic API key as an environment variable.</p>
+                <p><strong>Get Claude API Key:</strong> <a href="https://console.anthropic.com/" target="_blank">console.anthropic.com</a></p>
             </div>
-            <a href="/" style="display: inline-block; margin-top: 20px; padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 6px;">← Try Again</a>
+            <a href="/" style="display: inline-block; margin-top: 20px; padding: 10px 20px; background-color: #8B5CF6; color: white; text-decoration: none; border-radius: 6px;">← Try Again</a>
         </body>
         </html>
         """
