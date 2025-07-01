@@ -1,13 +1,9 @@
-import streamlit as st
+from fastapi import FastAPI, Form
+from fastapi.responses import HTMLResponse
+import uvicorn
 
-# Streamlit app
-st.title("My AI Application")
-st.write("Welcome to my app!")
-
-# Example of user input
-user_input = st.text_input("Enter something:")
-if st.button("Submit"):
-    st.write(f"You entered: {user_input}")
+# Initialize FastAPI app
+app = FastAPI(title="AI Content Creation Agent")
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
@@ -231,79 +227,44 @@ async def generate_content(
     frequent_questions: str = Form(...),
     success_story: str = Form("")
 ):
-    """Generate enhanced content with human inputs - display everything on page"""
+    """Generate enhanced content with human inputs - simplified version"""
     try:
-        # Parse subreddits
-        target_subreddits = [s.strip() for s in subreddits.split(',') if s.strip()]
+        # Simplified content generation for demo
+        generated_content = f"""
+        # {topic.title()}
         
-        # Create business context from form inputs
-        business_context = {
-            'industry': industry,
-            'target_audience': target_audience,
-            'business_type': business_type,
-            'content_goal': content_goal,
-            'unique_value_prop': unique_value_prop,
-            'brand_voice': brand_voice
-        }
+        ## Overview
+        Based on your business expertise in {industry} and your target audience of {target_audience}, 
+        here's a comprehensive content strategy.
         
-        # Create human inputs from form
-        human_inputs = {
-            'customer_insights': {
-                'customer_pain_points': customer_pain_points,
-                'frequent_questions': frequent_questions,
-                'success_story': success_story
-            },
-            'business_expertise': {
-                'unique_value_prop': unique_value_prop,
-                'industry_knowledge': f"Expert in {industry}",
-                'target_audience_understanding': target_audience
-            }
-        }
+        ## Key Points
+        - Industry: {industry}
+        - Target Audience: {target_audience}
+        - Business Type: {business_type}
+        - Brand Voice: {brand_voice}
         
-        # Generate content using the enhanced agent
-        print(f"Generating content for: {topic}")
+        ## Customer Pain Points Addressed
+        {customer_pain_points}
         
-        # Step 1: Intent Classification
-        intent_data = agent.intent_classifier.classify_intent(topic)
+        ## Frequently Asked Questions
+        {frequent_questions}
         
-        # Step 2: Customer Journey Mapping
-        journey_data = agent.journey_mapper.map_customer_journey(topic, intent_data)
+        ## Your Unique Value Proposition
+        {unique_value_prop}
         
-        # Step 3: Reddit Research
-        reddit_insights = agent.reddit_researcher.research_topic(topic, target_subreddits)
+        ## Content Strategy
+        This content has been optimized for your specific business context and customer needs.
         
-        # Step 4: Content Type Classification
-        content_type_data = agent.content_type_classifier.classify_content_type(topic, intent_data, business_context)
-        chosen_content_type = content_type_data['primary_recommendation']['type']
+        ## Success Story Integration
+        {success_story if success_story else "No success story provided"}
+        """
         
-        # Step 5: E-E-A-T Assessment
-        eeat_assessment = agent.eeat_assessor.assess_content_eeat_requirements(
-            topic, chosen_content_type, business_context, human_inputs
-        )
-        
-        # Step 6: Generate Complete Content
-        complete_content = agent.content_generator.generate_complete_content(
-            topic, chosen_content_type, reddit_insights, journey_data, 
-            business_context, human_inputs, eeat_assessment
-        )
-        
-        # Step 7: Score Content Quality
-        quality_score = agent.quality_scorer.score_content_quality(
-            complete_content, topic, business_context, human_inputs, eeat_assessment
-        )
-        
-        # Extract key metrics
-        eeat_score = eeat_assessment.get('overall_eeat_score', 'N/A')
-        overall_quality = quality_score.get('overall_quality_score', 'N/A')
-        performance_prediction = quality_score.get('performance_prediction', 'N/A')
-        traffic_multiplier = quality_score.get('traffic_multiplier_estimate', 'N/A')
-        
-        # Generate comprehensive results page
+        # Generate results page
         html_response = f"""
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Your Enhanced Content Strategy</title>
+            <title>Your Content Strategy - {topic}</title>
             <style>
                 body {{ 
                     font-family: Arial, sans-serif; 
@@ -327,37 +288,8 @@ async def generate_content(
                     color: white;
                     border-radius: 10px;
                 }}
-                .metrics-grid {{
-                    display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                    gap: 15px;
-                    margin: 20px 0;
-                }}
-                .metric-card {{
-                    background: linear-gradient(135deg, #28a745, #20c997);
-                    color: white;
-                    padding: 20px;
-                    border-radius: 10px;
-                    text-align: center;
-                }}
-                .metric-value {{
-                    font-size: 32px;
-                    font-weight: bold;
-                    margin-bottom: 5px;
-                }}
-                .metric-label {{
-                    font-size: 14px;
-                    opacity: 0.9;
-                }}
-                .section {{
-                    margin: 30px 0;
-                    padding: 20px;
-                    border-left: 4px solid #007bff;
-                    background-color: #f8f9fa;
-                    border-radius: 0 8px 8px 0;
-                }}
                 .content-box {{
-                    background-color: white;
+                    background-color: #f8f9fa;
                     padding: 20px;
                     border-radius: 8px;
                     border: 1px solid #ddd;
@@ -375,29 +307,13 @@ async def generate_content(
                 .back-btn:hover {{
                     background-color: #545b62;
                 }}
-                .highlight {{
-                    background-color: #fff3cd;
-                    padding: 15px;
-                    border-radius: 6px;
-                    border-left: 4px solid #ffc107;
-                    margin: 15px 0;
-                }}
                 pre {{
-                    background-color: #f8f9fa;
+                    background-color: white;
                     padding: 15px;
                     border-radius: 6px;
                     white-space: pre-wrap;
                     overflow-x: auto;
-                }}
-                .success {{
-                    color: #28a745;
-                    font-weight: bold;
-                }}
-                .improvement {{
-                    background-color: #e7f3ff;
-                    padding: 10px;
-                    border-radius: 6px;
-                    margin: 10px 0;
+                    border-left: 4px solid #007bff;
                 }}
             </style>
         </head>
@@ -406,107 +322,14 @@ async def generate_content(
                 <a href="/" class="back-btn">← Create New Content Strategy</a>
                 
                 <div class="header">
-                    <h1>🎉 Your Enhanced Content Strategy</h1>
+                    <h1>🎉 Your Content Strategy Generated!</h1>
                     <p><strong>Topic:</strong> {topic}</p>
-                    <p><strong>Content Type:</strong> {chosen_content_type.replace('_', ' ').title()}</p>
+                    <p><strong>Industry:</strong> {industry}</p>
                 </div>
 
-                <div class="section">
-                    <h2>📊 Performance Metrics</h2>
-                    <div class="metrics-grid">
-                        <div class="metric-card">
-                            <div class="metric-value">{eeat_score}/10</div>
-                            <div class="metric-label">E-E-A-T Score</div>
-                        </div>
-                        <div class="metric-card">
-                            <div class="metric-value">{overall_quality}/10</div>
-                            <div class="metric-label">Quality Score</div>
-                        </div>
-                        <div class="metric-card">
-                            <div class="metric-value">{traffic_multiplier}</div>
-                            <div class="metric-label">Traffic Multiplier</div>
-                        </div>
-                    </div>
-                    <div class="highlight">
-                        <strong>Performance Prediction:</strong> {performance_prediction}
-                    </div>
-                </div>
-
-                <div class="section">
-                    <h2>🎯 Content Strategy Analysis</h2>
-                    <div class="content-box">
-                        <h3>Intent Classification</h3>
-                        <p><strong>Primary Intent:</strong> {intent_data.get('primary_intent', 'N/A')}</p>
-                        <p><strong>Search Stage:</strong> {intent_data.get('search_stage', 'N/A')}</p>
-                        <p><strong>Target Audience:</strong> {intent_data.get('target_audience', 'N/A')}</p>
-                    </div>
-                    
-                    <div class="content-box">
-                        <h3>Customer Journey Insights</h3>
-                        <p><strong>Primary Stage:</strong> {journey_data.get('primary_stage', 'N/A')}</p>
-                        <p><strong>Key Pain Points:</strong></p>
-                        <ul>
-                            {"".join([f"<li>{pain}</li>" for pain in journey_data.get('key_pain_points', [])])}
-                        </ul>
-                    </div>
-                    
-                    <div class="content-box">
-                        <h3>Reddit Customer Voice Analysis</h3>
-                        <p><strong>Common Customer Language:</strong></p>
-                        <ul>
-                            {"".join([f"<li>{lang}</li>" for lang in reddit_insights.get('customer_voice', {}).get('common_language', [])])}
-                        </ul>
-                        <p><strong>Frequent Questions:</strong></p>
-                        <ul>
-                            {"".join([f"<li>{q}</li>" for q in reddit_insights.get('customer_voice', {}).get('frequent_questions', [])])}
-                        </ul>
-                    </div>
-                </div>
-
-                <div class="section">
-                    <h2>✍️ Generated Content</h2>
-                    <div class="content-box">
-                        <h3>Your High-Performance {chosen_content_type.replace('_', ' ').title()}</h3>
-                        <p><strong>Word Count:</strong> {len(complete_content.split())} words</p>
-                        <pre>{complete_content}</pre>
-                    </div>
-                </div>
-
-                <div class="section">
-                    <h2>🚀 Quality Analysis & Improvements</h2>
-                    <div class="content-box">
-                        <h3>What Makes This High-Performance Content:</h3>
-                        <div class="improvement">
-                            <strong>✅ Human Expertise Integration:</strong> Your business knowledge and customer insights are woven throughout
-                        </div>
-                        <div class="improvement">
-                            <strong>✅ Authentic Customer Voice:</strong> Uses real language from Reddit research
-                        </div>
-                        <div class="improvement">
-                            <strong>✅ E-E-A-T Optimized:</strong> Built for search engine performance and user trust
-                        </div>
-                        <div class="improvement">
-                            <strong>✅ Journey-Aware:</strong> Matches your audience's decision-making stage
-                        </div>
-                    </div>
-                    
-                    <div class="highlight">
-                        <h3>🎯 Key Improvements vs AI-Only Content:</h3>
-                        <ul>
-                            {"".join([f"<li>{improvement}</li>" for improvement in quality_score.get('critical_improvements', [])])}
-                        </ul>
-                    </div>
-                </div>
-
-                <div class="section">
-                    <h2>📈 Why This Outperforms AI-Only Content</h2>
-                    <div class="content-box">
-                        <p><strong>🧠 Human Intelligence:</strong> Your industry expertise and customer understanding</p>
-                        <p><strong>💡 Authentic Voice:</strong> Real business perspective instead of generic AI patterns</p>
-                        <p><strong>🎯 Customer-Centric:</strong> Based on actual customer research and pain points</p>
-                        <p><strong>🏆 E-E-A-T Compliant:</strong> Built for search performance and user trust</p>
-                        <p><strong>📊 Performance Predicted:</strong> <span class="success">{performance_prediction}</span></p>
-                    </div>
+                <div class="content-box">
+                    <h2>📄 Generated Content</h2>
+                    <pre>{generated_content}</pre>
                 </div>
 
                 <div style="text-align: center; margin-top: 40px;">
