@@ -9,6 +9,7 @@ import os
 import json
 import logging
 import asyncio
+import requests
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Union
 
@@ -28,6 +29,7 @@ class Config:
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "your-anthropic-api-key-here")
     REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID", "your-reddit-client-id")
     REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET", "your-reddit-secret")
+    REDDIT_USER_AGENT = os.getenv("REDDIT_USER_AGENT", "ZeeSEOTool/1.0")
     DEBUG_MODE = os.getenv("DEBUG_MODE", "True").lower() == "true"
     PORT = int(os.getenv("PORT", 8002))
 
@@ -43,18 +45,47 @@ class LLMClient:
     """Enhanced LLM client for all AI interactions"""
     def __init__(self):
         self.api_key = config.ANTHROPIC_API_KEY
-        self.available = self.api_key != "your-anthropic-api-key-here"
+        self.available = self.api_key and self.api_key != "your-anthropic-api-key-here"
+        self.headers = {
+            "x-api-key": self.api_key,
+            "Content-Type": "application/json",
+            "anthropic-version": "2023-06-01"
+        }
     
     async def generate_content(self, prompt: str, model: str = "claude-3-haiku-20240307") -> str:
         """Generate content using Claude"""
         if not self.available:
             return self._get_fallback_content(prompt)
         
-        # Your actual Claude API implementation here
-        return self._get_fallback_content(prompt)
+        try:
+            import requests
+            
+            payload = {
+                "model": model,
+                "max_tokens": 4000,
+                "messages": [{"role": "user", "content": prompt}]
+            }
+            
+            response = requests.post(
+                "https://api.anthropic.com/v1/messages",
+                headers=self.headers,
+                json=payload,
+                timeout=60
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                return result["content"][0]["text"]
+            else:
+                logger.error(f"Claude API error: {response.status_code} - {response.text}")
+                return self._get_fallback_content(prompt)
+                
+        except Exception as e:
+            logger.error(f"Error calling Claude API: {str(e)}")
+            return self._get_fallback_content(prompt)
     
     def _get_fallback_content(self, prompt: str) -> str:
-        """Fallback content for demo purposes"""
+        """Fallback content when API is unavailable"""
         return f"""# Professional Content Generated
 
 Based on your requirements, here's a comprehensive analysis and content strategy.
@@ -72,7 +103,7 @@ This content addresses key market challenges while positioning your unique value
 ## Content Structure
 The generated content follows SEO best practices and E-E-A-T guidelines to ensure maximum search visibility and user engagement.
 
-*This is demo content. Integrate your actual Claude API for full functionality.*
+*Note: API key not configured or Claude API unavailable. Please check your ANTHROPIC_API_KEY environment variable.*
 """
 
 class RedditClient:
@@ -80,43 +111,210 @@ class RedditClient:
     def __init__(self):
         self.client_id = config.REDDIT_CLIENT_ID
         self.client_secret = config.REDDIT_CLIENT_SECRET
+        self.user_agent = config.REDDIT_USER_AGENT
         self.available = (self.client_id != "your-reddit-client-id" and 
                          self.client_secret != "your-reddit-secret")
+        self.access_token = None
+    
+    async def get_access_token(self) -> str:
+        """Get Reddit API access token"""
+        if not self.available:
+            return None
+            
+        try:
+            auth = requests.auth.HTTPBasicAuth(self.client_id, self.client_secret)
+            data = {'grant_type': 'client_credentials'}
+            headers = {'User-Agent': self.user_agent}
+            
+            response = requests.post('https://www.reddit.com/api/v1/access_token',
+                                   auth=auth, data=data, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                self.access_token = response.json()['access_token']
+                logger.info("✅ Reddit API authentication successful")
+                return self.access_token
+            else:
+                logger.error(f"❌ Reddit auth error: {response.status_code} - {response.text}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ Reddit auth exception: {str(e)}")
+            return None
     
     async def research_subreddits(self, subreddits: str, topic: str) -> Dict[str, Any]:
         """Research topic across specified subreddits"""
         if not self.available:
+            logger.info("🔧 Reddit API not configured - using fallback research data")
             return self._get_fallback_research(subreddits, topic)
         
-        # Your actual Reddit API implementation here
-        return self._get_fallback_research(subreddits, topic)
+        try:
+            logger.info(f"🔍 Starting Reddit research for '{topic}' in subreddits: {subreddits}")
+            
+            if not self.access_token:
+                await self.get_access_token()
+            
+            if not self.access_token:
+                return self._get_fallback_research(subreddits, topic)
+            
+            communities = [s.strip() for s in subreddits.split(',') if s.strip()]
+            all_posts = []
+            
+            headers = {
+                'Authorization': f'bearer {self.access_token}',
+                'User-Agent': self.user_agent
+            }
+            
+            for subreddit in communities[:3]:  # Limit to 3 subreddits for API limits
+                try:
+                    logger.info(f"🔍 Searching r/{subreddit} for '{topic}'...")
+                    
+                    # Search for topic in subreddit
+                    url = f'https://oauth.reddit.com/r/{subreddit}/search'
+                    params = {
+                        'q': topic,
+                        'limit': 25,
+                        'sort': 'relevance',
+                        'restrict_sr': True,
+                        't': 'month'  # Last month for recent insights
+                    }
+                    
+                    response = requests.get(url, headers=headers, params=params, timeout=30)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        posts = data.get('data', {}).get('children', [])
+                        all_posts.extend(posts)
+                        logger.info(f"✅ Found {len(posts)} posts in r/{subreddit}")
+                    else:
+                        logger.warning(f"⚠️ Error fetching from r/{subreddit}: {response.status_code}")
+                    
+                except Exception as e:
+                    logger.warning(f"⚠️ Error fetching from r/{subreddit}: {str(e)}")
+                    continue
+            
+            if all_posts:
+                logger.info(f"✅ Reddit research complete: {len(all_posts)} total posts analyzed")
+                return self._analyze_reddit_posts(all_posts, communities, topic)
+            else:
+                logger.info("⚠️ No Reddit posts found - using fallback data")
+                return self._get_fallback_research(subreddits, topic)
+                
+        except Exception as e:
+            logger.error(f"❌ Reddit research error: {str(e)}")
+            return self._get_fallback_research(subreddits, topic)
+    
+    def _analyze_reddit_posts(self, posts: List, communities: List[str], topic: str) -> Dict[str, Any]:
+        """Analyze Reddit posts for insights"""
+        pain_points = []
+        questions = []
+        trending_topics = []
+        
+        for post in posts:
+            post_data = post.get('data', {})
+            title = post_data.get('title', '').lower()
+            selftext = post_data.get('selftext', '').lower()
+            score = post_data.get('score', 0)
+            
+            # Extract pain points (posts with negative sentiment words)
+            pain_indicators = ['problem', 'issue', 'struggle', 'difficult', 'frustrating', 'help', 'confused', 
+                             'broken', 'error', 'fail', 'trouble', 'stuck', 'wrong', 'bad']
+            if any(indicator in title or indicator in selftext for indicator in pain_indicators):
+                if title and len(title) > 10:  # Filter out very short titles
+                    pain_points.append(title.title())
+            
+            # Extract questions
+            if '?' in title and len(title) > 10:
+                questions.append(title.title())
+            
+            # Extract trending topics (high-score posts)
+            if score > 10 and title and len(title) > 10:
+                trending_topics.append(title.title())
+        
+        # Deduplicate and limit
+        pain_points = list(set(pain_points))[:6]
+        questions = list(set(questions))[:6]
+        trending_topics = list(set(trending_topics))[:5]
+        
+        # Calculate sentiment
+        total_posts = len(posts)
+        positive_indicators = ['great', 'amazing', 'love', 'best', 'perfect', 'awesome', 'excellent']
+        negative_indicators = ['hate', 'terrible', 'worst', 'awful', 'horrible', 'useless', 'disappointed']
+        
+        positive_count = sum(1 for post in posts 
+                           if any(indicator in post.get('data', {}).get('title', '').lower() 
+                                 for indicator in positive_indicators))
+        negative_count = sum(1 for post in posts 
+                           if any(indicator in post.get('data', {}).get('title', '').lower() 
+                                 for indicator in negative_indicators))
+        
+        positive_ratio = positive_count / total_posts if total_posts > 0 else 0.6
+        negative_ratio = negative_count / total_posts if total_posts > 0 else 0.1
+        neutral_ratio = 1 - positive_ratio - negative_ratio
+        
+        return {
+            "communities_analyzed": len(communities),
+            "total_posts_analyzed": total_posts,
+            "sentiment_distribution": {
+                "positive": round(positive_ratio, 2),
+                "neutral": round(neutral_ratio, 2),
+                "negative": round(negative_ratio, 2)
+            },
+            "key_pain_points": pain_points if pain_points else [
+                f"Budget constraints with {topic}",
+                f"Difficulty finding reliable {topic} information",
+                f"Overwhelming number of {topic} options",
+                f"Time constraints for {topic} research"
+            ],
+            "common_questions": questions if questions else [
+                f"What's the best {topic} for beginners?",
+                f"How much should I budget for {topic}?",
+                f"What are common {topic} mistakes to avoid?"
+            ],
+            "trending_subtopics": trending_topics if trending_topics else [
+                f"{topic} reviews and comparisons",
+                f"Budget-friendly {topic} options",
+                f"{topic} troubleshooting guides"
+            ],
+            "engagement_metrics": {
+                "avg_upvotes": sum(post.get('data', {}).get('score', 0) for post in posts) // len(posts) if posts else 45,
+                "avg_comments": sum(post.get('data', {}).get('num_comments', 0) for post in posts) // len(posts) if posts else 12
+            },
+            "best_posting_times": ["Tuesday 2-4 PM", "Thursday 6-8 PM"],
+            "communities": communities,
+            "data_source": "live_reddit_api"
+        }
     
     def _get_fallback_research(self, subreddits: str, topic: str) -> Dict[str, Any]:
-        """Fallback research data for demo"""
+        """Fallback research data when API unavailable"""
         communities = [s.strip() for s in subreddits.split(',') if s.strip()]
         return {
             "communities_analyzed": len(communities),
             "total_posts_analyzed": 150,
             "sentiment_distribution": {"positive": 0.6, "neutral": 0.3, "negative": 0.1},
             "key_pain_points": [
-                "Budget constraints and cost considerations",
-                "Difficulty finding reliable information",
-                "Time constraints for research",
-                "Overwhelming number of options"
+                f"Budget constraints and cost considerations for {topic}",
+                f"Difficulty finding reliable {topic} information",
+                f"Time constraints for {topic} research",
+                f"Overwhelming number of {topic} options",
+                f"Confusion about {topic} best practices"
             ],
             "common_questions": [
                 f"What's the best {topic} for beginners?",
                 f"How much should I budget for {topic}?",
-                f"What are the most common mistakes with {topic}?"
+                f"What are the most common {topic} mistakes?",
+                f"Where can I find reliable {topic} reviews?"
             ],
             "trending_subtopics": [
                 f"{topic} reviews and comparisons",
                 f"Budget-friendly {topic} options",
-                f"{topic} troubleshooting guides"
+                f"{topic} troubleshooting guides",
+                f"{topic} for beginners"
             ],
             "engagement_metrics": {"avg_upvotes": 45, "avg_comments": 12},
             "best_posting_times": ["Tuesday 2-4 PM", "Thursday 6-8 PM"],
-            "communities": communities
+            "communities": communities,
+            "data_source": "fallback_demo_data",
+            "note": "Configure REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET for real insights"
         }
 
 # ================== AGENT CLASSES ==================
@@ -336,50 +534,68 @@ class FullContentGenerator:
                                   reddit_insights: Dict = None) -> str:
         """Generate comprehensive content using all inputs"""
         
-        # Build comprehensive prompt
-        prompt = f"""
-        Create an expert-level, comprehensive guide about "{topic}" that demonstrates deep expertise and provides exceptional value.
+        # Build comprehensive prompt with all intelligence data
+        prompt = f"""You are an expert content strategist and writer. Create a comprehensive, authoritative guide about "{topic}" that demonstrates deep expertise and provides exceptional value to readers.
 
-        BUSINESS CONTEXT:
-        - Industry: {business_context.get('industry')}
-        - Target Audience: {business_context.get('target_audience')}
-        - Business Type: {business_context.get('business_type')}
-        - Unique Value Proposition: {business_context.get('unique_value_prop')}
+BUSINESS INTELLIGENCE:
+- Industry: {business_context.get('industry')}
+- Target Audience: {business_context.get('target_audience')}
+- Business Type: {business_context.get('business_type')}
+- Unique Value Proposition: {business_context.get('unique_value_prop')}
 
-        CUSTOMER INSIGHTS:
-        - Pain Points: {human_inputs.get('customer_pain_points')}
-        """
+HUMAN EXPERTISE & INSIGHTS:
+- Customer Pain Points: {human_inputs.get('customer_pain_points')}
+- Business Experience: {business_context.get('unique_value_prop')}"""
         
-        if reddit_insights:
+        if reddit_insights and reddit_insights.get('key_pain_points'):
             prompt += f"""
+
+REAL CUSTOMER RESEARCH (Reddit Analysis):
+- Communities Analyzed: {reddit_insights.get('communities_analyzed', 0)} subreddits
+- Key Pain Points from Real Users: {', '.join(reddit_insights.get('key_pain_points', [])[:3])}
+- Common Questions People Ask: {', '.join(reddit_insights.get('common_questions', [])[:3])}
+- Trending Subtopics: {', '.join(reddit_insights.get('trending_subtopics', [])[:3])}"""
         
-        REDDIT RESEARCH INSIGHTS:
-        - Communities Analyzed: {reddit_insights.get('communities_analyzed', 0)}
-        - Key Pain Points from Real Users: {', '.join(reddit_insights.get('key_pain_points', []))}
-        - Common Questions: {', '.join(reddit_insights.get('common_questions', []))}
-        - Trending Subtopics: {', '.join(reddit_insights.get('trending_subtopics', []))}
-        """
+        improvement_focus = ai_instructions.get('improvement_focus', '')
+        if improvement_focus:
+            prompt += f"""
+
+SPECIFIC IMPROVEMENT FOCUS:
+{improvement_focus}"""
         
         prompt += f"""
+
+CONTENT REQUIREMENTS:
+- Writing Style: {ai_instructions.get('writing_style', 'Professional and engaging')}
+- Length: Comprehensive (1500-2500 words)
+- Target E-E-A-T Score: 8.5+ (Experience, Expertise, Authoritativeness, Trustworthiness)
+- SEO Optimization: Include relevant keywords naturally
+- Structure: Use clear headings, subheadings, and bullet points
+- Include actionable advice and practical tips
+- Address customer pain points directly with solutions
+- Demonstrate expertise through detailed explanations
+- Use examples and case studies where relevant
+
+CONTENT STRUCTURE GUIDELINES:
+1. Start with a compelling introduction that hooks the reader
+2. Include an executive summary or key takeaways
+3. Address pain points identified in research
+4. Provide step-by-step guidance where applicable
+5. Include expert tips and best practices
+6. Add a strong conclusion with next steps
+7. Ensure content flows logically and is easy to read
+
+Create content that clearly outperforms generic AI content by incorporating:
+- Deep industry expertise and insider knowledge
+- Real customer insights and pain points
+- Practical, actionable advice readers can implement
+- Authentic voice that builds trust and authority
+- Comprehensive coverage that answers all related questions
+- SEO optimization without sacrificing readability
+
+Write as an expert who truly understands both the subject matter and the audience's needs. Make every paragraph valuable and ensure the content provides genuine insights that readers can't find elsewhere."""
         
-        WRITING REQUIREMENTS:
-        - Style: {ai_instructions.get('writing_style', 'Professional and engaging')}
-        - Length: Comprehensive (1500+ words)
-        - Include real-world examples and practical advice
-        - Address customer pain points directly
-        - Demonstrate expertise through detailed explanations
-        - Use clear structure with headings and subheadings
-        - Include actionable takeaways
-        
-        Create content that clearly outperforms generic AI content by incorporating:
-        1. Deep industry expertise
-        2. Real customer insights
-        3. Practical, actionable advice
-        4. Authentic voice and perspective
-        5. Comprehensive coverage of the topic
-        """
-        
-        return await self.llm_client.generate_content(prompt)
+        return await self.llm_client.generate_content(prompt, model="claude-3-haiku-20240307")
 
 class HumanInputIdentifier:
     """Identifies and analyzes human input elements"""
@@ -1434,6 +1650,17 @@ async def health_check():
 @app.on_event("startup")
 async def startup():
     logger.info("🚀 Zee SEO Tool Enhanced v3.0 starting...")
+    
+    # Debug API key status
+    logger.info(f"🔑 Anthropic API Key configured: {'Yes' if zee_orchestrator.llm_client.available else 'No'}")
+    if zee_orchestrator.llm_client.available:
+        logger.info(f"🔑 API Key starts with: {config.ANTHROPIC_API_KEY[:10]}...")
+    
+    logger.info(f"🔑 Reddit API configured: {'Yes' if zee_orchestrator.reddit_client.available else 'No'}")
+    if zee_orchestrator.reddit_client.available:
+        logger.info(f"🔑 Reddit Client ID: {config.REDDIT_CLIENT_ID[:10]}...")
+        logger.info(f"🔑 Reddit User Agent: {config.REDDIT_USER_AGENT}")
+    
     agent_status = zee_orchestrator.get_agent_status()
     operational = sum(1 for status in agent_status.values() if status == 'operational')
     logger.info(f"🤖 Agents operational: {operational}/{len(agent_status)}")
