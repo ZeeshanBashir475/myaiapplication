@@ -1,4 +1,7 @@
 import os
+import sys
+# Ensure src directory is on the Python path
+sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
 import json
 import requests
 from typing import Dict, List, Any
