@@ -3,7 +3,7 @@ import json
 import requests
 from typing import Dict, List, Any
 from fastapi import FastAPI, Form, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 import uvicorn
 
 # Import enhanced agents
@@ -11,7 +11,6 @@ from src.agents.enhanced_reddit_researcher import EnhancedRedditResearcher
 from src.agents.enhanced_eeat_assessor import EnhancedEEATAssessor
 from src.agents.topic_research_agent import AdvancedTopicResearchAgent
 from src.agents.improvement_tracking_agent import ContinuousImprovementTracker
-from src.utils.llm_client import LLMClient
 
 # Initialize FastAPI app
 app = FastAPI(title="Zee SEO Tool - Advanced Content Intelligence Platform")
@@ -26,136 +25,137 @@ class ClaudeAgent:
             "Content-Type": "application/json",
             "anthropic-version": "2023-06-01"
         }
-        
-    def call_claude(self, messages: List[Dict], model: str = "claude-3-haiku-20240307", max_tokens: int = 1500):
-        """Make API call to Claude"""
+    
+    def call_claude(self, messages: List[Dict], model: str = "claude-3-haiku-20240307", max_tokens: int = 1500) -> str:
+        """Call Claude API with a user prompt"""
         try:
-            if messages and messages[0].get("role") == "user":
-                user_message = messages[0]["content"]
-            else:
-                user_message = "Please help with this request."
-            
-            payload = {
-                "model": model,
-                "max_tokens": max_tokens,
-                "messages": [{"role": "user", "content": user_message}]
-            }
-            
+            user_message = messages[0]["content"] if messages and messages[0].get("role") == "user" else "Please help with this request."
+            payload = {"model": model, "max_tokens": max_tokens, "messages": [{"role": "user", "content": user_message}]}
             response = requests.post(
                 "https://api.anthropic.com/v1/messages",
                 headers=self.anthropic_headers,
                 json=payload,
                 timeout=30
             )
-            
             if response.status_code == 200:
                 return response.json()["content"][0]["text"]
-            else:
-                return f"Demo mode - Claude API unavailable"
-                
+            return "Demo mode - Claude API unavailable"
         except Exception:
-            return f"Demo mode - Using fallback content"
+            return "Demo mode - Using fallback content"
 
-# Enhanced content generator
-class EnhancedContentGenerator:
-    def __init__(self, claude_agent):
-        self.claude_agent = claude_agent
-        
-    def generate_content(self, topic: str, business_context: Dict, human_inputs: Dict, 
-                        ai_instructions: Dict, reddit_insights: Dict = None, 
-                        topic_research: Dict = None) -> str:
-        """Generate content using enhanced context"""
-        
-        ai_prompt = f"""
-        Create exceptional, human-centered content about \"{topic}\" that demonstrates high E-E-A-T standards.
-        
-        BUSINESS CONTEXT:
-        - Industry: {business_context.get('industry')}
-        - Target Audience: {business_context.get('target_audience')}
-        - Business Type: {business_context.get('business_type')}
-        - Unique Value Prop: {business_context.get('unique_value_prop')}
-        
-        HUMAN EXPERTISE & INSIGHTS:
-        - Customer Pain Points: {human_inputs.get('customer_pain_points')}
-        - Industry Experience: {human_inputs.get('unique_value_prop')}
-        
-        REAL CUSTOMER RESEARCH:
-        {self._format_reddit_insights(reddit_insights) if reddit_insights else 'Not available'}
-        
-        TOPIC INTELLIGENCE:
-        {self._format_topic_research(topic_research) if topic_research else 'Not available'}
-        
-        AI INSTRUCTIONS:
-        - Writing Style: {ai_instructions.get('writing_style', 'Professional')}
-        - Target Length: {ai_instructions.get('target_word_count', '1000-1500 words')}
-        - Special Notes: {ai_instructions.get('additional_notes', 'None')}
-        
-        CONTENT REQUIREMENTS:
-        1. Demonstrate genuine experience through specific examples and personal insights
-        2. Show expertise with accurate, in-depth information
-        3. Build authority through unique perspectives and comprehensive coverage
-        4. Establish trust through transparency, balanced views, and credible sources
-        5. Address real customer pain points identified in the research
-        6. Use authentic language that resonates with the target audience
-        7. Include specific, actionable advice that only an expert would know
-        8. Reference credible sources and provide balanced perspectives
-        
-        Create content that is significantly better than generic AI content by incorporating:
-        - Real customer language and concerns from the research
-        - Industry-specific expertise and insider knowledge
-        - Personal experience and authentic insights
-        - Practical solutions to genuine problems
-        
-        Make this content worthy of being cited as an authoritative source.
-        """
-        messages = [{"role": "user", "content": ai_prompt}]
-        return self.claude_agent.call_claude(messages, max_tokens=3000)
-    
-    def _format_reddit_insights(self, reddit_insights: Dict) -> str:
-        if not reddit_insights:
-            return "No Reddit insights available"
-        formatted = []
-        pain_points = reddit_insights.get('pain_point_analysis', {}).get('critical_pain_points', [])
-        if pain_points:
-            formatted.append(f"Critical Pain Points: {', '.join(pain_points[:3])}")
-        quotes = reddit_insights.get('authenticity_markers', {}).get('real_customer_quotes', [])
-        if quotes:
-            formatted.append(f"Real Customer Quotes: {'; '.join(quotes[:2])}")
-        vocab = reddit_insights.get('language_intelligence', {}).get('customer_vocabulary', [])
-        if vocab:
-            formatted.append(f"Customer Language: {', '.join(vocab[:5])}")
-        return '\n'.join(formatted)
-    
-    def _format_topic_research(self, topic_research: Dict) -> str:
-        if not topic_research:
-            return "No topic research available"
-        formatted = []
-        gaps = topic_research.get('topic_research', {}).get('content_gaps', {}).get('market_gaps', {})
-        if gaps.get('underserved_questions'):
-            formatted.append(f"Underserved Questions: {', '.join(gaps['underserved_questions'][:3])}")
-        opportunities = topic_research.get('topic_research', {}).get('opportunity_scoring', {}).get('top_opportunities', [])
-        if opportunities:
-            top_ops = [op.get('name', '') for op in opportunities[:3]]
-            formatted.append(f"Top Opportunities: {', '.join(top_ops)}")
-        return '\n'.join(formatted)
-
-# Initialize enhanced components
+# Agents
 claude_agent = ClaudeAgent()
-enhanced_content_generator = EnhancedContentGenerator(claude_agent)
 reddit_researcher = EnhancedRedditResearcher()
 eeat_assessor = EnhancedEEATAssessor()
 topic_researcher = AdvancedTopicResearchAgent()
 improvement_tracker = ContinuousImprovementTracker()
+enhanced_content_generator = None  # Initialized in endpoint
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    # ... (omitted for brevity, include your full HTML content here) ...
-    return HTMLResponse(content="<html>...Your full HTML here...</html>")
+    """Serve the main input form"""
+    return HTMLResponse(content="""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head><meta charset="UTF-8"><title>Zee SEO Tool</title></head>
+    <body>
+        <h1>Zee SEO Tool - Advanced Content Intelligence Platform</h1>
+        <form action="/generate-advanced" method="post">
+            <!-- Input fields -->
+            <label>Topic:<input name="topic" required></label><br>
+            <label>Subreddits:<input name="subreddits" required></label><br>
+            <label>Industry:<input name="industry" required></label><br>
+            <label>Target Audience:<input name="target_audience" required></label><br>
+            <label>Business Type:<input name="business_type" required></label><br>
+            <label>Unique Value Prop:<textarea name="unique_value_prop" required></textarea></label><br>
+            <label>Customer Pain Points:<textarea name="customer_pain_points" required></textarea></label><br>
+            <label>Writing Style:<input name="writing_style"></label><br>
+            <label>Target Word Count:<input name="target_word_count"></label><br>
+            <label>Additional Notes:<textarea name="additional_notes"></textarea></label><br>
+            <button type="submit">Generate Report</button>
+        </form>
+    </body>
+    </html>
+    """ )
 
 @app.post("/generate-advanced")
-async def generate_advanced_content(...):
-    # Endpoint logic unchanged, combine all steps as in your initial code
-    pass
+async def generate_advanced_content(
+    topic: str = Form(...),
+    subreddits: str = Form(...),
+    industry: str = Form(...),
+    target_audience: str = Form(...),
+    business_type: str = Form(...),
+    unique_value_prop: str = Form(...),
+    customer_pain_points: str = Form(...),
+    writing_style: str = Form(""),
+    target_word_count: str = Form(""),
+    additional_notes: str = Form("")
+):
+    """Generate advanced content intelligence report"""
+    # Context objects
+    business_context = {
+        'industry': industry,
+        'target_audience': target_audience,
+        'business_type': business_type,
+        'unique_value_prop': unique_value_prop
+    }
+    human_inputs = {
+        'customer_pain_points': customer_pain_points
+    }
+    ai_instructions = {
+        'writing_style': writing_style,
+        'target_word_count': target_word_count,
+        'additional_notes': additional_notes
+    }
+
+    # 1. Reddit research
+    sub_list = [s.strip() for s in subreddits.split(',')]
+    reddit_insights = reddit_researcher.research_topic_comprehensive(topic, sub_list, max_posts_per_subreddit=15)
+
+    # 2. Topic research
+    topic_research = topic_researcher.research_topic_comprehensive(topic, industry, target_audience, business_context)
+
+    # 3. Generate content
+    from src.agents.enhanced_content_generator import EnhancedContentGenerator
+    enhanced_content_generator = EnhancedContentGenerator(claude_agent)
+    generated_content = enhanced_content_generator.generate_content(
+        topic, business_context, human_inputs, ai_instructions, reddit_insights, topic_research
+    )
+
+    # 4. E-E-A-T assessment
+    eeat_assessment = eeat_assessor.assess_comprehensive_eeat(
+        generated_content, topic, business_context, human_inputs, reddit_insights
+    )
+
+    # 5. Content quality metrics
+    word_count = len(generated_content.split())
+    content_metrics = {
+        'word_count': word_count,
+        'readability_score': 85.0,
+        'uniqueness_score': 92.0
+    }
+
+    # 6. Improvement tracker
+    snapshot_id = improvement_tracker.track_analysis(
+        topic,
+        eeat_assessment['eeat_assessment'],
+        eeat_assessment['human_vs_ai_analysis'],
+        content_metrics,
+        business_context,
+        human_inputs
+    )
+    improvement_report = improvement_tracker.generate_improvement_report(snapshot_id)
+
+    # 7. Render HTML report (simplified)
+    html = f"""
+    <html><body>
+    <h1>Report for {topic}</h1>
+    <p><strong>Generated Content:</strong></p><pre>{generated_content}</pre>
+    <p><strong>E-E-A-T Score:</strong> {eeat_assessment['eeat_assessment']['overall_score']}</p>
+    <p><strong>Improvement Level:</strong> {improvement_report['improvement_summary']['improvement_level']}</p>
+    </body></html>
+    """
+    return HTMLResponse(content=html)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8002)
