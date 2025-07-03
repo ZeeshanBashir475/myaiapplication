@@ -28,7 +28,7 @@ REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID")
 REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET") 
 REDDIT_USER_AGENT = os.getenv("REDDIT_USER_AGENT", "ZeeSEOTool/1.0 by ZeeshanBashir")
 
-class ClaudeAgent:
+class AIAgent:
     def __init__(self):
         self.anthropic_headers = {
             "x-api-key": ANTHROPIC_API_KEY,
@@ -36,8 +36,8 @@ class ClaudeAgent:
             "anthropic-version": "2023-06-01"
         }
         
-    def call_claude(self, messages: List[Dict], model: str = "claude-3-haiku-20240307", max_tokens: int = 1000):
-        """Make API call to Claude"""
+    def call_ai(self, messages: List[Dict], model: str = "claude-3-haiku-20240307", max_tokens: int = 1000):
+        """Make API call to AI"""
         try:
             if messages and messages[0].get("role") == "user":
                 user_message = messages[0]["content"]
@@ -60,14 +60,14 @@ class ClaudeAgent:
             if response.status_code == 200:
                 return response.json()["content"][0]["text"]
             else:
-                return f"Using demo mode - Claude API Error: {response.status_code}"
+                return f"Using demo mode - AI API Error: {response.status_code}"
                 
         except Exception as e:
-            return f"Using demo mode - Claude Error: {str(e)}"
+            return f"Using demo mode - AI Error: {str(e)}"
 
 class IntentClassifier:
-    def __init__(self, claude_agent):
-        self.claude_agent = claude_agent
+    def __init__(self, ai_agent):
+        self.ai_agent = ai_agent
         
     def classify_intent(self, topic: str) -> Dict[str, Any]:
         prompt = f"""
@@ -84,7 +84,7 @@ class IntentClassifier:
         """
         
         messages = [{"role": "user", "content": prompt}]
-        response = self.claude_agent.call_claude(messages)
+        response = self.ai_agent.call_ai(messages)
         
         try:
             if "{" in response and "}" in response:
@@ -104,8 +104,8 @@ class IntentClassifier:
         }
 
 class JourneyMapper:
-    def __init__(self, claude_agent):
-        self.claude_agent = claude_agent
+    def __init__(self, ai_agent):
+        self.ai_agent = ai_agent
         
     def map_customer_journey(self, topic: str, intent_data: Dict) -> Dict[str, Any]:
         prompt = f"""
@@ -123,7 +123,7 @@ class JourneyMapper:
         """
         
         messages = [{"role": "user", "content": prompt}]
-        response = self.claude_agent.call_claude(messages)
+        response = self.ai_agent.call_ai(messages)
         
         try:
             if "{" in response and "}" in response:
@@ -158,8 +158,6 @@ class RedditAPIClient:
                 return
             
             print(f"🔗 Initializing Reddit API client...")
-            print(f"Client ID: {REDDIT_CLIENT_ID[:8]}..." if REDDIT_CLIENT_ID else "None")
-            print(f"User Agent: {REDDIT_USER_AGENT}")
             
             # Initialize PRAW Reddit instance
             self.reddit = praw.Reddit(
@@ -182,14 +180,13 @@ class RedditAPIClient:
         try:
             if self.reddit:
                 subreddit = self.reddit.subreddit('test')
-                subreddit.display_name  # This will fail if credentials are invalid
+                subreddit.display_name
         except Exception as e:
             raise Exception(f"Reddit API connection test failed: {str(e)}")
     
     def research_topic(self, topic: str, subreddits: List[str]) -> Dict[str, Any]:
         """Research topic using real Reddit API or fallback to simulation"""
         if not self.reddit or not self.praw_available:
-            print("⚠️ Reddit API unavailable, using simulation...")
             return self._simulate_reddit_research(topic, subreddits)
         
         try:
@@ -210,7 +207,7 @@ class RedditAPIClient:
             }
             
             # Search across provided subreddits
-            for subreddit_name in subreddits[:3]:  # Limit to 3 subreddits to avoid rate limits
+            for subreddit_name in subreddits[:3]:
                 try:
                     subreddit_insights = self._search_subreddit(subreddit_name, topic, limit=10)
                     insights = self._merge_insights(insights, subreddit_insights)
@@ -222,7 +219,6 @@ class RedditAPIClient:
             insights['authenticity_score'] = self._calculate_authenticity_score(insights)
             insights['insight_quality'] = self._assess_insight_quality(insights)
             
-            print(f"✅ Found {len(insights['real_experiences'])} authentic experiences")
             return insights
             
         except Exception as e:
@@ -237,17 +233,7 @@ class RedditAPIClient:
                 
             subreddit = self.reddit.subreddit(subreddit_name)
             
-            insights = {
-                'customer_voice': {
-                    'common_language': [],
-                    'frequent_questions': [],
-                    'complaints': [],
-                    'recommendations': []
-                },
-                'trending_discussions': [],
-                'authenticity_markers': [],
-                'real_experiences': []
-            }
+            insights = self._empty_insights()
             
             # Search recent posts
             for submission in subreddit.search(topic, time_filter='month', limit=limit):
@@ -256,14 +242,13 @@ class RedditAPIClient:
                 
                 # Analyze top comments
                 submission.comments.replace_more(limit=0)
-                for comment in submission.comments[:2]:  # Top 2 comments
+                for comment in submission.comments[:2]:
                     comment_insights = self._analyze_comment(comment)
                     insights = self._merge_post_insights(insights, comment_insights)
             
             return insights
             
         except Exception as e:
-            print(f"⚠️ Error searching r/{subreddit_name}: {str(e)}")
             return self._empty_insights()
     
     def _analyze_post(self, submission) -> Dict[str, Any]:
@@ -272,26 +257,22 @@ class RedditAPIClient:
         
         text = f"{submission.title} {submission.selftext}".lower()
         
-        # Extract common language patterns
+        # Extract insights
         if len(text) > 20:
             insights['customer_voice']['common_language'].append(text[:100] + '...')
         
-        # Look for questions
         if '?' in text:
             questions = [q.strip() + '?' for q in text.split('?') if q.strip()]
             insights['customer_voice']['frequent_questions'].extend(questions[:2])
         
-        # Look for complaints
         complaint_words = ['problem', 'issue', 'terrible', 'awful', 'frustrated', 'annoying']
         if any(word in text for word in complaint_words):
             insights['customer_voice']['complaints'].append(text[:150] + '...')
         
-        # Look for recommendations
         rec_words = ['recommend', 'suggest', 'try', 'use', 'works well']
         if any(word in text for word in rec_words):
             insights['customer_voice']['recommendations'].append(text[:150] + '...')
         
-        # Authenticity markers
         auth_markers = ['personally', 'in my experience', 'i found', 'this happened to me']
         for marker in auth_markers:
             if marker in text:
@@ -300,7 +281,6 @@ class RedditAPIClient:
                     'context': text[max(0, text.find(marker)-50):text.find(marker)+100]
                 })
         
-        # Real experiences (first-person language)
         if any(phrase in text for phrase in ['i ', 'my ', 'me ', 'i\'ve', 'i\'m']):
             insights['real_experiences'].append({
                 'experience': text[:200] + '...' if len(text) > 200 else text,
@@ -313,7 +293,6 @@ class RedditAPIClient:
     def _analyze_comment(self, comment) -> Dict[str, Any]:
         """Analyze a Reddit comment for insights"""
         if hasattr(comment, 'body'):
-            # Create a mock submission-like object for consistent analysis
             class MockSubmission:
                 def __init__(self, comment):
                     self.title = ""
@@ -340,7 +319,6 @@ class RedditAPIClient:
             if key in main_insights and key in new_insights:
                 main_insights[key].extend(new_insights[key])
         
-        # Merge customer_voice separately
         if 'customer_voice' in new_insights:
             for voice_key in ['common_language', 'frequent_questions', 'complaints', 'recommendations']:
                 if voice_key in new_insights['customer_voice']:
@@ -355,17 +333,10 @@ class RedditAPIClient:
     def _calculate_authenticity_score(self, insights: Dict) -> float:
         """Calculate authenticity score based on insights"""
         score = 0.0
-        
-        # Score based on authenticity markers
         score += min(3.0, len(insights.get('authenticity_markers', [])) * 0.5)
-        
-        # Score based on real experiences
         score += min(3.0, len(insights.get('real_experiences', [])) * 0.3)
-        
-        # Score based on customer voice data
         total_voice_items = sum(len(insights.get('customer_voice', {}).get(key, [])) for key in ['common_language', 'frequent_questions', 'complaints', 'recommendations'])
         score += min(4.0, total_voice_items * 0.1)
-        
         return min(10.0, score)
     
     def _assess_insight_quality(self, insights: Dict) -> str:
@@ -387,12 +358,8 @@ class RedditAPIClient:
     
     def _simulate_reddit_research(self, topic: str, subreddits: List[str]) -> Dict[str, Any]:
         """Enhanced simulation when Reddit API is unavailable"""
-        print("⚠️ Using enhanced Reddit simulation - Real API unavailable")
-        
-        # Generate more realistic simulation based on topic
         topic_lower = topic.lower()
         
-        # Topic-specific customer language
         if 'budget' in topic_lower or 'cheap' in topic_lower:
             common_language = ["budget-friendly", "affordable", "bang for buck", "cost-effective", "worth the money"]
             complaints = ["Too expensive", "Hidden costs", "Not worth the price"]
@@ -446,8 +413,8 @@ class RedditAPIClient:
         }
 
 class ContentTypeClassifier:
-    def __init__(self, claude_agent):
-        self.claude_agent = claude_agent
+    def __init__(self, ai_agent):
+        self.ai_agent = ai_agent
         
     def classify_content_type(self, topic: str, intent_data: Dict, business_context: Dict) -> Dict[str, Any]:
         prompt = f"""
@@ -467,7 +434,7 @@ class ContentTypeClassifier:
         """
         
         messages = [{"role": "user", "content": prompt}]
-        response = self.claude_agent.call_claude(messages)
+        response = self.ai_agent.call_ai(messages)
         
         try:
             if "{" in response and "}" in response:
@@ -488,11 +455,11 @@ class ContentTypeClassifier:
             "tone": "professional"
         }
 
-class EnhancedTrustScoreAssessor:
-    def __init__(self, claude_agent):
-        self.claude_agent = claude_agent
+class TrustScoreAssessor:
+    def __init__(self, ai_agent):
+        self.ai_agent = ai_agent
         
-        # YMYL (Your Money or Your Life) topics requiring higher Trust standards
+        # YMYL topics requiring higher Trust standards
         self.ymyl_topics = [
             'finance', 'health', 'medical', 'legal', 'investment', 'insurance',
             'taxes', 'retirement', 'medication', 'surgery', 'diet', 'nutrition',
@@ -541,21 +508,18 @@ class EnhancedTrustScoreAssessor:
         """Assess Experience component"""
         score = 3.0
         
-        # Customer insights boost
         customer_insights = human_inputs.get('customer_insights', {})
         if customer_insights.get('success_story'):
             score += 2.0
         if customer_insights.get('customer_pain_points'):
             score += 1.5
         
-        # Reddit insights boost (real user experiences)
         if reddit_insights:
             if reddit_insights.get('authenticity_score', 0) > 5.0:
                 score += 1.5
             if len(reddit_insights.get('real_experiences', [])) > 0:
                 score += 1.0
         
-        # YMYL penalty if insufficient experience
         if is_ymyl and score < 6.0:
             score *= 0.8
         
@@ -565,23 +529,20 @@ class EnhancedTrustScoreAssessor:
         """Assess Expertise component"""
         score = 4.0
         
-        # Business context expertise
         if business_context.get('industry'):
             score += 2.0
         if business_context.get('unique_value_prop'):
             score += 1.5
         
-        # Human expertise indicators
         business_expertise = human_inputs.get('business_expertise', {})
         if business_expertise.get('industry_knowledge'):
             score += 1.0
         if len(human_inputs.get('customer_insights', {}).get('customer_pain_points', '')) > 100:
             score += 1.0
         
-        # YMYL requires higher expertise standards
         if is_ymyl:
             if score < 7.0:
-                score *= 0.8  # Penalty for insufficient expertise in YMYL
+                score *= 0.8
         
         return min(10.0, score)
     
@@ -589,7 +550,6 @@ class EnhancedTrustScoreAssessor:
         """Assess Authoritativeness component"""
         score = 3.5
         
-        # Business authority indicators
         if business_context.get('business_type'):
             score += 0.5
         if business_context.get('unique_value_prop'):
@@ -597,7 +557,6 @@ class EnhancedTrustScoreAssessor:
         if business_context.get('industry'):
             score += 1.0
         
-        # Customer validation
         if human_inputs.get('customer_insights', {}).get('success_story'):
             score += 1.5
         if len(human_inputs.get('customer_insights', {}).get('frequent_questions', '')) > 50:
@@ -606,28 +565,25 @@ class EnhancedTrustScoreAssessor:
         return min(10.0, score)
     
     def _assess_trustworthiness(self, business_context: Dict, human_inputs: Dict, is_ymyl: bool) -> float:
-        """Assess Trustworthiness component (most important)"""
+        """Assess Trustworthiness component"""
         score = 4.0
         
-        # Business transparency
         if business_context.get('unique_value_prop'):
             score += 2.0
         if business_context.get('brand_voice'):
             score += 1.0
         
-        # Customer trust indicators
         customer_insights = human_inputs.get('customer_insights', {})
         if customer_insights.get('success_story'):
             score += 1.5
         if customer_insights.get('customer_pain_points'):
             score += 1.0
         
-        # YMYL requires higher trust standards
         if is_ymyl:
             if score < 7.0:
-                score *= 0.7  # Strict penalty for YMYL
+                score *= 0.7
         else:
-            score += 0.5  # Slight boost for non-YMYL
+            score += 0.5
         
         return min(10.0, score)
     
@@ -635,27 +591,16 @@ class EnhancedTrustScoreAssessor:
         """Calculate overall Trust score with proper weighting"""
         
         if is_ymyl:
-            # YMYL content: Trust is critical, Expertise is essential
             weights = {'trust': 0.4, 'expertise': 0.3, 'experience': 0.15, 'authority': 0.15}
         else:
-            # Regular content: More balanced but Trust still weighted higher
             weights = {'trust': 0.35, 'experience': 0.25, 'expertise': 0.2, 'authority': 0.2}
         
-        # Proper weighted calculation
         overall = (
             experience * weights['experience'] +
             expertise * weights['expertise'] +
             authoritativeness * weights['authority'] +
             trustworthiness * weights['trust']
         )
-        
-        # Debug logging for verification
-        print(f"Trust Score Calculation:")
-        print(f"Experience: {experience:.1f} × {weights['experience']} = {experience * weights['experience']:.2f}")
-        print(f"Expertise: {expertise:.1f} × {weights['expertise']} = {expertise * weights['expertise']:.2f}")
-        print(f"Authority: {authoritativeness:.1f} × {weights['authority']} = {authoritativeness * weights['authority']:.2f}")
-        print(f"Trust: {trustworthiness:.1f} × {weights['trust']} = {trustworthiness * weights['trust']:.2f}")
-        print(f"Total: {overall:.2f}")
         
         return overall
     
@@ -673,7 +618,7 @@ class EnhancedTrustScoreAssessor:
             return 'lowest'
     
     def _get_improvement_areas(self, exp: float, expert: float, auth: float, trust: float) -> List[str]:
-        """Get improvement recommendations based on component scores"""
+        """Get improvement recommendations"""
         improvements = []
         
         if exp < 6.0:
@@ -688,18 +633,8 @@ class EnhancedTrustScoreAssessor:
         return improvements or ["Strong trust foundation - focus on optimization"]
 
 class ContentQualityScorer:
-    def __init__(self, claude_agent):
-        self.claude_agent = claude_agent
-        
-        # Quality factors from Figment research
-        self.quality_factors = {
-            "authenticity": {"weight": 25, "description": "Real voice, personal experience, genuine insights"},
-            "emotional_connection": {"weight": 20, "description": "Empathy, tone, emotional intelligence"},
-            "industry_insight": {"weight": 20, "description": "Deep understanding of industry nuances"},
-            "accuracy": {"weight": 15, "description": "Factual correctness, source credibility"},
-            "originality": {"weight": 10, "description": "Unique perspective, novel insights"},
-            "contextual_relevance": {"weight": 10, "description": "Current events, situational awareness"}
-        }
+    def __init__(self, ai_agent):
+        self.ai_agent = ai_agent
         
     def score_content_quality(self, content: str, topic: str, business_context: Dict, 
                             human_inputs: Dict, trust_assessment: Dict) -> Dict[str, Any]:
@@ -712,23 +647,19 @@ class ContentQualityScorer:
                                   for pain in human_inputs.get('customer_insights', {}).get('customer_pain_points', '').split(',')
                                   if pain.strip())
         
-        # Base scoring
         content_score = 8.5 if word_count > 500 else 6.0
         structure_score = 9.0 if has_headings else 7.0
         relevance_score = 9.5 if mentions_business and addresses_pain_points else 7.5
         
-        # Trust score integration
         trust_score = trust_assessment.get('overall_trust_score', 7.0)
         
-        # Weighted calculation
         overall_score = (
             content_score * 0.3 + 
             structure_score * 0.2 + 
             relevance_score * 0.2 + 
-            trust_score * 0.3  # Trust score gets 30% weight
+            trust_score * 0.3
         )
         
-        # Performance prediction based on combined scores
         if overall_score >= 8.5:
             performance = "High performance expected - Zee SEO Tool creates 5x better content than standard AI"
             traffic_multiplier = "4-6x"
@@ -757,8 +688,8 @@ class ContentQualityScorer:
         }
 
 class ContentGenerator:
-    def __init__(self, claude_agent):
-        self.claude_agent = claude_agent
+    def __init__(self, ai_agent):
+        self.ai_agent = ai_agent
         
     def generate_complete_content(self, topic: str, content_type: str, reddit_insights: Dict, 
                                 journey_data: Dict, business_context: Dict, human_inputs: Dict, 
@@ -835,21 +766,21 @@ class ContentGenerator:
         """
         
         messages = [{"role": "user", "content": prompt}]
-        return self.claude_agent.call_claude(messages, max_tokens=2500)
+        return self.ai_agent.call_ai(messages, max_tokens=2500)
 
 # Initialize Components
-claude_agent = ClaudeAgent()
-intent_classifier = IntentClassifier(claude_agent)
-journey_mapper = JourneyMapper(claude_agent)
-reddit_researcher = RedditAPIClient()  # Safe Reddit API now
-content_type_classifier = ContentTypeClassifier(claude_agent)
-trust_assessor = EnhancedTrustScoreAssessor(claude_agent)  # Trust Score instead of E-E-A-T
-content_generator = ContentGenerator(claude_agent)
-quality_scorer = ContentQualityScorer(claude_agent)
+ai_agent = AIAgent()
+intent_classifier = IntentClassifier(ai_agent)
+journey_mapper = JourneyMapper(ai_agent)
+reddit_researcher = RedditAPIClient()
+content_type_classifier = ContentTypeClassifier(ai_agent)
+trust_assessor = TrustScoreAssessor(ai_agent)
+content_generator = ContentGenerator(ai_agent)
+quality_scorer = ContentQualityScorer(ai_agent)
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    """Home page with enhanced form and branding"""
+    """Home page with YOUR ORIGINAL design and AI dialogue window"""
     
     # Check Reddit API status
     reddit_status = "🟢 Connected" if reddit_researcher.reddit else "🟡 Simulation Mode"
@@ -916,6 +847,7 @@ async def home():
                 padding: 40px;
                 border-radius: 20px;
                 box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                position: relative;
             }}
             
             .ai-badge {{
@@ -927,6 +859,87 @@ async def home():
                 margin-bottom: 25px;
                 font-weight: bold;
                 font-size: 16px;
+            }}
+            
+            .ai-assistant-btn {{
+                position: fixed;
+                bottom: 30px;
+                right: 30px;
+                width: 60px;
+                height: 60px;
+                background: linear-gradient(135deg, #8B5CF6 0%, #A855F7 100%);
+                border-radius: 50%;
+                border: none;
+                color: white;
+                font-size: 24px;
+                cursor: pointer;
+                box-shadow: 0 4px 20px rgba(139, 92, 246, 0.4);
+                z-index: 1000;
+                transition: transform 0.3s ease;
+            }}
+            
+            .ai-assistant-btn:hover {{
+                transform: scale(1.1);
+            }}
+            
+            .ai-dialogue {{
+                position: fixed;
+                bottom: 100px;
+                right: 30px;
+                width: 350px;
+                height: 500px;
+                background: white;
+                border-radius: 20px;
+                box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+                z-index: 999;
+                display: none;
+                flex-direction: column;
+                overflow: hidden;
+            }}
+            
+            .ai-dialogue-header {{
+                background: linear-gradient(135deg, #8B5CF6 0%, #A855F7 100%);
+                color: white;
+                padding: 15px 20px;
+                font-weight: bold;
+                display: flex;
+                justify-content: between;
+                align-items: center;
+            }}
+            
+            .ai-dialogue-close {{
+                background: none;
+                border: none;
+                color: white;
+                font-size: 20px;
+                cursor: pointer;
+                margin-left: auto;
+            }}
+            
+            .ai-dialogue-body {{
+                flex: 1;
+                padding: 20px;
+                overflow-y: auto;
+            }}
+            
+            .ai-suggestion {{
+                background: #f8f9fa;
+                padding: 15px;
+                border-radius: 10px;
+                margin-bottom: 15px;
+                border-left: 4px solid #8B5CF6;
+            }}
+            
+            .ai-suggestion h4 {{
+                color: #8B5CF6;
+                margin-bottom: 8px;
+                font-size: 14px;
+            }}
+            
+            .ai-suggestion p {{
+                font-size: 13px;
+                line-height: 1.4;
+                color: #666;
             }}
             
             .form-grid {{
@@ -1104,6 +1117,11 @@ async def home():
                 .container {{
                     padding: 20px;
                 }}
+                
+                .ai-dialogue {{
+                    width: 300px;
+                    right: 20px;
+                }}
             }}
         </style>
     </head>
@@ -1116,14 +1134,14 @@ async def home():
         </div>
         
         <div class="container">
-            <div class="ai-badge">🤖 Powered by Claude AI + Reddit Research + Trust Score Optimization</div>
+            <div class="ai-badge">🤖 Powered by Advanced AI + Reddit Research + Trust Score Optimization</div>
             
             <form action="/generate" method="post">
                 <div class="form-grid">
                     <div class="features">
                         <h3>🚀 Zee SEO Tool Features:</h3>
                         <ul>
-                            <li>✅ Advanced Claude AI reasoning</li>
+                            <li>✅ Advanced AI reasoning</li>
                             <li>✅ Reddit research ({reddit_note})</li>
                             <li>✅ Customer journey mapping</li>
                             <li>✅ Trust Score optimization</li>
@@ -1277,7 +1295,7 @@ async def home():
             <div id="loading">
                 <div class="loading-animation">🤖 ⚡ 🧠</div>
                 <h3>Zee SEO Tool is crafting your content...</h3>
-                <p>Claude AI is analyzing your inputs, mapping customer journey, researching Reddit insights, calculating Trust Score, and generating high-performance content that bridges human expertise with AI intelligence.</p>
+                <p>AI is analyzing your inputs, mapping customer journey, researching Reddit insights, calculating Trust Score, and generating high-performance content that bridges human expertise with AI intelligence.</p>
                 <p><em>This advanced analysis takes 30-60 seconds for maximum quality</em></p>
             </div>
             
@@ -1291,18 +1309,77 @@ async def home():
             </div>
         </div>
         
+        <!-- AI Assistant Button -->
+        <button class="ai-assistant-btn" onclick="toggleAIDialogue()">🤖</button>
+        
+        <!-- AI Dialogue Window -->
+        <div class="ai-dialogue" id="aiDialogue">
+            <div class="ai-dialogue-header">
+                <span>💡 AI Content Assistant</span>
+                <button class="ai-dialogue-close" onclick="toggleAIDialogue()">×</button>
+            </div>
+            <div class="ai-dialogue-body">
+                <div class="ai-suggestion">
+                    <h4>🎯 Content Strategy Tip</h4>
+                    <p>Start with your customer's biggest pain point. This creates immediate relevance and engagement.</p>
+                </div>
+                
+                <div class="ai-suggestion">
+                    <h4>📊 Trust Score Boost</h4>
+                    <p>Include specific numbers, examples, or case studies in your content to improve your Trust Score significantly.</p>
+                </div>
+                
+                <div class="ai-suggestion">
+                    <h4>🔍 Reddit Research Power</h4>
+                    <p>Choose subreddits where your target audience actually hangs out for more authentic insights.</p>
+                </div>
+                
+                <div class="ai-suggestion">
+                    <h4>✍️ Writing Style Guide</h4>
+                    <p>Match your brand voice with your audience: Technical for experts, Conversational for general audience.</p>
+                </div>
+                
+                <div class="ai-suggestion">
+                    <h4>📈 Performance Prediction</h4>
+                    <p>Content with strong customer insights typically gets 3-5x better engagement than generic content.</p>
+                </div>
+                
+                <div class="ai-suggestion">
+                    <h4>🚀 Quick Win</h4>
+                    <p>Fill out the "Success Story" field - it dramatically improves your content's authenticity and Trust Score.</p>
+                </div>
+            </div>
+        </div>
+        
         <script>
+            function toggleAIDialogue() {{
+                const dialogue = document.getElementById('aiDialogue');
+                if (dialogue.style.display === 'none' || dialogue.style.display === '') {{
+                    dialogue.style.display = 'flex';
+                }} else {{
+                    dialogue.style.display = 'none';
+                }}
+            }}
+            
             document.querySelector('form').addEventListener('submit', function() {{
                 document.getElementById('loading').style.display = 'block';
                 document.querySelector('.container').scrollIntoView({{ behavior: 'smooth' }});
             }});
+            
+            // Auto-show AI dialogue on first visit
+            setTimeout(() => {{
+                if (!localStorage.getItem('aiDialogueShown')) {{
+                    toggleAIDialogue();
+                    localStorage.setItem('aiDialogueShown', 'true');
+                }}
+            }}, 3000);
         </script>
     </body>
     </html>
     """
     return HTMLResponse(content=html_content)
 
-# Keep the rest of the generate_content endpoint exactly the same as before, but ensure it handles the fallback gracefully
+# Keep the same generate_content function but update references
 @app.post("/generate")
 async def generate_content(
     topic: str = Form(...),
@@ -1321,7 +1398,7 @@ async def generate_content(
     frequent_questions: str = Form(...),
     success_story: str = Form("")
 ):
-    """Generate enhanced content with all AI agents integrated - Railway Safe Version"""
+    """Generate enhanced content with YOUR ORIGINAL design preserved"""
     try:
         # Parse subreddits
         target_subreddits = [s.strip() for s in subreddits.split(',') if s.strip()]
@@ -1358,7 +1435,7 @@ async def generate_content(
             'additional_notes': additional_notes
         }
         
-        # ZEE SEO TOOL AI PROCESSING PIPELINE - RAILWAY SAFE
+        # ZEE SEO TOOL AI PROCESSING PIPELINE
         print(f"🚀 Zee SEO Tool starting analysis for: {topic}")
         
         # Step 1: Intent Classification
@@ -1369,7 +1446,7 @@ async def generate_content(
         print("🗺️ Zee SEO Tool: Mapping customer journey...")
         journey_data = journey_mapper.map_customer_journey(topic, intent_data)
         
-        # Step 3: Reddit Research (Safe - handles missing PRAW gracefully)
+        # Step 3: Reddit Research
         print("📱 Zee SEO Tool: Researching Reddit for authentic insights...")
         reddit_insights = reddit_researcher.research_topic(topic, target_subreddits)
         
@@ -1391,8 +1468,8 @@ async def generate_content(
             business_context, human_inputs, trust_assessment, ai_instructions
         )
         
-        # Step 7: Score Content Quality with Trust Score Integration
-        print("📊 Zee SEO Tool: Scoring content quality with Trust correlation...")
+        # Step 7: Score Content Quality
+        print("📊 Zee SEO Tool: Scoring content quality...")
         quality_score = quality_scorer.score_content_quality(
             complete_content, topic, business_context, human_inputs, trust_assessment
         )
@@ -1411,7 +1488,7 @@ async def generate_content(
         
         print("✅ Zee SEO Tool: Processing complete!")
         
-        # Generate comprehensive results page - same as before but with Reddit status updates
+        # Generate results page with YOUR ORIGINAL styling
         html_response = f"""
         <!DOCTYPE html>
         <html>
@@ -1619,7 +1696,7 @@ async def generate_content(
             
             <div class="container">
                 <div class="results-header">
-                    <div class="ai-badge">🤖 Generated by Zee SEO Tool (Railway Safe)</div>
+                    <div class="ai-badge">🤖 Generated by Zee SEO Tool</div>
                     <h1>🎉 Your Trust-Optimized Content Strategy</h1>
                     <p><strong>Topic:</strong> {topic}</p>
                     <p><strong>Content Type:</strong> {chosen_content_type.replace('_', ' ').title()}</p>
@@ -1665,7 +1742,6 @@ async def generate_content(
                             <li>Authoritativeness: {trust_assessment.get('authoritativeness_score', 'N/A')}/10</li>
                             <li>Trustworthiness: {trust_assessment.get('trustworthiness_score', 'N/A')}/10</li>
                         </ul>
-                        <p><strong>Improvement Areas:</strong> {', '.join(trust_assessment.get('improvement_areas', ['None identified']))}</p>
                     </div>
 
                     <div class="reddit-section">
@@ -1674,20 +1750,13 @@ async def generate_content(
                         <p><strong>Research Quality:</strong> {reddit_quality.title()}</p>
                         <p><strong>Authenticity Score:</strong> {reddit_auth_score}/10</p>
                         <p><strong>Communities Analyzed:</strong> {', '.join(target_subreddits)}</p>
-                        <p><strong>Data Points Collected:</strong></p>
-                        <ul>
-                            <li>Customer Language Patterns: {len(reddit_insights.get('customer_voice', {}).get('common_language', []))}</li>
-                            <li>Frequent Questions: {len(reddit_insights.get('customer_voice', {}).get('frequent_questions', []))}</li>
-                            <li>Complaints/Pain Points: {len(reddit_insights.get('customer_voice', {}).get('complaints', []))}</li>
-                            <li>Real Experiences: {len(reddit_insights.get('real_experiences', []))}</li>
-                        </ul>
                         <p><strong>Status:</strong> {'🟢 Live API Connected' if reddit_researcher.reddit else '🟡 Enhanced Simulation Mode'}</p>
                     </div>
 
                     <div class="section">
                         <h2>✍️ Your High-Performance Content</h2>
                         <div class="content-box">
-                            <div class="ai-badge" style="color: #8B5CF6; background: rgba(139, 92, 246, 0.1);">🤖 Generated by Zee SEO Tool (Railway Safe)</div>
+                            <div class="ai-badge" style="color: #8B5CF6; background: rgba(139, 92, 246, 0.1);">🤖 Generated by Zee SEO Tool</div>
                             <h3>Your Trust-Optimized {chosen_content_type.replace('_', ' ').title()}</h3>
                             <p><strong>Generated Word Count:</strong> {len(complete_content.split())} words</p>
                             <p><strong>Reddit Research:</strong> {reddit_status_display} • <strong>Trust Level:</strong> {trust_level.replace('_', ' ').title()}</p>
@@ -1702,10 +1771,9 @@ async def generate_content(
                 
                 <div class="zee-footer">
                     <h3>⚡ Built by Zeeshan Bashir</h3>
-                    <p><strong>Zee SEO Tool (Railway Safe):</strong> Advanced Trust Score optimization with Reddit research.</p>
+                    <p><strong>Zee SEO Tool:</strong> Advanced Trust Score optimization with Reddit research.</p>
                     <p><strong>Status:</strong> ✅ Deployed on Railway • Reddit: {reddit_status_display} • Trust Score: ✅ Active</p>
-                    <p><strong>Features:</strong> Trust Score Assessment • Reddit Research • Claude AI Integration • Performance Analytics</p>
-                    <p style="margin-top: 20px; font-size: 14px; opacity: 0.8;">© 2024 Zee SEO Tool - Railway Safe Version</p>
+                    <p><strong>Features:</strong> Trust Score Assessment • Reddit Research • AI Integration • Performance Analytics</p>
                 </div>
             </div>
         </body>
@@ -1750,15 +1818,6 @@ async def generate_content(
                 <div class="logo">⚡ ZEE SEO TOOL</div>
                 <h1>❌ Processing Error</h1>
                 <p><strong>Error during content generation:</strong> {str(e)}</p>
-                <div style="background-color: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0; text-align: left;">
-                    <h3>System Status:</h3>
-                    <ul>
-                        <li>PRAW Library: {'✅ Available' if PRAW_AVAILABLE else '⚠️ Not installed (using simulation)'}</li>
-                        <li>Claude API: {'✅ Configured' if ANTHROPIC_API_KEY != 'your-anthropic-api-key-here' else '❌ Missing'}</li>
-                        <li>Reddit API: {'✅ Connected' if reddit_researcher.reddit else '⚠️ Simulation mode'}</li>
-                    </ul>
-                    <p><strong>Note:</strong> The app is designed to work even without Reddit API access.</p>
-                </div>
                 <a href="/" style="display: inline-block; margin-top: 20px; padding: 12px 25px; background: linear-gradient(135deg, #8B5CF6, #A855F7); color: white; text-decoration: none; border-radius: 25px;">← Try Again with Zee SEO Tool</a>
             </div>
         </body>
@@ -1771,31 +1830,26 @@ async def health_check():
     """Health check endpoint with system status"""
     return {
         "status": "healthy",
-        "version": "2.0 Railway Safe",
+        "version": "2.0 Original Design Restored",
         "features": {
-            "claude_api": "✅" if ANTHROPIC_API_KEY and ANTHROPIC_API_KEY != "your-anthropic-api-key-here" else "❌",
+            "ai_api": "✅" if ANTHROPIC_API_KEY and ANTHROPIC_API_KEY != "your-anthropic-api-key-here" else "❌",
             "reddit_api": "✅" if reddit_researcher.reddit else "⚠️ Simulation Mode",
             "trust_score": "✅ Active",
-            "praw_library": "✅ Available" if PRAW_AVAILABLE else "⚠️ Missing (gracefully handled)"
-        },
-        "environment": {
-            "praw_available": PRAW_AVAILABLE,
-            "reddit_client_id": "✅" if REDDIT_CLIENT_ID else "❌",
-            "reddit_client_secret": "✅" if REDDIT_CLIENT_SECRET else "❌",
-            "anthropic_api_key": "✅" if ANTHROPIC_API_KEY and ANTHROPIC_API_KEY != "your-anthropic-api-key-here" else "❌"
-        },
-        "reddit_status": "connected" if reddit_researcher.reddit else "simulation_mode"
+            "ai_dialogue": "✅ Active",
+            "original_design": "✅ Restored"
+        }
     }
 
 if __name__ == "__main__":
-    print("🚀 Starting Zee SEO Tool v2.0 (Railway Safe)...")
+    print("🚀 Starting Zee SEO Tool v2.0 (Original Design Restored)...")
     print("=" * 60)
     print("🔧 System Status:")
     print(f"  📊 Trust Score Assessment: ✅ Active")
-    print(f"  🤖 Claude API: {'✅ Connected' if ANTHROPIC_API_KEY and ANTHROPIC_API_KEY != 'your-anthropic-api-key-here' else '❌ Missing'}")
+    print(f"  🎨 Original Design: ✅ Restored")
+    print(f"  💬 AI Dialogue Window: ✅ Active")
+    print(f"  🤖 AI API: {'✅ Connected' if ANTHROPIC_API_KEY and ANTHROPIC_API_KEY != 'your-anthropic-api-key-here' else '❌ Missing'}")
     print(f"  📚 PRAW Library: {'✅ Available' if PRAW_AVAILABLE else '⚠️ Missing (gracefully handled)'}")
     print(f"  📱 Reddit API: {'✅ Connected' if reddit_researcher.reddit else '⚠️ Simulation Mode'}")
-    print(f"  🎯 Content Quality Scoring: ✅ Active")
     print("=" * 60)
     
     import uvicorn
