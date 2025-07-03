@@ -1,10 +1,3 @@
-"""
-Enhanced Zee SEO Tool v4.0 - Integrated Advanced Agents
-=======================================================
-Author: Zeeshan Bashir
-Description: Integration of all enhanced agents with conversational AI interface
-"""
-
 import os
 import json
 import logging
@@ -40,17 +33,21 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 class Config:
-    ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-    REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID", "")
-    REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET", "")
-    REDDIT_USER_AGENT = os.getenv("REDDIT_USER_AGENT", "ZeeSEOTool:v4.0")
-       # now reads the actual HTTP URL of your KG service
-   KNOWLEDGE_GRAPH_API_URL = os.getenv(
-       "KNOWLEDGE_GRAPH_API_URL",
-       "https://myaiapplication-production.up.railway.app/api/knowledge-graph"
-   )
-    DEBUG_MODE = os.getenv("DEBUG_MODE", "True").lower() == "true"
-    PORT = int(os.getenv("PORT", 8002))
+    ANTHROPIC_API_KEY       = os.getenv("ANTHROPIC_API_KEY", "")
+    REDDIT_CLIENT_ID        = os.getenv("REDDIT_CLIENT_ID", "")
+    REDDIT_CLIENT_SECRET    = os.getenv("REDDIT_CLIENT_SECRET", "")
+    REDDIT_USER_AGENT       = os.getenv("REDDIT_USER_AGENT", "ZeeSEOTool:v4.0")
+
+    # Your Railway service URL for KG
+    KNOWLEDGE_GRAPH_API_URL = os.getenv(
+        "KNOWLEDGE_GRAPH_API_URL",
+        "https://myaiapplication-production.up.railway.app/api/knowledge-graph"
+    )
+    # Your Google Knowledge Graph API key
+    KNOWLEDGE_GRAPH_API_KEY = os.getenv("KNOWLEDGE_GRAPH_API_KEY", "")
+
+    DEBUG_MODE              = os.getenv("DEBUG_MODE", "True").lower() == "true"
+    PORT                    = int(os.getenv("PORT", 8002))
 
 config = Config()
 
@@ -67,7 +64,7 @@ app.add_middleware(
 
 class EnhancedZeeOrchestrator:
     """Enhanced orchestrator integrating all advanced agents"""
-    
+
     def __init__(self):
         # Initialize all enhanced agents
         self.reddit_researcher          = EnhancedRedditResearcher()
@@ -83,36 +80,39 @@ class EnhancedZeeOrchestrator:
         self.content_type_classifier    = ContentTypeClassifier()
         self.content_quality_scorer     = ContentQualityScorer()
         self.content_snapshot           = ContentAnalysisSnapshot()
-        
+
         # Knowledge Graph API integration
-         self.knowledge_graph_api_url = config.KNOWLEDGE_GRAPH_API_URL
-        
+        self.kg_url = config.KNOWLEDGE_GRAPH_API_URL
+        self.kg_key = config.KNOWLEDGE_GRAPH_API_KEY
+
         # Conversation history for chat
         self.conversation_history = []
-        
+
         logger.info("✅ Enhanced Zee Orchestrator initialized with all agents")
+
     async def get_knowledge_graph_insights(self, topic: str) -> Dict[str, Any]:
         """Get insights from Railway Knowledge Graph API"""
         try:
-           response = requests.post(
-              self.knowledge_graph_api_url,
-                 json={
-                     "topic": topic,
-                     "depth": 3,
-                     "include_related": True,
-                     "include_gaps": True
-                 },
-                 timeout=30
-             )
+            response = requests.post(
+                self.kg_url,
+                headers={ "x-api-key": self.kg_key },
+                json={
+                    "topic": topic,
+                    "depth": 3,
+                    "include_related": True,
+                    "include_gaps": True
+                },
+                timeout=30
+            )
             if response.status_code == 200:
                 return response.json()
             else:
                 logger.warning(f"Knowledge Graph API returned {response.status_code}")
                 return self._get_fallback_kg_insights(topic)
         except Exception as e:
-            logger.error(f"Knowledge Graph API error: {str(e)}")
+            logger.error(f"Knowledge Graph API error: {e}")
             return self._get_fallback_kg_insights(topic)
-    
+
     def _get_fallback_kg_insights(self, topic: str) -> Dict[str, Any]:
         """Fallback knowledge graph insights"""
         return {
@@ -136,299 +136,16 @@ class EnhancedZeeOrchestrator:
             ],
             "source": "fallback_generated"
         }
-    
+
     async def generate_comprehensive_analysis(self, form_data: Dict) -> Dict[str, Any]:
         """Generate comprehensive analysis using all enhanced agents"""
-        
-        topic = form_data['topic']
-        logger.info(f"🚀 Starting comprehensive analysis for: {topic}")
-        
-        # Step 1: Classify intent and content type
-        logger.info("🎯 Classifying user intent...")
-        intent_data = self.intent_classifier.classify_intent(topic)
-        
-        # Step 2: Collect comprehensive business context
-        logger.info("🏢 Collecting business context...")
-        business_context = self.business_context_collector.collect_business_context(form_data)
-        
-        # Step 3: Enhanced Reddit research with social media focus
-        logger.info("📱 Conducting enhanced Reddit research...")
-        subreddits = self._get_relevant_subreddits(topic)
-        reddit_insights = self.reddit_researcher.research_topic_comprehensive(
-            topic=topic,
-            subreddits=subreddits,
-            max_posts_per_subreddit=15,
-            social_media_focus=True
-        )
-        
-        # Step 4: Knowledge Graph analysis
-        logger.info("🧠 Analyzing knowledge graph...")
-        kg_insights = await self.get_knowledge_graph_insights(topic)
-        
-        # Step 5: Customer Journey mapping
-        logger.info("🗺️ Mapping customer journey...")
-        journey_data = self.journey_mapper.map_customer_journey(
-            topic, reddit_insights, business_context
-        )
-        
-        # Step 6: Human input identification
-        logger.info("👤 Identifying human inputs...")
-        human_inputs = self.human_input_identifier.identify_human_inputs(
-            topic, business_context, reddit_insights
-        )
-        
-        # Step 7: E-E-A-T assessment
-        logger.info("🔒 Conducting E-E-A-T assessment...")
-        eeat_assessment = self.eeat_assessor.assess_eeat_opportunity(
-            topic, business_context, reddit_insights
-        )
-        
-        # Step 8: Content type classification
-        logger.info("📝 Classifying optimal content type...")
-        content_type = self.content_type_classifier.classify_content_type(
-            topic, intent_data, business_context, reddit_insights
-        )
-        
-        # Step 9: Generate enhanced content
-        logger.info("✍️ Generating enhanced content...")
-        generated_content = self.content_generator.generate_complete_content(
-            topic=topic,
-            content_type=content_type,
-            reddit_insights=reddit_insights,
-            journey_data=journey_data,
-            business_context=business_context,
-            human_inputs=human_inputs,
-            eeat_assessment=eeat_assessment
-        )
-        
-        # Step 10: Quality assessment
-        logger.info("📊 Scoring content quality...")
-        quality_assessment = self.content_quality_scorer.score_content_quality(
-            content=generated_content,
-            topic=topic,
-            reddit_insights=reddit_insights,
-            business_context=business_context,
-            eeat_assessment=eeat_assessment
-        )
-        
-        logger.info("✅ Comprehensive analysis complete!")
-        
-        return {
-            "topic": topic,
-            "intent_data": intent_data,
-            "business_context": business_context,
-            "reddit_insights": reddit_insights,
-            "knowledge_graph": kg_insights,
-            "journey_data": journey_data,
-            "human_inputs": human_inputs,
-            "eeat_assessment": eeat_assessment,
-            "content_type": content_type,
-            "generated_content": generated_content,
-            "quality_assessment": quality_assessment,
-            "analysis_timestamp": datetime.now().isoformat(),
-            "performance_metrics": {
-                "word_count": len(generated_content.split()),
-                "trust_score": eeat_assessment.get('overall_trust_score', 0),
-                "quality_score": quality_assessment.get('overall_score', 0),
-                "reddit_posts_analyzed": reddit_insights.get('quantitative_insights', {}).get('total_posts_analyzed', 0),
-                "knowledge_entities": len(kg_insights.get('entities', [])),
-                "social_media_score": reddit_insights.get('social_media_metrics', {}).get('avg_engagement_rate', 0)
-            }
-        }
-    
+        # … your existing implementation unchanged …
+
     async def process_chat_message(self, message: str, analysis_data: Dict) -> str:
-        """Process conversational AI message with context"""
-        
-        # Add message to conversation history
-        self.conversation_history.append({
-            "role": "user",
-            "content": message,
-            "timestamp": datetime.now().isoformat()
-        })
-        
-        # Extract relevant context
-        topic = analysis_data.get('topic', '')
-        quality_score = analysis_data.get('quality_assessment', {}).get('overall_score', 0)
-        trust_score = analysis_data.get('eeat_assessment', {}).get('overall_trust_score', 0)
-        content = analysis_data.get('generated_content', '')
-        kg_insights = analysis_data.get('knowledge_graph', {})
-        reddit_insights = analysis_data.get('reddit_insights', {})
-        
-        # Determine response based on message intent
-        response = await self._generate_contextual_response(
-            message, topic, quality_score, trust_score, content, kg_insights, reddit_insights
-        )
-        
-        # Add response to conversation history
-        self.conversation_history.append({
-            "role": "assistant",
-            "content": response,
-            "timestamp": datetime.now().isoformat()
-        })
-        
-        return response
-    
-    async def _generate_contextual_response(self, message: str, topic: str, 
-                                         quality_score: float, trust_score: float,
-                                         content: str, kg_insights: Dict, reddit_insights: Dict) -> str:
-        """Generate contextual AI response"""
-        
-        msg_lower = message.lower()
-        
-        # Knowledge gaps analysis
-        if any(word in msg_lower for word in ['knowledge', 'gaps', 'missing', 'cover']):
-            entities = kg_insights.get('entities', [])
-            gaps = kg_insights.get('content_gaps', [])
-            
-            response = f"""🧠 **Knowledge Gap Analysis for {topic}:**
+        """Enhanced chat processing…"""
+        # … unchanged …
 
-**🎯 Key Entities to Cover:**
-{chr(10).join([f"• {entity}" for entity in entities[:5]])}
-
-**📊 Content Gaps Identified:**
-{chr(10).join([f"• {gap}" for gap in gaps[:3]])}
-
-**💡 Recommendation:** Focus on the top 3 entities and create dedicated sections for the identified gaps. This will improve your content's comprehensiveness and authority.
-
-Would you like me to suggest specific content sections for these gaps?"""
-            
-            return response
-        
-        # Trust score improvement
-        elif any(word in msg_lower for word in ['trust', 'authority', 'credibility', 'eeat']):
-            if trust_score < 6.0:
-                return f"""🔒 **Trust Score Improvement (Current: {trust_score:.1f}/10):**
-
-**🚨 Critical Areas to Address:**
-• Add author credentials and expertise
-• Include customer testimonials and case studies
-• Provide verifiable data and statistics
-• Add contact information and transparency
-
-**📈 Expected Impact:** +2.0 to +3.0 points
-
-**🎯 Quick Win:** Add a brief author bio with relevant experience - this alone can boost your score by 1.5 points!"""
-            else:
-                return f"""✅ **Trust Score Optimization (Current: {trust_score:.1f}/10):**
-
-Your trust score is solid! Here's how to make it exceptional:
-
-• **Add Authority Signals:** Industry certifications, awards, or recognition
-• **Include Recent Data:** Update with latest statistics and trends
-• **Expert Quotes:** Reference other authorities in your field
-• **Social Proof:** More detailed customer success stories
-
-**🎯 Target:** 9.0+ score for maximum search visibility"""
-        
-        # Content improvement
-        elif any(word in msg_lower for word in ['improve', 'better', 'enhance', 'optimize']):
-            social_media_insights = reddit_insights.get('social_media_insights', {})
-            best_platform = social_media_insights.get('best_platform', 'unknown')
-            
-            return f"""🚀 **Content Enhancement Strategy:**
-
-**📊 Current Quality Score:** {quality_score:.1f}/10
-
-**🎯 Improvement Areas:**
-• **Structure:** Add more subheadings and bullet points
-• **Depth:** Include more specific examples and case studies
-• **Engagement:** Add questions and interactive elements
-• **Visuals:** Suggest infographics or charts
-
-**📱 Social Media Optimization:**
-• **Best Platform:** {best_platform.title()}
-• **Viral Potential:** {reddit_insights.get('social_media_metrics', {}).get('viral_content_ratio', 0)*100:.1f}%
-
-**💡 Next Steps:** Focus on {best_platform} format for maximum engagement. Would you like platform-specific suggestions?"""
-        
-        # SEO optimization
-        elif any(word in msg_lower for word in ['seo', 'search', 'ranking', 'keywords']):
-            return f"""🔍 **SEO Optimization Strategy:**
-
-**📈 Current Performance Potential:**
-• **Trust Score:** {trust_score:.1f}/10 (Higher = Better Rankings)
-• **Content Depth:** {len(content.split())} words
-• **Topic Coverage:** {len(kg_insights.get('entities', []))} key entities
-
-**🎯 SEO Improvements:**
-• **Keyword Integration:** Use entities as semantic keywords
-• **Internal Linking:** Connect to related topics
-• **Meta Optimization:** Create compelling titles and descriptions
-• **FAQ Section:** Address common questions from Reddit research
-
-**💡 Pro Tip:** Your knowledge graph analysis shows {len(kg_insights.get('entities', []))} entities - use these as your semantic keyword targets!"""
-        
-        # Social media specific
-        elif any(word in msg_lower for word in ['social', 'facebook', 'instagram', 'linkedin', 'twitter']):
-            social_metrics = reddit_insights.get('social_media_metrics', {})
-            platform_performance = social_metrics.get('platform_performance', {})
-            
-            platforms_text = ""
-            for platform, score in platform_performance.items():
-                platforms_text += f"• **{platform.title()}:** {score:.1f}/10\n"
-            
-            return f"""📱 **Social Media Strategy:**
-
-**🎯 Platform Performance:**
-{platforms_text}
-
-**📊 Content Adaptation:**
-• **Engagement Rate:** {social_metrics.get('avg_engagement_rate', 0):.1f}%
-• **Viral Potential:** {social_metrics.get('viral_content_ratio', 0)*100:.1f}%
-
-**💡 Platform-Specific Tips:**
-• **Facebook:** Use storytelling and longer-form content
-• **Instagram:** Focus on visual elements and hashtags
-• **LinkedIn:** Professional insights and industry data
-• **Twitter:** Quick tips and thread format
-
-Which platform would you like specific content for?"""
-        
-        # General help
-        else:
-            return f"""👋 **I'm here to help optimize your content!**
-
-**📊 Current Status:**
-• **Quality Score:** {quality_score:.1f}/10
-• **Trust Score:** {trust_score:.1f}/10
-• **Content Length:** {len(content.split())} words
-
-**🎯 What I can help with:**
-• **"Knowledge gaps"** - Show missing topics to cover
-• **"Improve trust"** - Boost credibility and authority
-• **"SEO optimization"** - Enhance search rankings
-• **"Social media"** - Adapt for different platforms
-• **"Better structure"** - Improve content organization
-
-**💡 Try asking:** "What knowledge gaps should I address?" or "How can I improve my trust score?"
-
-What would you like to work on first?"""
-        
-        return response
-    
-    def _get_relevant_subreddits(self, topic: str) -> List[str]:
-        """Get relevant subreddits for topic research"""
-        # Default high-engagement subreddits
-        base_subreddits = [
-            "AskReddit", "explainlikeimfive", "LifeProTips", "YouShouldKnow",
-            "personalfinance", "entrepreneur", "marketing", "business", "startup"
-        ]
-        
-        # Topic-specific subreddits
-        topic_lower = topic.lower()
-        
-        if any(word in topic_lower for word in ['tech', 'software', 'ai', 'programming']):
-            base_subreddits.extend(["technology", "programming", "MachineLearning", "artificial"])
-        elif any(word in topic_lower for word in ['health', 'fitness', 'nutrition']):
-            base_subreddits.extend(["health", "fitness", "nutrition", "loseit"])
-        elif any(word in topic_lower for word in ['money', 'finance', 'investing']):
-            base_subreddits.extend(["investing", "financialindependence", "stocks"])
-        elif any(word in topic_lower for word in ['marketing', 'seo', 'content']):
-            base_subreddits.extend(["marketing", "SEO", "content_marketing", "digital_marketing"])
-        elif any(word in topic_lower for word in ['social', 'media', 'instagram', 'facebook']):
-            base_subreddits.extend(["socialmedia", "Instagram", "Facebook", "marketing"])
-        
-        return list(set(base_subreddits))[:10]  # Limit to 10 unique subreddits
+    # … all other methods exactly as you had them …
 
 # Initialize enhanced orchestrator
 zee_orchestrator = EnhancedZeeOrchestrator()
