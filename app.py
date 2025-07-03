@@ -1609,8 +1609,7 @@ async def generate_enhanced_content(
         logger.error(f"Error generating content: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Content generation failed, but the system is still operational: {str(e)}")
 
-def create_results_html(topic, metrics, content, kg_insights, reddit_insights, system_status, analysis):
-    """Create safe HTML with properly escaped JavaScript"""
+
     
     # Escape content for HTML
     escaped_content = content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
