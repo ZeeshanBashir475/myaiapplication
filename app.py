@@ -20,19 +20,19 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 # Import your enhanced agents
-+from reddit_researcher import EnhancedRedditResearcher, AdvancedTopicResearchAgent
-+from knowledge_graph_trends_agent import KnowledgeGraphTrendsAgent
-+from customer_journey_mapper import CustomerJourneyMapper
-+from full_content_generator import FullContentGenerator
-+from content_generator import ContentGenerator
-+from business_context_collector import BusinessContextCollector
-+from content_quality_scorer import ContentQualityScorer
-+from content_type_classifier import ContentTypeClassifier
-+from eeat_assessor import EnhancedEEATAssessor
-+from human_input_identifier import HumanInputIdentifier
-+from intent_classifier import IntentClassifier
-+from customer_journey_mapper import CustomerJourneyMapper
-+from content_analysis_snapshot import ContentAnalysisSnapshot
+from reddit_researcher import EnhancedRedditResearcher
+from advanced_topic_research_agent import AdvancedTopicResearchAgent
+from knowledge_graph_trends_agent import KnowledgeGraphTrendsAgent
+from customer_journey_mapper import CustomerJourneyMapper
+from full_content_generator import FullContentGenerator
+from content_generator import ContentGenerator
+from business_context_collector import BusinessContextCollector
+from content_quality_scorer import ContentQualityScorer
+from content_type_classifier import ContentTypeClassifier
+from eeat_assessor import EnhancedEEATAssessor
+from human_input_identifier import HumanInputIdentifier
+from intent_classifier import IntentClassifier
+from content_analysis_snapshot import ContentAnalysisSnapshot
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -44,7 +44,10 @@ class Config:
     REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID", "")
     REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET", "")
     REDDIT_USER_AGENT = os.getenv("REDDIT_USER_AGENT", "ZeeSEOTool:v4.0")
-    KNOWLEDGE_GRAPH_API = os.getenv("KNOWLEDGE_GRAPH_API", "https://your-railway-app.up.railway.app/api/knowledge-graph")
+    KNOWLEDGE_GRAPH_API = os.getenv(
+        "KNOWLEDGE_GRAPH_API",
+        "https://your-railway-app.up.railway.app/api/knowledge-graph"
+    )
     DEBUG_MODE = os.getenv("DEBUG_MODE", "True").lower() == "true"
     PORT = int(os.getenv("PORT", 8002))
 
@@ -52,7 +55,12 @@ config = Config()
 
 # Initialize FastAPI
 app = FastAPI(title="Zee SEO Tool v4.0 - Enhanced Agent Integration")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
 # ================== ENHANCED ORCHESTRATOR ==================
 
@@ -61,19 +69,19 @@ class EnhancedZeeOrchestrator:
     
     def __init__(self):
         # Initialize all enhanced agents
-    self.reddit_researcher    = EnhancedRedditResearcher()
-+        self.topic_research_agent = AdvancedTopicResearchAgent()
-+        self.kg_trends_agent      = KnowledgeGraphTrendsAgent()
-+        self.business_context_collector = BusinessContextCollector()
-+        self.content_quality_scorer     = ContentQualityScorer()
-+        self.content_type_classifier    = ContentTypeClassifier()
-+        self.eeat_assessor              = EnhancedEEATAssessor()
-+        self.human_input_identifier     = HumanInputIdentifier()
-+        self.intent_classifier          = IntentClassifier()
-+        self.journey_mapper             = CustomerJourneyMapper()
-+        self.full_content_generator     = FullContentGenerator()
-+        self.content_generator          = ContentGenerator()
-+        self.content_snapshot           = ContentAnalysisSnapshot()
+        self.reddit_researcher          = EnhancedRedditResearcher()
+        self.topic_research_agent       = AdvancedTopicResearchAgent()
+        self.kg_trends_agent            = KnowledgeGraphTrendsAgent()
+        self.journey_mapper             = CustomerJourneyMapper()
+        self.intent_classifier          = IntentClassifier()
+        self.human_input_identifier     = HumanInputIdentifier()
+        self.full_content_generator     = FullContentGenerator()
+        self.content_generator          = ContentGenerator()
+        self.business_context_collector = BusinessContextCollector()
+        self.eeat_assessor              = EnhancedEEATAssessor()
+        self.content_type_classifier    = ContentTypeClassifier()
+        self.content_quality_scorer     = ContentQualityScorer()
+        self.content_snapshot           = ContentAnalysisSnapshot()
         
         # Knowledge Graph API integration
         self.knowledge_graph_api = config.KNOWLEDGE_GRAPH_API
@@ -82,7 +90,6 @@ class EnhancedZeeOrchestrator:
         self.conversation_history = []
         
         logger.info("✅ Enhanced Zee Orchestrator initialized with all agents")
-    
     async def get_knowledge_graph_insights(self, topic: str) -> Dict[str, Any]:
         """Get insights from Railway Knowledge Graph API"""
         try:
