@@ -1,8 +1,8 @@
 """
-Zee SEO Tool Enhanced v3.0 - Modern Subtle Design
-================================================
+Enhanced Zee SEO Tool v4.0 - Integrated Advanced Agents
+=======================================================
 Author: Zeeshan Bashir
-Description: Modern, professional design with working conversational AI and expanded content types
+Description: Integration of all enhanced agents with conversational AI interface
 """
 
 import os
@@ -19,6 +19,17 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
+# Import your enhanced agents
+from reddit_researcher import EnhancedRedditResearcher
+from full_content_generator import FullContentGenerator
+from business_context_collector import BusinessContextCollector
+from content_quality_scorer import ContentQualityScorer
+from content_type_classifier import ContentTypeClassifier
+from eeat_assessor import EEATAssessor
+from human_input_identifier import HumanInputIdentifier
+from intent_classifier import IntentClassifier
+from journey_mapper import JourneyMapper
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,1271 +39,833 @@ class Config:
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
     REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID", "")
     REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET", "")
-    REDDIT_USER_AGENT = os.getenv("REDDIT_USER_AGENT", "ZeeSEOTool:v1.0 (by u/Available-Travel7812)")
+    REDDIT_USER_AGENT = os.getenv("REDDIT_USER_AGENT", "ZeeSEOTool:v4.0")
+    KNOWLEDGE_GRAPH_API = os.getenv("KNOWLEDGE_GRAPH_API", "https://your-railway-app.up.railway.app/api/knowledge-graph")
     DEBUG_MODE = os.getenv("DEBUG_MODE", "True").lower() == "true"
     PORT = int(os.getenv("PORT", 8002))
 
 config = Config()
 
 # Initialize FastAPI
-app = FastAPI(title="Zee SEO Tool - AI Content Creation Agent")
+app = FastAPI(title="Zee SEO Tool v4.0 - Enhanced Agent Integration")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# Safe Reddit import
-try:
-    import praw
-    PRAW_AVAILABLE = True
-    logger.info("✅ PRAW library loaded successfully")
-except ImportError:
-    PRAW_AVAILABLE = False
-    logger.warning("⚠️ PRAW not available - Reddit research will use simulation mode")
+# ================== ENHANCED ORCHESTRATOR ==================
 
-# ================== UTILITY CLASSES ==================
-
-class LLMClient:
-    """Enhanced LLM client for all AI interactions"""
+class EnhancedZeeOrchestrator:
+    """Enhanced orchestrator integrating all advanced agents"""
+    
     def __init__(self):
-        self.api_key = config.ANTHROPIC_API_KEY
-        self.available = self.api_key and len(self.api_key) > 10
-        self.headers = {
-            "x-api-key": self.api_key,
-            "Content-Type": "application/json",
-            "anthropic-version": "2023-06-01"
-        }
-    
-    async def generate_content(self, prompt: str, model: str = "claude-3-haiku-20240307") -> str:
-        """Generate content using Claude"""
-        if not self.available:
-            return self._get_fallback_content(prompt)
+        # Initialize all enhanced agents
+        self.reddit_researcher = EnhancedRedditResearcher()
+        self.content_generator = FullContentGenerator()
+        self.business_context_collector = BusinessContextCollector()
+        self.content_quality_scorer = ContentQualityScorer()
+        self.content_type_classifier = ContentTypeClassifier()
+        self.eeat_assessor = EEATAssessor()
+        self.human_input_identifier = HumanInputIdentifier()
+        self.intent_classifier = IntentClassifier()
+        self.journey_mapper = JourneyMapper()
         
-        try:
-            payload = {
-                "model": model,
-                "max_tokens": 4000,
-                "messages": [{"role": "user", "content": prompt}]
-            }
-            
-            response = requests.post(
-                "https://api.anthropic.com/v1/messages",
-                headers=self.headers,
-                json=payload,
-                timeout=60
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                return result["content"][0]["text"]
-            else:
-                logger.error(f"Claude API error: {response.status_code} - {response.text}")
-                return self._get_fallback_content(prompt)
-                
-        except Exception as e:
-            logger.error(f"Error calling Claude API: {str(e)}")
-            return self._get_fallback_content(prompt)
-    
-    def _get_fallback_content(self, prompt: str) -> str:
-        """Fallback content when API is unavailable"""
-        return f"""# Professional Content Generated
-
-Based on your requirements, here's a comprehensive analysis and content strategy.
-
-## Executive Summary
-This content addresses key market challenges while positioning your unique value proposition effectively.
-
-## Key Points Covered
-- Industry-specific insights and trends
-- Customer pain point analysis
-- Solution-oriented approach
-- Competitive differentiation
-- Actionable recommendations
-
-## Content Structure
-The generated content follows SEO best practices and Trust Score guidelines to ensure maximum search visibility and user engagement.
-
-*Note: API key not configured or Claude API unavailable. Please check your ANTHROPIC_API_KEY environment variable.*
-"""
-
-class EnhancedRedditClient:
-    """Fixed Reddit API client with proper Railway integration"""
-    def __init__(self):
-        self.reddit = None
-        self.available = False
-        self.praw_available = PRAW_AVAILABLE
+        # Knowledge Graph API integration
+        self.knowledge_graph_api = config.KNOWLEDGE_GRAPH_API
         
-        if not PRAW_AVAILABLE:
-            logger.warning("⚠️ PRAW library not available - using enhanced simulation mode")
-            return
-            
-        try:
-            if not all([config.REDDIT_CLIENT_ID, config.REDDIT_CLIENT_SECRET]):
-                logger.warning("⚠️ Reddit API credentials not found in Railway environment")
-                return
-            
-            logger.info(f"🔗 Initializing Reddit API client...")
-            
-            # Initialize PRAW Reddit instance
-            self.reddit = praw.Reddit(
-                client_id=config.REDDIT_CLIENT_ID,
-                client_secret=config.REDDIT_CLIENT_SECRET,
-                user_agent=config.REDDIT_USER_AGENT,
-                check_for_async=False
-            )
-            
-            # Test the connection
-            self._test_connection()
-            self.available = True
-            logger.info("✅ Reddit API connection successful!")
-            
-        except Exception as e:
-            logger.error(f"❌ Reddit API initialization failed: {str(e)}")
-            self.reddit = None
-            self.available = False
-    
-    def _test_connection(self):
-        """Test Reddit API connection"""
-        try:
-            if self.reddit:
-                test_subreddit = self.reddit.subreddit('test')
-                _ = test_subreddit.display_name
-                logger.info("✅ Reddit API connection test passed")
-        except Exception as e:
-            raise Exception(f"Reddit API connection test failed: {str(e)}")
-    
-    async def research_topic(self, topic: str, subreddits: str) -> Dict[str, Any]:
-        """Research topic across specified subreddits"""
-        if not self.available or not self.reddit:
-            logger.info("🔧 Reddit API not available - using enhanced simulation mode")
-            return self._get_enhanced_simulation(topic, subreddits)
-        
-        try:
-            logger.info(f"🔍 Starting Reddit research for '{topic}' in subreddits: {subreddits}")
-            
-            communities = [s.strip() for s in subreddits.split(',') if s.strip()]
-            insights = {
-                'customer_voice': {
-                    'common_language': [],
-                    'frequent_questions': [],
-                    'pain_points': [],
-                    'recommendations': []
-                },
-                'communities_analyzed': len(communities),
-                'total_posts_analyzed': 0,
-                'authenticity_score': 0,
-                'data_source': 'live_reddit_api'
-            }
-            
-            posts_found = 0
-            for subreddit_name in communities[:3]:  # Limit to 3 subreddits
-                try:
-                    subreddit = self.reddit.subreddit(subreddit_name)
-                    for submission in subreddit.search(topic, time_filter='month', limit=15):
-                        posts_found += 1
-                        text = f"{submission.title} {submission.selftext}".lower()
-                        
-                        # Extract insights
-                        if len(text) > 30:
-                            insights['customer_voice']['common_language'].append(text[:100])
-                        
-                        if '?' in text:
-                            questions = [q.strip() + '?' for q in text.split('?') if len(q.strip()) > 10]
-                            insights['customer_voice']['frequent_questions'].extend(questions[:2])
-                        
-                        pain_indicators = ['problem', 'issue', 'trouble', 'difficult', 'frustrating']
-                        if any(indicator in text for indicator in pain_indicators):
-                            insights['customer_voice']['pain_points'].append(text[:150])
-                        
-                        rec_indicators = ['recommend', 'suggest', 'best', 'use']
-                        if any(indicator in text for indicator in rec_indicators):
-                            insights['customer_voice']['recommendations'].append(text[:100])
-                
-                except Exception as e:
-                    logger.warning(f"⚠️ Error searching r/{subreddit_name}: {str(e)}")
-                    continue
-            
-            insights['total_posts_analyzed'] = posts_found
-            insights['authenticity_score'] = min(10.0, posts_found * 0.2 + 3.0)
-            
-            logger.info(f"✅ Reddit research complete: {posts_found} posts analyzed")
-            return insights
-            
-        except Exception as e:
-            logger.error(f"❌ Reddit research error: {str(e)}")
-            return self._get_enhanced_simulation(topic, subreddits)
-    
-    def _get_enhanced_simulation(self, topic: str, subreddits: str) -> Dict[str, Any]:
-        """Enhanced simulation when Reddit API is unavailable"""
-        communities = [s.strip() for s in subreddits.split(',') if s.strip()]
-        
-        return {
-            'customer_voice': {
-                'common_language': [
-                    f"Looking for {topic} recommendations",
-                    "Budget-friendly options",
-                    "Best value for money",
-                    "User-friendly and reliable"
-                ],
-                'frequent_questions': [
-                    f"What's the best {topic} for beginners?",
-                    f"How much should I budget for {topic}?",
-                    f"Any {topic} recommendations?",
-                    "Is it worth the investment?"
-                ],
-                'pain_points': [
-                    f"Too many {topic} options to choose from",
-                    f"Difficulty finding reliable {topic} information",
-                    "Limited budget constraints",
-                    "Time constraints for research"
-                ],
-                'recommendations': [
-                    "Do thorough research first",
-                    "Read reviews from multiple sources",
-                    "Start with basic options",
-                    "Consider long-term value"
-                ]
-            },
-            'communities_analyzed': len(communities),
-            'total_posts_analyzed': 45,
-            'authenticity_score': 4.2,
-            'data_source': 'enhanced_simulation',
-            'note': 'Enhanced simulation - Configure Reddit API for live insights'
-        }
-
-class EnhancedTrustScoreAssessor:
-    """FIXED Trust Score assessor with proper calculation"""
-    def __init__(self):
-        self.available = True
-        
-        # YMYL topics requiring higher Trust standards
-        self.ymyl_topics = [
-            'finance', 'health', 'medical', 'legal', 'investment', 'insurance',
-            'taxes', 'retirement', 'medication', 'surgery', 'diet', 'nutrition'
-        ]
-    
-    def assess_trust_score(self, content: str, business_context: Dict, 
-                          human_inputs: Dict, reddit_insights: Dict = None) -> Dict[str, Any]:
-        """FIXED Trust Score assessment with proper weighted calculation"""
-        
-        topic = business_context.get('topic', '')
-        industry = business_context.get('industry', '')
-        
-        # Determine if this is YMYL content
-        is_ymyl = self._is_ymyl_topic(topic, industry)
-        
-        # Calculate individual component scores (out of 10)
-        experience_score = self._assess_experience(human_inputs, reddit_insights)
-        expertise_score = self._assess_expertise(business_context, human_inputs, content)
-        authoritativeness_score = self._assess_authoritativeness(business_context, human_inputs)
-        trustworthiness_score = self._assess_trustworthiness(business_context, human_inputs)
-        
-        # FIXED: Calculate overall Trust score with proper weighting
-        if is_ymyl:
-            # YMYL content prioritizes trustworthiness and expertise
-            overall_score = (
-                experience_score * 0.20 +
-                expertise_score * 0.30 +
-                authoritativeness_score * 0.15 +
-                trustworthiness_score * 0.35
-            )
-        else:
-            # Non-YMYL content has balanced weighting
-            overall_score = (
-                experience_score * 0.25 +
-                expertise_score * 0.25 +
-                authoritativeness_score * 0.25 +
-                trustworthiness_score * 0.25
-            )
-        
-        # Determine trust level and grade
-        trust_level = self._determine_trust_level(overall_score)
-        trust_grade = self._determine_trust_grade(overall_score)
-        
-        return {
-            "overall_trust_score": round(overall_score, 1),
-            "trust_level": trust_level,
-            "trust_grade": trust_grade,
-            "is_ymyl_topic": is_ymyl,
-            "component_scores": {
-                "experience": round(experience_score, 1),
-                "expertise": round(expertise_score, 1),
-                "authoritativeness": round(authoritativeness_score, 1),
-                "trustworthiness": round(trustworthiness_score, 1)
-            },
-            "improvement_recommendations": self._get_improvement_recommendations(
-                experience_score, expertise_score, authoritativeness_score, trustworthiness_score
-            )
-        }
-    
-    def _is_ymyl_topic(self, topic: str, industry: str) -> bool:
-        """Determine if topic/industry is YMYL"""
-        topic_lower = topic.lower()
-        industry_lower = industry.lower()
-        return any(ymyl in topic_lower or ymyl in industry_lower for ymyl in self.ymyl_topics)
-    
-    def _assess_experience(self, human_inputs: Dict, reddit_insights: Dict) -> float:
-        """Assess Experience component"""
-        score = 3.0  # Base score
-        
-        customer_pain_points = human_inputs.get('customer_pain_points', '')
-        if len(customer_pain_points) > 100:
-            score += 2.0
-        elif len(customer_pain_points) > 50:
-            score += 1.0
-        
-        unique_value_prop = human_inputs.get('unique_value_prop', '')
-        if 'years' in unique_value_prop.lower() or 'experience' in unique_value_prop.lower():
-            score += 1.5
-        
-        if reddit_insights:
-            auth_score = reddit_insights.get('authenticity_score', 0)
-            if auth_score > 5.0:
-                score += 1.5
-            elif auth_score > 3.0:
-                score += 1.0
-        
-        return min(10.0, score)
-    
-    def _assess_expertise(self, business_context: Dict, human_inputs: Dict, content: str) -> float:
-        """Assess Expertise component"""
-        score = 3.5  # Base score
-        
-        if business_context.get('industry'):
-            score += 1.5
-        
-        unique_value_prop = human_inputs.get('unique_value_prop', '')
-        if len(unique_value_prop) > 100:
-            score += 2.0
-        elif len(unique_value_prop) > 50:
-            score += 1.0
-        
-        # Content depth
-        word_count = len(content.split())
-        if word_count > 1500:
-            score += 1.5
-        elif word_count > 800:
-            score += 1.0
-        
-        return min(10.0, score)
-    
-    def _assess_authoritativeness(self, business_context: Dict, human_inputs: Dict) -> float:
-        """Assess Authoritativeness component"""
-        score = 4.0  # Base score
-        
-        unique_value_prop = human_inputs.get('unique_value_prop', '')
-        if any(word in unique_value_prop.lower() for word in ['certified', 'licensed', 'award']):
-            score += 2.0
-        
-        if business_context.get('unique_value_prop') and len(unique_value_prop) > 80:
-            score += 1.5
-        
-        if business_context.get('business_type') == 'B2B':
-            score += 0.5
-        
-        return min(10.0, score)
-    
-    def _assess_trustworthiness(self, business_context: Dict, human_inputs: Dict) -> float:
-        """Assess Trustworthiness component"""
-        score = 4.5  # Base score
-        
-        unique_value_prop = human_inputs.get('unique_value_prop', '')
-        if len(unique_value_prop) > 100:
-            score += 2.0
-        elif len(unique_value_prop) > 50:
-            score += 1.0
-        
-        customer_pain_points = human_inputs.get('customer_pain_points', '')
-        if len(customer_pain_points) > 100:
-            score += 1.5
-        
-        if business_context.get('industry') in ['Healthcare', 'Finance', 'Legal']:
-            score += 1.0
-        
-        return min(10.0, score)
-    
-    def _determine_trust_level(self, score: float) -> str:
-        """Determine trust level based on score"""
-        if score >= 8.5:
-            return 'very_high'
-        elif score >= 7.0:
-            return 'high'
-        elif score >= 5.5:
-            return 'moderate'
-        else:
-            return 'developing'
-    
-    def _determine_trust_grade(self, score: float) -> str:
-        """Determine trust grade based on score"""
-        if score >= 9.0:
-            return 'A+'
-        elif score >= 8.5:
-            return 'A'
-        elif score >= 8.0:
-            return 'A-'
-        elif score >= 7.5:
-            return 'B+'
-        elif score >= 7.0:
-            return 'B'
-        elif score >= 6.0:
-            return 'C+'
-        else:
-            return 'C'
-    
-    def _get_improvement_recommendations(self, exp: float, expert: float, auth: float, trust: float) -> List[str]:
-        """Get improvement recommendations"""
-        recommendations = []
-        
-        if exp < 6.0:
-            recommendations.append("Add more personal experience stories and customer success cases")
-        if expert < 6.0:
-            recommendations.append("Demonstrate deeper industry expertise and technical knowledge")
-        if auth < 6.0:
-            recommendations.append("Build stronger authority signals and credibility indicators")
-        if trust < 7.0:
-            recommendations.append("Enhance transparency and include more trust signals")
-        
-        if not recommendations:
-            recommendations.append("Continue building on your strong trust foundation")
-        
-        return recommendations
-
-class QualityScorer:
-    """Content quality scorer"""
-    def __init__(self):
-        self.available = True
-    
-    def score_content_quality(self, content: str, business_context: Dict, 
-                            human_inputs: Dict, trust_assessment: Dict) -> Dict[str, Any]:
-        """Score content quality"""
-        
-        word_count = len(content.split())
-        trust_score = trust_assessment.get('overall_trust_score', 7.0)
-        
-        # Calculate quality metrics
-        content_score = 8.5 if word_count > 1000 else 7.0 if word_count > 500 else 6.0
-        structure_score = 8.0 if content.count('#') > 3 else 6.5
-        relevance_score = 8.5 if len(human_inputs.get('unique_value_prop', '')) > 50 else 7.0
-        
-        # Overall quality correlates with trust score
-        overall_score = (content_score * 0.3 + structure_score * 0.2 + 
-                        relevance_score * 0.2 + trust_score * 0.3)
-        
-        return {
-            "overall_quality_score": round(overall_score, 1),
-            "content_score": content_score,
-            "structure_score": structure_score,
-            "trust_correlation": trust_score,
-            "performance_prediction": "High performance expected" if overall_score >= 8.0 else "Good performance expected",
-            "vs_ai_comparison": {
-                "performance_boost": "350%+" if overall_score >= 8.5 else "250%+",
-                "engagement_multiplier": "4x" if overall_score >= 8.5 else "3x"
-            }
-        }
-
-class ConversationalAI:
-    """Working conversational AI for content improvements"""
-    def __init__(self, llm_client: LLMClient):
-        self.llm_client = llm_client
+        # Conversation history for chat
         self.conversation_history = []
+        
+        logger.info("✅ Enhanced Zee Orchestrator initialized with all agents")
     
-    async def process_message(self, message: str, trust_score: float, quality_score: float, 
-                            content_type: str, content: str) -> str:
-        """Process user message and return AI response"""
-        
-        context = f"""
-        You are an expert content improvement assistant. The user has generated content with:
-        - Trust Score: {trust_score}/10
-        - Quality Score: {quality_score}/10 
-        - Content Type: {content_type}
-        - Content Length: {len(content.split())} words
-        
-        User message: "{message}"
-        
-        Provide helpful, specific advice for improving their content. Be conversational and actionable.
-        """
-        
+    async def get_knowledge_graph_insights(self, topic: str) -> Dict[str, Any]:
+        """Get insights from Railway Knowledge Graph API"""
         try:
-            response = await self.llm_client.generate_content(context)
-            return response
-        except Exception as e:
-            return self._get_smart_fallback_response(message, trust_score, quality_score)
-    
-    def _get_smart_fallback_response(self, message: str, trust_score: float, quality_score: float) -> str:
-        """Smart fallback responses when AI API is unavailable"""
-        msg_lower = message.lower()
-        
-        if 'trust' in msg_lower or 'credibility' in msg_lower:
-            if trust_score < 6.0:
-                return f"Your Trust Score of {trust_score}/10 needs improvement. Try adding: 1) Author credentials and experience 2) Customer testimonials 3) Industry statistics 4) Contact information. Expected impact: +1.5 to +2.0 points."
+            response = requests.post(
+                self.knowledge_graph_api,
+                json={
+                    "topic": topic,
+                    "depth": 3,
+                    "include_related": True,
+                    "include_gaps": True
+                },
+                timeout=30
+            )
+            if response.status_code == 200:
+                return response.json()
             else:
-                return f"Your Trust Score of {trust_score}/10 is good! To optimize further: 1) Add more authority signals 2) Include recent success stories 3) Update content with latest data 4) Add expert quotes."
-        
-        elif 'improve' in msg_lower or 'better' in msg_lower:
-            return f"For your current {quality_score}/10 quality score, focus on: 1) Adding more specific examples 2) Including actionable steps 3) Improving content structure 4) Adding visual elements like bullet points."
-        
-        elif 'seo' in msg_lower:
-            return "For SEO optimization: 1) Use target keywords in headings 2) Add internal links 3) Optimize meta descriptions 4) Include related keywords naturally 5) Add FAQ sections."
-        
-        elif 'social' in msg_lower or 'facebook' in msg_lower or 'linkedin' in msg_lower:
-            return "For social media content: 1) Keep posts concise and engaging 2) Use platform-specific hashtags 3) Include clear calls-to-action 4) Add visual elements 5) Optimize posting times."
-        
-        else:
-            return f"Great question! With your Trust Score of {trust_score}/10 and Quality Score of {quality_score}/10, I can help you improve specific areas. Ask me about: trust building, SEO optimization, content structure, or social media adaptation."
-
-# ================== MAIN ORCHESTRATOR ==================
-
-class ZeeSEOOrchestrator:
-    """Main orchestrator for all SEO tool functionality"""
-    def __init__(self):
-        self.llm_client = LLMClient()
-        self.reddit_client = EnhancedRedditClient()
-        self.trust_assessor = EnhancedTrustScoreAssessor()
-        self.quality_scorer = QualityScorer()
-        self.conversational_ai = ConversationalAI(self.llm_client)
+                logger.warning(f"Knowledge Graph API returned {response.status_code}")
+                return self._get_fallback_kg_insights(topic)
+        except Exception as e:
+            logger.error(f"Knowledge Graph API error: {str(e)}")
+            return self._get_fallback_kg_insights(topic)
+    
+    def _get_fallback_kg_insights(self, topic: str) -> Dict[str, Any]:
+        """Fallback knowledge graph insights"""
+        return {
+            "entities": [
+                f"{topic} basics",
+                f"{topic} best practices",
+                f"{topic} tools and resources",
+                f"{topic} common challenges",
+                f"{topic} success strategies"
+            ],
+            "related_topics": [
+                f"Advanced {topic}",
+                f"{topic} for beginners",
+                f"{topic} case studies",
+                f"{topic} trends"
+            ],
+            "content_gaps": [
+                f"Complete {topic} guide",
+                f"{topic} comparison analysis",
+                f"{topic} implementation steps"
+            ],
+            "source": "fallback_generated"
+        }
     
     async def generate_comprehensive_analysis(self, form_data: Dict) -> Dict[str, Any]:
-        """Generate comprehensive content analysis"""
+        """Generate comprehensive analysis using all enhanced agents"""
         
         topic = form_data['topic']
-        content_type = form_data.get('desired_content_type', 'COMPREHENSIVE_GUIDE')
-        subreddits = form_data.get('subreddits', '')
+        logger.info(f"🚀 Starting comprehensive analysis for: {topic}")
         
-        # Business context
-        business_context = {
-            'topic': topic,
-            'industry': form_data['industry'],
-            'target_audience': form_data['target_audience'],
-            'business_type': form_data['business_type'],
-            'unique_value_prop': form_data['unique_value_prop']
-        }
+        # Step 1: Classify intent and content type
+        logger.info("🎯 Classifying user intent...")
+        intent_data = self.intent_classifier.classify_intent(topic)
         
-        # Human inputs
-        human_inputs = {
-            'customer_pain_points': form_data['customer_pain_points'],
-            'unique_value_prop': form_data['unique_value_prop']
-        }
+        # Step 2: Collect comprehensive business context
+        logger.info("🏢 Collecting business context...")
+        business_context = self.business_context_collector.collect_business_context(form_data)
         
-        logger.info(f"🎯 Starting comprehensive analysis for: {topic}")
-        
-        # Step 1: Reddit Research
-        logger.info("📱 Researching Reddit for customer insights...")
-        reddit_insights = await self.reddit_client.research_topic(topic, subreddits)
-        
-        # Step 2: Generate Content
-        logger.info("✍️ Generating optimized content...")
-        content = await self._generate_enhanced_content(
-            topic, content_type, business_context, human_inputs, reddit_insights, form_data
+        # Step 3: Enhanced Reddit research with social media focus
+        logger.info("📱 Conducting enhanced Reddit research...")
+        subreddits = self._get_relevant_subreddits(topic)
+        reddit_insights = self.reddit_researcher.research_topic_comprehensive(
+            topic=topic,
+            subreddits=subreddits,
+            max_posts_per_subreddit=15,
+            social_media_focus=True
         )
         
-        # Step 3: Trust Score Assessment
-        logger.info("🔒 Calculating Trust Score...")
-        trust_assessment = self.trust_assessor.assess_trust_score(
-            content, business_context, human_inputs, reddit_insights
+        # Step 4: Knowledge Graph analysis
+        logger.info("🧠 Analyzing knowledge graph...")
+        kg_insights = await self.get_knowledge_graph_insights(topic)
+        
+        # Step 5: Customer Journey mapping
+        logger.info("🗺️ Mapping customer journey...")
+        journey_data = self.journey_mapper.map_customer_journey(
+            topic, reddit_insights, business_context
         )
         
-        # Step 4: Quality Assessment
+        # Step 6: Human input identification
+        logger.info("👤 Identifying human inputs...")
+        human_inputs = self.human_input_identifier.identify_human_inputs(
+            topic, business_context, reddit_insights
+        )
+        
+        # Step 7: E-E-A-T assessment
+        logger.info("🔒 Conducting E-E-A-T assessment...")
+        eeat_assessment = self.eeat_assessor.assess_eeat_opportunity(
+            topic, business_context, reddit_insights
+        )
+        
+        # Step 8: Content type classification
+        logger.info("📝 Classifying optimal content type...")
+        content_type = self.content_type_classifier.classify_content_type(
+            topic, intent_data, business_context, reddit_insights
+        )
+        
+        # Step 9: Generate enhanced content
+        logger.info("✍️ Generating enhanced content...")
+        generated_content = self.content_generator.generate_complete_content(
+            topic=topic,
+            content_type=content_type,
+            reddit_insights=reddit_insights,
+            journey_data=journey_data,
+            business_context=business_context,
+            human_inputs=human_inputs,
+            eeat_assessment=eeat_assessment
+        )
+        
+        # Step 10: Quality assessment
         logger.info("📊 Scoring content quality...")
-        quality_assessment = self.quality_scorer.score_content_quality(
-            content, business_context, human_inputs, trust_assessment
+        quality_assessment = self.content_quality_scorer.score_content_quality(
+            content=generated_content,
+            topic=topic,
+            reddit_insights=reddit_insights,
+            business_context=business_context,
+            eeat_assessment=eeat_assessment
         )
         
-        logger.info("✅ Analysis complete!")
+        logger.info("✅ Comprehensive analysis complete!")
         
         return {
-            'topic': topic,
-            'content_type': content_type,
-            'generated_content': content,
-            'reddit_insights': reddit_insights,
-            'trust_assessment': trust_assessment,
-            'quality_assessment': quality_assessment,
-            'business_context': business_context,
-            'human_inputs': human_inputs,
-            'performance_metrics': {
-                'word_count': len(content.split()),
-                'trust_score': trust_assessment['overall_trust_score'],
-                'trust_grade': trust_assessment['trust_grade'],
-                'quality_score': quality_assessment['overall_quality_score']
+            "topic": topic,
+            "intent_data": intent_data,
+            "business_context": business_context,
+            "reddit_insights": reddit_insights,
+            "knowledge_graph": kg_insights,
+            "journey_data": journey_data,
+            "human_inputs": human_inputs,
+            "eeat_assessment": eeat_assessment,
+            "content_type": content_type,
+            "generated_content": generated_content,
+            "quality_assessment": quality_assessment,
+            "analysis_timestamp": datetime.now().isoformat(),
+            "performance_metrics": {
+                "word_count": len(generated_content.split()),
+                "trust_score": eeat_assessment.get('overall_trust_score', 0),
+                "quality_score": quality_assessment.get('overall_score', 0),
+                "reddit_posts_analyzed": reddit_insights.get('quantitative_insights', {}).get('total_posts_analyzed', 0),
+                "knowledge_entities": len(kg_insights.get('entities', [])),
+                "social_media_score": reddit_insights.get('social_media_metrics', {}).get('avg_engagement_rate', 0)
             }
         }
     
-    async def _generate_enhanced_content(self, topic: str, content_type: str, business_context: Dict, 
-                                       human_inputs: Dict, reddit_insights: Dict, 
-                                       form_data: Dict) -> str:
-        """Generate enhanced content based on selected type"""
+    async def process_chat_message(self, message: str, analysis_data: Dict) -> str:
+        """Process conversational AI message with context"""
         
-        customer_language = reddit_insights.get('customer_voice', {}).get('common_language', [])
-        customer_questions = reddit_insights.get('customer_voice', {}).get('frequent_questions', [])
-        customer_pain_points = reddit_insights.get('customer_voice', {}).get('pain_points', [])
+        # Add message to conversation history
+        self.conversation_history.append({
+            "role": "user",
+            "content": message,
+            "timestamp": datetime.now().isoformat()
+        })
         
-        # Content type specific prompts
-        content_prompts = {
-            'AUTO_DETECT': f"Analyze the topic '{topic}' and create the most appropriate content format",
-            'COMPREHENSIVE_GUIDE': f"Create a comprehensive, authoritative guide about '{topic}'",
-            'COMPARISON_TABLE': f"Create a detailed comparison table for '{topic}' options",
-            'LANDING_PAGE': f"Create a high-converting landing page for '{topic}'",
-            'PROCESS_GUIDE': f"Create a step-by-step process guide for '{topic}'",
-            'FAQ_PAGE': f"Create a comprehensive FAQ page about '{topic}'",
-            'CHECKLIST': f"Create an actionable checklist for '{topic}'",
-            'MARKETING_COPY': f"Create compelling marketing copy for '{topic}'",
-            'FACEBOOK_POST': f"Create engaging Facebook post content about '{topic}'",
-            'LINKEDIN_POST': f"Create professional LinkedIn post content about '{topic}'",
-            'INSTAGRAM_POST': f"Create visual Instagram post content about '{topic}'",
-            'TWITTER_THREAD': f"Create an engaging Twitter thread about '{topic}'",
-            'EMAIL_CAMPAIGN': f"Create an email marketing campaign about '{topic}'",
-            'BLOG_POST': f"Create an SEO-optimized blog post about '{topic}'",
-            'PRODUCT_DESCRIPTION': f"Create compelling product descriptions for '{topic}'",
-            'PRESS_RELEASE': f"Create a professional press release about '{topic}'"
-        }
+        # Extract relevant context
+        topic = analysis_data.get('topic', '')
+        quality_score = analysis_data.get('quality_assessment', {}).get('overall_score', 0)
+        trust_score = analysis_data.get('eeat_assessment', {}).get('overall_trust_score', 0)
+        content = analysis_data.get('generated_content', '')
+        kg_insights = analysis_data.get('knowledge_graph', {})
+        reddit_insights = analysis_data.get('reddit_insights', {})
         
-        base_prompt = content_prompts.get(content_type, content_prompts['COMPREHENSIVE_GUIDE'])
+        # Determine response based on message intent
+        response = await self._generate_contextual_response(
+            message, topic, quality_score, trust_score, content, kg_insights, reddit_insights
+        )
         
-        prompt = f"""
-        {base_prompt}
+        # Add response to conversation history
+        self.conversation_history.append({
+            "role": "assistant",
+            "content": response,
+            "timestamp": datetime.now().isoformat()
+        })
         
-        BUSINESS CONTEXT:
-        - Industry: {business_context['industry']}
-        - Target Audience: {business_context['target_audience']}
-        - Business Type: {business_context['business_type']}
-        - Unique Value: {business_context['unique_value_prop']}
+        return response
+    
+    async def _generate_contextual_response(self, message: str, topic: str, 
+                                         quality_score: float, trust_score: float,
+                                         content: str, kg_insights: Dict, reddit_insights: Dict) -> str:
+        """Generate contextual AI response"""
         
-        CUSTOMER INSIGHTS:
-        - Pain Points: {human_inputs['customer_pain_points']}
+        msg_lower = message.lower()
         
-        REDDIT RESEARCH:
-        - Customer Language: {', '.join(customer_language[:5])}
-        - Real Questions: {', '.join(customer_questions[:3])}
-        - Pain Points: {', '.join(customer_pain_points[:3])}
-        - Data Source: {reddit_insights.get('data_source', 'simulation')}
-        
-        AI INSTRUCTIONS:
-        - Style: {form_data.get('writing_style', 'Professional')}
-        - Word Count: {form_data.get('target_word_count', 'Optimal for content type')}
-        - Language: {form_data.get('language_preference', 'Default')}
-        - Notes: {form_data.get('additional_notes', '')}
-        
-        Content Type: {content_type}
-        
-        Create content that builds trust, addresses customer needs, and demonstrates expertise.
-        Use authentic customer language and provide actionable solutions.
-        Format appropriately for the selected content type.
-        """
-        
-        return await self.llm_client.generate_content(prompt)
+        # Knowledge gaps analysis
+        if any(word in msg_lower for word in ['knowledge', 'gaps', 'missing', 'cover']):
+            entities = kg_insights.get('entities', [])
+            gaps = kg_insights.get('content_gaps', [])
+            
+            response = f"""🧠 **Knowledge Gap Analysis for {topic}:**
 
-# Initialize the orchestrator
-zee_orchestrator = ZeeSEOOrchestrator()
+**🎯 Key Entities to Cover:**
+{chr(10).join([f"• {entity}" for entity in entities[:5]])}
+
+**📊 Content Gaps Identified:**
+{chr(10).join([f"• {gap}" for gap in gaps[:3]])}
+
+**💡 Recommendation:** Focus on the top 3 entities and create dedicated sections for the identified gaps. This will improve your content's comprehensiveness and authority.
+
+Would you like me to suggest specific content sections for these gaps?"""
+            
+            return response
+        
+        # Trust score improvement
+        elif any(word in msg_lower for word in ['trust', 'authority', 'credibility', 'eeat']):
+            if trust_score < 6.0:
+                return f"""🔒 **Trust Score Improvement (Current: {trust_score:.1f}/10):**
+
+**🚨 Critical Areas to Address:**
+• Add author credentials and expertise
+• Include customer testimonials and case studies
+• Provide verifiable data and statistics
+• Add contact information and transparency
+
+**📈 Expected Impact:** +2.0 to +3.0 points
+
+**🎯 Quick Win:** Add a brief author bio with relevant experience - this alone can boost your score by 1.5 points!"""
+            else:
+                return f"""✅ **Trust Score Optimization (Current: {trust_score:.1f}/10):**
+
+Your trust score is solid! Here's how to make it exceptional:
+
+• **Add Authority Signals:** Industry certifications, awards, or recognition
+• **Include Recent Data:** Update with latest statistics and trends
+• **Expert Quotes:** Reference other authorities in your field
+• **Social Proof:** More detailed customer success stories
+
+**🎯 Target:** 9.0+ score for maximum search visibility"""
+        
+        # Content improvement
+        elif any(word in msg_lower for word in ['improve', 'better', 'enhance', 'optimize']):
+            social_media_insights = reddit_insights.get('social_media_insights', {})
+            best_platform = social_media_insights.get('best_platform', 'unknown')
+            
+            return f"""🚀 **Content Enhancement Strategy:**
+
+**📊 Current Quality Score:** {quality_score:.1f}/10
+
+**🎯 Improvement Areas:**
+• **Structure:** Add more subheadings and bullet points
+• **Depth:** Include more specific examples and case studies
+• **Engagement:** Add questions and interactive elements
+• **Visuals:** Suggest infographics or charts
+
+**📱 Social Media Optimization:**
+• **Best Platform:** {best_platform.title()}
+• **Viral Potential:** {reddit_insights.get('social_media_metrics', {}).get('viral_content_ratio', 0)*100:.1f}%
+
+**💡 Next Steps:** Focus on {best_platform} format for maximum engagement. Would you like platform-specific suggestions?"""
+        
+        # SEO optimization
+        elif any(word in msg_lower for word in ['seo', 'search', 'ranking', 'keywords']):
+            return f"""🔍 **SEO Optimization Strategy:**
+
+**📈 Current Performance Potential:**
+• **Trust Score:** {trust_score:.1f}/10 (Higher = Better Rankings)
+• **Content Depth:** {len(content.split())} words
+• **Topic Coverage:** {len(kg_insights.get('entities', []))} key entities
+
+**🎯 SEO Improvements:**
+• **Keyword Integration:** Use entities as semantic keywords
+• **Internal Linking:** Connect to related topics
+• **Meta Optimization:** Create compelling titles and descriptions
+• **FAQ Section:** Address common questions from Reddit research
+
+**💡 Pro Tip:** Your knowledge graph analysis shows {len(kg_insights.get('entities', []))} entities - use these as your semantic keyword targets!"""
+        
+        # Social media specific
+        elif any(word in msg_lower for word in ['social', 'facebook', 'instagram', 'linkedin', 'twitter']):
+            social_metrics = reddit_insights.get('social_media_metrics', {})
+            platform_performance = social_metrics.get('platform_performance', {})
+            
+            platforms_text = ""
+            for platform, score in platform_performance.items():
+                platforms_text += f"• **{platform.title()}:** {score:.1f}/10\n"
+            
+            return f"""📱 **Social Media Strategy:**
+
+**🎯 Platform Performance:**
+{platforms_text}
+
+**📊 Content Adaptation:**
+• **Engagement Rate:** {social_metrics.get('avg_engagement_rate', 0):.1f}%
+• **Viral Potential:** {social_metrics.get('viral_content_ratio', 0)*100:.1f}%
+
+**💡 Platform-Specific Tips:**
+• **Facebook:** Use storytelling and longer-form content
+• **Instagram:** Focus on visual elements and hashtags
+• **LinkedIn:** Professional insights and industry data
+• **Twitter:** Quick tips and thread format
+
+Which platform would you like specific content for?"""
+        
+        # General help
+        else:
+            return f"""👋 **I'm here to help optimize your content!**
+
+**📊 Current Status:**
+• **Quality Score:** {quality_score:.1f}/10
+• **Trust Score:** {trust_score:.1f}/10
+• **Content Length:** {len(content.split())} words
+
+**🎯 What I can help with:**
+• **"Knowledge gaps"** - Show missing topics to cover
+• **"Improve trust"** - Boost credibility and authority
+• **"SEO optimization"** - Enhance search rankings
+• **"Social media"** - Adapt for different platforms
+• **"Better structure"** - Improve content organization
+
+**💡 Try asking:** "What knowledge gaps should I address?" or "How can I improve my trust score?"
+
+What would you like to work on first?"""
+        
+        return response
+    
+    def _get_relevant_subreddits(self, topic: str) -> List[str]:
+        """Get relevant subreddits for topic research"""
+        # Default high-engagement subreddits
+        base_subreddits = [
+            "AskReddit", "explainlikeimfive", "LifeProTips", "YouShouldKnow",
+            "personalfinance", "entrepreneur", "marketing", "business", "startup"
+        ]
+        
+        # Topic-specific subreddits
+        topic_lower = topic.lower()
+        
+        if any(word in topic_lower for word in ['tech', 'software', 'ai', 'programming']):
+            base_subreddits.extend(["technology", "programming", "MachineLearning", "artificial"])
+        elif any(word in topic_lower for word in ['health', 'fitness', 'nutrition']):
+            base_subreddits.extend(["health", "fitness", "nutrition", "loseit"])
+        elif any(word in topic_lower for word in ['money', 'finance', 'investing']):
+            base_subreddits.extend(["investing", "financialindependence", "stocks"])
+        elif any(word in topic_lower for word in ['marketing', 'seo', 'content']):
+            base_subreddits.extend(["marketing", "SEO", "content_marketing", "digital_marketing"])
+        elif any(word in topic_lower for word in ['social', 'media', 'instagram', 'facebook']):
+            base_subreddits.extend(["socialmedia", "Instagram", "Facebook", "marketing"])
+        
+        return list(set(base_subreddits))[:10]  # Limit to 10 unique subreddits
+
+# Initialize enhanced orchestrator
+zee_orchestrator = EnhancedZeeOrchestrator()
 
 # ================== API ROUTES ==================
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    """Modern, subtle design homepage"""
-    
-    reddit_status = "🟢 Connected" if zee_orchestrator.reddit_client.available else "🟡 Simulation Mode"
+    """Enhanced homepage with modern design"""
     
     return HTMLResponse(content=f"""
     <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
-        <title>Zee SEO Tool - Advanced Content Intelligence Platform</title>
+        <title>Zee SEO Tool v4.0 - Enhanced Agent Integration</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
-            * {{
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
-            }}
-            
+            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
             body {{
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-                background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-                color: #1e293b;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: #1a202c;
                 line-height: 1.6;
                 min-height: 100vh;
             }}
             
-            .header {{
-                background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
-                color: white;
-                padding: 1rem 0;
-                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            .hero {{
+                background: rgba(255, 255, 255, 0.95);
+                backdrop-filter: blur(10px);
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 2rem;
             }}
             
-            .header-content {{
-                max-width: 1200px;
-                margin: 0 auto;
-                padding: 0 2rem;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
+            .hero-content {{
+                max-width: 800px;
+                text-align: center;
+                animation: fadeInUp 1s ease-out;
             }}
             
             .logo {{
-                display: flex;
-                align-items: center;
-                gap: 1rem;
-            }}
-            
-            .logo-icon {{
-                width: 3rem;
-                height: 3rem;
-                background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-                border-radius: 0.75rem;
-                display: flex;
-                align-items: center;
-                justify-content: center;
+                font-size: 4rem;
                 font-weight: 900;
-                font-size: 1.5rem;
-                color: white;
-            }}
-            
-            .logo-text {{
-                font-size: 1.5rem;
-                font-weight: 700;
-            }}
-            
-            .status-indicator {{
-                background: rgba(255, 255, 255, 0.1);
-                padding: 0.5rem 1rem;
-                border-radius: 2rem;
-                font-size: 0.875rem;
-                backdrop-filter: blur(10px);
-            }}
-            
-            .container {{
-                max-width: 1200px;
-                margin: 0 auto;
-                padding: 3rem 2rem;
-            }}
-            
-            .hero {{
-                text-align: center;
-                margin-bottom: 3rem;
-            }}
-            
-            .hero h1 {{
-                font-size: 3rem;
-                font-weight: 800;
-                color: #1e293b;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
                 margin-bottom: 1rem;
-                line-height: 1.1;
             }}
             
-            .hero p {{
-                font-size: 1.25rem;
-                color: #64748b;
-                max-width: 600px;
-                margin: 0 auto 2rem;
+            .tagline {{
+                font-size: 1.5rem;
+                color: #4a5568;
+                margin-bottom: 2rem;
+                font-weight: 300;
             }}
             
-            .features-bar {{
-                display: flex;
-                justify-content: center;
-                gap: 2rem;
-                margin-bottom: 3rem;
-                flex-wrap: wrap;
-            }}
-            
-            .feature-badge {{
-                background: white;
-                padding: 0.75rem 1.5rem;
-                border-radius: 2rem;
-                font-size: 0.875rem;
-                font-weight: 600;
-                color: #3b82f6;
-                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-                border: 1px solid #e2e8f0;
-            }}
-            
-            .form-container {{
-                background: white;
-                border-radius: 1rem;
-                padding: 2rem;
-                box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
-                border: 1px solid #e2e8f0;
-            }}
-            
-            .form-grid {{
+            .features {{
                 display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 2rem;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 1rem;
+                margin: 2rem 0;
             }}
             
-            .form-section {{
-                background: #f8fafc;
+            .feature {{
+                background: rgba(255, 255, 255, 0.8);
                 padding: 1.5rem;
-                border-radius: 0.75rem;
-                border-left: 4px solid #3b82f6;
+                border-radius: 1rem;
+                text-align: center;
+                transition: transform 0.3s ease;
             }}
             
-            .section-title {{
-                font-size: 1.125rem;
-                font-weight: 700;
-                color: #1e293b;
+            .feature:hover {{
+                transform: translateY(-5px);
+            }}
+            
+            .feature-icon {{
+                font-size: 2rem;
                 margin-bottom: 1rem;
-                display: flex;
-                align-items: center;
-                gap: 0.5rem;
             }}
             
-            .form-group {{
-                margin-bottom: 1.5rem;
-            }}
-            
-            .form-label {{
-                display: block;
-                font-size: 0.875rem;
-                font-weight: 600;
-                color: #374151;
+            .feature-title {{
+                font-weight: 700;
+                color: #2d3748;
                 margin-bottom: 0.5rem;
             }}
             
-            .form-input, .form-textarea, .form-select {{
-                width: 100%;
-                padding: 0.75rem 1rem;
-                border: 1px solid #d1d5db;
-                border-radius: 0.5rem;
-                font-size: 0.875rem;
-                transition: all 0.2s ease;
-                font-family: inherit;
+            .feature-desc {{
+                color: #718096;
+                font-size: 0.9rem;
             }}
             
-            .form-input:focus, .form-textarea:focus, .form-select:focus {{
-                outline: none;
-                border-color: #3b82f6;
-                box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-            }}
-            
-            .form-textarea {{
-                min-height: 4rem;
-                resize: vertical;
-            }}
-            
-            .form-help {{
-                font-size: 0.75rem;
-                color: #6b7280;
-                margin-top: 0.25rem;
-            }}
-            
-            .submit-section {{
-                grid-column: 1 / -1;
-                text-align: center;
+            .cta-button {{
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 1.5rem 3rem;
+                border: none;
+                border-radius: 50px;
+                font-size: 1.2rem;
+                font-weight: 700;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
                 margin-top: 2rem;
             }}
             
-            .btn-primary {{
-                background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-                color: white;
-                padding: 1rem 2rem;
-                border: none;
-                border-radius: 0.5rem;
-                font-size: 1rem;
-                font-weight: 600;
-                cursor: pointer;
-                transition: all 0.2s ease;
-                box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+            .cta-button:hover {{
+                transform: translateY(-2px);
+                box-shadow: 0 15px 40px rgba(102, 126, 234, 0.4);
             }}
             
-            .btn-primary:hover {{
-                transform: translateY(-1px);
-                box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.4);
+            @keyframes fadeInUp {{
+                from {{
+                    opacity: 0;
+                    transform: translateY(30px);
+                }}
+                to {{
+                    opacity: 1;
+                    transform: translateY(0);
+                }}
             }}
             
-            .loading-overlay {{
-                display: none;
+            .version-badge {{
                 position: fixed;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                background: rgba(0, 0, 0, 0.5);
-                z-index: 1000;
-                backdrop-filter: blur(4px);
-            }}
-            
-            .loading-content {{
-                position: absolute;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                background: white;
-                padding: 2rem;
-                border-radius: 1rem;
-                text-align: center;
-                box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-            }}
-            
-            .loading-spinner {{
-                width: 3rem;
-                height: 3rem;
-                border: 3px solid #e2e8f0;
-                border-top: 3px solid #3b82f6;
-                border-radius: 50%;
-                animation: spin 1s linear infinite;
-                margin: 0 auto 1rem;
-            }}
-            
-            @keyframes spin {{
-                0% {{ transform: rotate(0deg); }}
-                100% {{ transform: rotate(360deg); }}
-            }}
-            
-            @media (max-width: 768px) {{
-                .form-grid {{ grid-template-columns: 1fr; }}
-                .features-bar {{ flex-direction: column; align-items: center; }}
-                .hero h1 {{ font-size: 2rem; }}
-                .container {{ padding: 2rem 1rem; }}
+                top: 1rem;
+                right: 1rem;
+                background: rgba(255, 255, 255, 0.9);
+                padding: 0.5rem 1rem;
+                border-radius: 2rem;
+                font-size: 0.8rem;
+                font-weight: 600;
+                color: #667eea;
+                backdrop-filter: blur(10px);
             }}
         </style>
     </head>
     <body>
-        <div class="header">
-            <div class="header-content">
-                <div class="logo">
-                    <div class="logo-icon">Z</div>
-                    <div class="logo-text">Zee SEO Tool</div>
+        <div class="version-badge">v4.0 - Enhanced Agents</div>
+        
+        <div class="hero">
+            <div class="hero-content">
+                <div class="logo">Zee SEO Tool</div>
+                <div class="tagline">Enhanced Agent Integration • Conversational AI • Knowledge Graph Analysis</div>
+                
+                <div class="features">
+                    <div class="feature">
+                        <div class="feature-icon">🧠</div>
+                        <div class="feature-title">Knowledge Graph</div>
+                        <div class="feature-desc">Railway API integration for comprehensive topic analysis</div>
+                    </div>
+                    <div class="feature">
+                        <div class="feature-icon">📱</div>
+                        <div class="feature-title">Enhanced Reddit</div>
+                        <div class="feature-desc">Deep social media insights and viral content analysis</div>
+                    </div>
+                    <div class="feature">
+                        <div class="feature-icon">💬</div>
+                        <div class="feature-title">Conversational AI</div>
+                        <div class="feature-desc">ChatGPT-like interface for content optimization</div>
+                    </div>
+                    <div class="feature">
+                        <div class="feature-icon">⚡</div>
+                        <div class="feature-title">All Agents</div>
+                        <div class="feature-desc">Complete pipeline: Intent → Research → Generate → Optimize</div>
+                    </div>
                 </div>
-                <div class="status-indicator">
-                    Reddit: {reddit_status} | Trust Score: ✅ Active
-                </div>
+                
+                <button class="cta-button" onclick="window.location.href='/app'">
+                    🚀 Start Advanced Content Creation
+                </button>
             </div>
         </div>
-        
-        <div class="container">
-            <div class="hero">
-                <h1>Advanced Content Intelligence</h1>
-                <p>Create high-performance content that bridges human expertise with AI efficiency. Build trust, engage audiences, and drive results.</p>
-            </div>
+    </body>
+    </html>
+    """)
+
+@app.get("/app", response_class=HTMLResponse)
+async def app_interface():
+    """Main application interface"""
+    return HTMLResponse(content="""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Zee SEO Tool - Content Creation Interface</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                background: #f8fafc;
+                color: #1a202c;
+                line-height: 1.6;
+            }
             
-            <div class="features-bar">
-                <div class="feature-badge">🔒 Trust Score Assessment</div>
-                <div class="feature-badge">📱 Live Reddit Research</div>
-                <div class="feature-badge">💬 AI Conversation</div>
-                <div class="feature-badge">📊 Performance Analytics</div>
-                <div class="feature-badge">🎯 Multi-Format Content</div>
+            .container {
+                max-width: 1200px;
+                margin: 0 auto;
+                padding: 2rem;
+            }
+            
+            .header {
+                background: white;
+                padding: 2rem;
+                border-radius: 1rem;
+                margin-bottom: 2rem;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            }
+            
+            .title {
+                font-size: 2.5rem;
+                font-weight: 800;
+                color: #2d3748;
+                margin-bottom: 1rem;
+            }
+            
+            .subtitle {
+                color: #718096;
+                font-size: 1.1rem;
+            }
+            
+            .form-container {
+                background: white;
+                padding: 2rem;
+                border-radius: 1rem;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+                margin-bottom: 2rem;
+            }
+            
+            .form-group {
+                margin-bottom: 1.5rem;
+            }
+            
+            .label {
+                display: block;
+                font-weight: 600;
+                margin-bottom: 0.5rem;
+                color: #4a5568;
+            }
+            
+            .input, .textarea, .select {
+                width: 100%;
+                padding: 1rem;
+                border: 2px solid #e2e8f0;
+                border-radius: 0.5rem;
+                font-size: 1rem;
+                transition: border-color 0.2s;
+            }
+            
+            .input:focus, .textarea:focus, .select:focus {
+                outline: none;
+                border-color: #667eea;
+            }
+            
+            .submit-btn {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 1rem 2rem;
+                border: none;
+                border-radius: 0.5rem;
+                font-size: 1.1rem;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                width: 100%;
+            }
+            
+            .submit-btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+            }
+            
+            .loading {
+                display: none;
+                text-align: center;
+                padding: 2rem;
+            }
+            
+            .spinner {
+                width: 50px;
+                height: 50px;
+                border: 5px solid #e2e8f0;
+                border-top: 5px solid #667eea;
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+                margin: 0 auto 1rem;
+            }
+            
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1 class="title">🚀 Enhanced Content Creation</h1>
+                <p class="subtitle">Advanced agent pipeline with Knowledge Graph analysis and conversational AI</p>
             </div>
             
             <div class="form-container">
-                <form action="/generate" method="post" id="contentForm">
-                    <div class="form-grid">
-                        <div class="form-section">
-                            <h3 class="section-title">📝 Content Strategy</h3>
-                            
-                            <div class="form-group">
-                                <label class="form-label">Content Topic *</label>
-                                <input class="form-input" type="text" name="topic" 
-                                       placeholder="e.g., best budget laptops for college students" required>
-                                <div class="form-help">Be specific for better AI analysis and recommendations</div>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label class="form-label">What content do you need? *</label>
-                                <select class="form-select" name="desired_content_type" required>
-                                    <option value="AUTO_DETECT">🤖 Let AI decide the best format</option>
-                                    <optgroup label="📝 Long-Form Content">
-                                        <option value="COMPREHENSIVE_GUIDE">📖 Comprehensive Guide</option>
-                                        <option value="BLOG_POST">📰 Blog Post (SEO Optimized)</option>
-                                        <option value="COMPARISON_TABLE">📊 Comparison Table</option>
-                                        <option value="PROCESS_GUIDE">📋 Step-by-Step Guide</option>
-                                        <option value="FAQ_PAGE">❓ FAQ Page</option>
-                                        <option value="CHECKLIST">✅ Actionable Checklist</option>
-                                    </optgroup>
-                                    <optgroup label="📢 Marketing Content">
-                                        <option value="LANDING_PAGE">🎯 Landing Page</option>
-                                        <option value="MARKETING_COPY">💼 Marketing Copy</option>
-                                        <option value="PRODUCT_DESCRIPTION">🛍️ Product Description</option>
-                                        <option value="EMAIL_CAMPAIGN">📧 Email Campaign</option>
-                                        <option value="PRESS_RELEASE">📰 Press Release</option>
-                                    </optgroup>
-                                    <optgroup label="📱 Social Media">
-                                        <option value="FACEBOOK_POST">📘 Facebook Post</option>
-                                        <option value="LINKEDIN_POST">💼 LinkedIn Post</option>
-                                        <option value="INSTAGRAM_POST">📸 Instagram Post</option>
-                                        <option value="TWITTER_THREAD">🐦 Twitter Thread</option>
-                                    </optgroup>
-                                </select>
-                                <div class="form-help">AI will optimize content format, length, and style for your selection</div>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label class="form-label">Reddit Communities for Research</label>
-                                <input class="form-input" type="text" name="subreddits" 
-                                       placeholder="e.g., laptops, college, StudentLoans">
-                                <div class="form-help">Target communities for authentic customer insights</div>
-                            </div>
-                        </div>
-                        
-                        <div class="form-section">
-                            <h3 class="section-title">🤖 AI Instructions</h3>
-                            
-                            <div class="form-group">
-                                <label class="form-label">Writing Style</label>
-                                <select class="form-select" name="writing_style">
-                                    <option value="">Professional (Default)</option>
-                                    <option value="Conversational">Conversational & Friendly</option>
-                                    <option value="Academic">Academic & Research-Based</option>
-                                    <option value="Technical">Technical & Detailed</option>
-                                    <option value="Marketing">Marketing & Persuasive</option>
-                                    <option value="Casual">Casual & Approachable</option>
-                                </select>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label class="form-label">Target Length</label>
-                                <select class="form-select" name="target_word_count">
-                                    <option value="">Optimal for Content Type</option>
-                                    <option value="Short (300-500 words)">Short (300-500 words)</option>
-                                    <option value="Medium (800-1200 words)">Medium (800-1200 words)</option>
-                                    <option value="Long (1500-2500 words)">Long (1500-2500 words)</option>
-                                    <option value="Very Long (3000+ words)">Very Long (3000+ words)</option>
-                                </select>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label class="form-label">Language Preference</label>
-                                <select class="form-select" name="language_preference">
-                                    <option value="">Default</option>
-                                    <option value="British English">British English</option>
-                                    <option value="American English">American English</option>
-                                    <option value="Simple Language">Simple Language</option>
-                                    <option value="Technical Language">Technical Language</option>
-                                </select>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label class="form-label">Additional Instructions</label>
-                                <textarea class="form-textarea" name="additional_notes" 
-                                          placeholder="e.g., Include statistics, Add comparison tables, Focus on benefits, Use bullet points"></textarea>
-                                <div class="form-help">Specific guidance for the AI about content structure and focus</div>
-                            </div>
-                        </div>
-                        
-                        <div class="form-section">
-                            <h3 class="section-title">🏢 Business Context</h3>
-                            
-                            <div class="form-group">
-                                <label class="form-label">Industry *</label>
-                                <input class="form-input" type="text" name="industry" 
-                                       placeholder="e.g., Technology, Healthcare, Finance" required>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label class="form-label">Target Audience *</label>
-                                <input class="form-input" type="text" name="target_audience" 
-                                       placeholder="e.g., College students, Small business owners" required>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label class="form-label">Business Type *</label>
-                                <select class="form-select" name="business_type" required>
-                                    <option value="">Select business model</option>
-                                    <option value="B2B">B2B (Business to Business)</option>
-                                    <option value="B2C">B2C (Business to Consumer)</option>
-                                    <option value="E-commerce">E-commerce</option>
-                                    <option value="SaaS">Software as a Service</option>
-                                    <option value="Consulting">Consulting Services</option>
-                                    <option value="Education">Education/Training</option>
-                                </select>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label class="form-label">Your Unique Value Proposition *</label>
-                                <textarea class="form-textarea" name="unique_value_prop" 
-                                          placeholder="What makes you different? Your expertise, experience, unique approach..." required></textarea>
-                                <div class="form-help">Critical for building authority and trust in your content</div>
-                            </div>
-                        </div>
-                        
-                        <div class="form-section">
-                            <h3 class="section-title">👥 Customer Insights</h3>
-                            
-                            <div class="form-group">
-                                <label class="form-label">Customer Pain Points & Challenges *</label>
-                                <textarea class="form-textarea" name="customer_pain_points" 
-                                          placeholder="What specific problems do your customers face? What keeps them up at night?" required></textarea>
-                                <div class="form-help">Will be combined with Reddit research for authentic insights</div>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label class="form-label">Common Customer Questions</label>
-                                <textarea class="form-textarea" name="frequent_questions" 
-                                          placeholder="e.g., How much does it cost? Is it reliable? How long does it take?"></textarea>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label class="form-label">Success Story (Optional)</label>
-                                <textarea class="form-textarea" name="success_story" 
-                                          placeholder="e.g., Helped a customer save 50% on costs, reduced their time by 3 hours daily"></textarea>
-                                <div class="form-help">Adds authenticity and dramatically improves Trust Score</div>
-                            </div>
-                        </div>
-                        
-                        <div class="submit-section">
-                            <button type="submit" class="btn-primary">
-                                🚀 Generate Advanced Content Intelligence Report
-                            </button>
-                        </div>
+                <form id="contentForm" onsubmit="handleSubmit(event)">
+                    <div class="form-group">
+                        <label class="label">Content Topic *</label>
+                        <input class="input" type="text" name="topic" placeholder="e.g., best budget laptops for students" required>
                     </div>
+                    
+                    <div class="form-group">
+                        <label class="label">Target Audience *</label>
+                        <input class="input" type="text" name="target_audience" placeholder="e.g., college students, small business owners" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="label">Industry *</label>
+                        <input class="input" type="text" name="industry" placeholder="e.g., Technology, Education, Finance" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="label">Your Unique Value Proposition *</label>
+                        <textarea class="textarea" name="unique_value_prop" rows="4" placeholder="What makes you different? Your expertise, experience, unique approach..." required></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="label">Customer Pain Points *</label>
+                        <textarea class="textarea" name="customer_pain_points" rows="4" placeholder="What specific problems do your customers face?" required></textarea>
+                    </div>
+                    
+                    <button type="submit" class="submit-btn">
+                        ⚡ Generate Enhanced Content Analysis
+                    </button>
                 </form>
             </div>
-        </div>
-        
-        <div class="loading-overlay" id="loadingOverlay">
-            <div class="loading-content">
-                <div class="loading-spinner"></div>
-                <h3>Processing Your Content Strategy</h3>
-                <p>Running advanced AI analysis with Trust Score assessment, Reddit research, and content optimization...</p>
+            
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <h3>Processing with Enhanced Agents...</h3>
+                <p>Running comprehensive analysis with all integrated agents</p>
             </div>
         </div>
         
         <script>
-            document.getElementById('contentForm').addEventListener('submit', function() {{
-                document.getElementById('loadingOverlay').style.display = 'block';
-            }});
+            async function handleSubmit(event) {
+                event.preventDefault();
+                
+                const formData = new FormData(event.target);
+                const loading = document.getElementById('loading');
+                const form = document.getElementById('contentForm');
+                
+                // Show loading
+                form.style.display = 'none';
+                loading.style.display = 'block';
+                
+                try {
+                    const response = await fetch('/generate', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (response.ok) {
+                        const result = await response.text();
+                        document.body.innerHTML = result;
+                    } else {
+                        throw new Error('Generation failed');
+                    }
+                } catch (error) {
+                    alert('Error generating content. Please try again.');
+                    form.style.display = 'block';
+                    loading.style.display = 'none';
+                }
+            }
         </script>
     </body>
     </html>
     """)
 
 @app.post("/generate")
-async def generate_content(
+async def generate_enhanced_content(
     topic: str = Form(...),
-    desired_content_type: str = Form(...),
-    subreddits: str = Form(""),
-    writing_style: str = Form(""),
-    target_word_count: str = Form(""),
-    language_preference: str = Form(""),
-    additional_notes: str = Form(""),
-    industry: str = Form(...),
     target_audience: str = Form(...),
-    business_type: str = Form(...),
+    industry: str = Form(...),
     unique_value_prop: str = Form(...),
-    customer_pain_points: str = Form(...),
-    frequent_questions: str = Form(""),
-    success_story: str = Form("")
+    customer_pain_points: str = Form(...)
 ):
-    """Generate enhanced content with modern results page"""
+    """Generate enhanced content using all agents"""
     try:
         form_data = {
             'topic': topic,
-            'desired_content_type': desired_content_type,
-            'subreddits': subreddits,
-            'writing_style': writing_style,
-            'target_word_count': target_word_count,
-            'language_preference': language_preference,
-            'additional_notes': additional_notes,
-            'industry': industry,
             'target_audience': target_audience,
-            'business_type': business_type,
+            'industry': industry,
             'unique_value_prop': unique_value_prop,
-            'customer_pain_points': customer_pain_points,
-            'frequent_questions': frequent_questions,
-            'success_story': success_story
+            'customer_pain_points': customer_pain_points
         }
         
-        logger.info(f"🎯 Starting content generation for: {topic}")
+        # Generate comprehensive analysis
+        analysis = await zee_orchestrator.generate_comprehensive_analysis(form_data)
         
-        # Run comprehensive analysis
-        results = await zee_orchestrator.generate_comprehensive_analysis(form_data)
-        
-        logger.info(f"✅ Content generation complete")
-        
-        return HTMLResponse(content=generate_modern_results_page(results))
+        # Return enhanced results page
+        return HTMLResponse(content=generate_enhanced_results_page(analysis))
         
     except Exception as e:
-        logger.error(f"❌ Error generating content: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Content generation failed: {str(e)}")
+        logger.error(f"Error generating content: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/chat")
-async def chat_with_ai(
+async def chat_endpoint(
     message: str = Form(...),
-    trust_score: float = Form(...),
-    quality_score: float = Form(...),
-    content_type: str = Form(...),
-    content: str = Form(...)
+    analysis_data: str = Form(...)
 ):
-    """API endpoint for conversational AI"""
+    """Enhanced chat endpoint"""
     try:
-        response = await zee_orchestrator.conversational_ai.process_message(
-            message, trust_score, quality_score, content_type, content
-        )
+        # Parse analysis data
+        analysis = json.loads(analysis_data)
+        
+        # Process message with full context
+        response = await zee_orchestrator.process_chat_message(message, analysis)
+        
         return JSONResponse({"response": response})
+        
     except Exception as e:
-        logger.error(f"❌ Chat error: {str(e)}")
-        return JSONResponse({"response": "I apologize, but I'm having trouble processing your request. Please try again."})
+        logger.error(f"Chat error: {str(e)}")
+        return JSONResponse({"response": "I'm having trouble processing your request. Please try again."})
 
-def generate_modern_results_page(results: Dict[str, Any]) -> str:
-    """Generate modern, subtle results page with working conversational AI"""
+def generate_enhanced_results_page(analysis: Dict[str, Any]) -> str:
+    """Generate enhanced results page with conversational AI"""
     
-    topic = results['topic']
-    content_type = results['content_type']
-    content = results['generated_content']
-    trust = results['trust_assessment']
-    quality = results['quality_assessment']
-    reddit = results['reddit_insights']
-    metrics = results['performance_metrics']
+    # Extract key data
+    topic = analysis['topic']
+    metrics = analysis['performance_metrics']
+    content = analysis['generated_content']
+    kg_insights = analysis['knowledge_graph']
+    reddit_insights = analysis['reddit_insights']
+    
+    # Prepare analysis data for JavaScript
+    analysis_json = json.dumps(analysis, default=str)
     
     return f"""
     <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
-        <title>Content Intelligence Report - {topic} | Zee SEO Tool</title>
+        <title>Enhanced Content Analysis - {topic}</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
             * {{ margin: 0; padding: 0; box-sizing: border-box; }}
             body {{
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-                background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-                color: #1e293b;
+                background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+                color: #1a202c;
                 line-height: 1.6;
                 min-height: 100vh;
-            }}
-            
-            .header {{
-                background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
-                color: white;
-                padding: 1rem 0;
-                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-            }}
-            
-            .header-content {{
-                max-width: 1400px;
-                margin: 0 auto;
-                padding: 0 2rem;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }}
-            
-            .logo {{
-                display: flex;
-                align-items: center;
-                gap: 1rem;
-            }}
-            
-            .logo-icon {{
-                width: 2.5rem;
-                height: 2.5rem;
-                background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-                border-radius: 0.5rem;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-weight: 900;
-                color: white;
-            }}
-            
-            .back-link {{
-                color: white;
-                text-decoration: none;
-                padding: 0.5rem 1rem;
-                border-radius: 0.5rem;
-                background: rgba(255, 255, 255, 0.1);
-                transition: all 0.2s ease;
-            }}
-            
-            .back-link:hover {{
-                background: rgba(255, 255, 255, 0.2);
             }}
             
             .container {{
@@ -1301,95 +874,67 @@ def generate_modern_results_page(results: Dict[str, Any]) -> str:
                 padding: 2rem;
             }}
             
-            .report-hero {{
+            .header {{
                 background: white;
-                border-radius: 1rem;
                 padding: 2rem;
+                border-radius: 1rem;
                 margin-bottom: 2rem;
-                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-                border: 1px solid #e2e8f0;
+                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
             }}
             
-            .report-title {{
-                font-size: 2rem;
+            .title {{
+                font-size: 2.5rem;
                 font-weight: 800;
-                color: #1e293b;
+                color: #2d3748;
                 margin-bottom: 1rem;
-            }}
-            
-            .report-meta {{
-                display: flex;
-                gap: 1rem;
-                flex-wrap: wrap;
-                margin-bottom: 2rem;
-            }}
-            
-            .meta-badge {{
-                background: #f1f5f9;
-                color: #475569;
-                padding: 0.5rem 1rem;
-                border-radius: 2rem;
-                font-size: 0.875rem;
-                font-weight: 600;
             }}
             
             .metrics-grid {{
                 display: grid;
                 grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
                 gap: 1.5rem;
-                margin-bottom: 2rem;
+                margin: 2rem 0;
             }}
             
             .metric-card {{
                 background: white;
-                padding: 1.5rem;
-                border-radius: 0.75rem;
+                padding: 2rem;
+                border-radius: 1rem;
                 text-align: center;
-                box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
-                border: 1px solid #e2e8f0;
-                transition: all 0.2s ease;
+                box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+                transition: transform 0.3s ease;
             }}
             
             .metric-card:hover {{
-                transform: translateY(-2px);
-                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+                transform: translateY(-5px);
             }}
             
             .metric-value {{
-                font-size: 2rem;
+                font-size: 2.5rem;
                 font-weight: 800;
-                color: #3b82f6;
+                color: #667eea;
                 margin-bottom: 0.5rem;
             }}
             
             .metric-label {{
-                font-size: 0.875rem;
-                color: #64748b;
+                color: #718096;
                 font-weight: 600;
             }}
             
             .content-section {{
                 background: white;
-                border-radius: 1rem;
                 margin-bottom: 2rem;
-                box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
-                border: 1px solid #e2e8f0;
+                border-radius: 1rem;
                 overflow: hidden;
+                box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
             }}
             
             .section-header {{
-                background: #f8fafc;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
                 padding: 1.5rem 2rem;
-                border-bottom: 1px solid #e2e8f0;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }}
-            
-            .section-title {{
                 font-size: 1.25rem;
                 font-weight: 700;
-                color: #1e293b;
             }}
             
             .section-content {{
@@ -1398,74 +943,35 @@ def generate_modern_results_page(results: Dict[str, Any]) -> str:
             
             .content-display {{
                 background: #f8fafc;
+                padding: 2rem;
                 border-radius: 0.5rem;
-                padding: 1.5rem;
-                border: 1px solid #e2e8f0;
-                max-height: 600px;
+                border-left: 4px solid #667eea;
+                max-height: 400px;
                 overflow-y: auto;
-                margin: 1rem 0;
-            }}
-            
-            .content-text {{
                 white-space: pre-wrap;
-                font-family: ui-monospace, SFMono-Regular, "SF Mono", Monaco, Consolas, monospace;
-                font-size: 0.875rem;
+                font-family: ui-monospace, SFMono-Regular, Monaco, monospace;
+                font-size: 0.9rem;
                 line-height: 1.6;
-                color: #374151;
             }}
             
-            .actions-bar {{
-                display: flex;
-                gap: 1rem;
-                margin-bottom: 1rem;
-            }}
-            
-            .btn {{
-                padding: 0.75rem 1.5rem;
-                border-radius: 0.5rem;
-                font-weight: 600;
-                font-size: 0.875rem;
-                cursor: pointer;
-                transition: all 0.2s ease;
-                border: none;
-                text-decoration: none;
-            }}
-            
-            .btn-primary {{
-                background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-                color: white;
-                box-shadow: 0 1px 3px 0 rgba(59, 130, 246, 0.3);
-            }}
-            
-            .btn-outline {{
-                background: white;
-                color: #374151;
-                border: 1px solid #d1d5db;
-            }}
-            
-            .btn:hover {{
-                transform: translateY(-1px);
-            }}
-            
-            .chat-container {{
+            .chat-interface {{
                 position: fixed;
                 bottom: 2rem;
                 right: 2rem;
-                width: 400px;
+                width: 450px;
                 height: 600px;
                 background: white;
                 border-radius: 1rem;
-                box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-                border: 1px solid #e2e8f0;
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
                 display: none;
                 flex-direction: column;
                 z-index: 1000;
             }}
             
             .chat-header {{
-                background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 color: white;
-                padding: 1rem;
+                padding: 1.5rem;
                 border-radius: 1rem 1rem 0 0;
                 display: flex;
                 justify-content: space-between;
@@ -1474,7 +980,7 @@ def generate_modern_results_page(results: Dict[str, Any]) -> str:
             
             .chat-messages {{
                 flex: 1;
-                padding: 1rem;
+                padding: 1.5rem;
                 overflow-y: auto;
                 display: flex;
                 flex-direction: column;
@@ -1483,40 +989,44 @@ def generate_modern_results_page(results: Dict[str, Any]) -> str:
             
             .message {{
                 padding: 1rem;
-                border-radius: 0.75rem;
-                font-size: 0.875rem;
+                border-radius: 1rem;
+                font-size: 0.9rem;
                 line-height: 1.5;
-            }}
-            
-            .message.ai {{
-                background: #f0fdf4;
-                border-left: 4px solid #10b981;
+                max-width: 85%;
             }}
             
             .message.user {{
-                background: #eff6ff;
-                border-left: 4px solid #3b82f6;
-                margin-left: 2rem;
+                background: #667eea;
+                color: white;
+                margin-left: auto;
+                border-bottom-right-radius: 0.25rem;
+            }}
+            
+            .message.assistant {{
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+                margin-right: auto;
+                border-bottom-left-radius: 0.25rem;
             }}
             
             .chat-input {{
-                padding: 1rem;
+                padding: 1.5rem;
                 border-top: 1px solid #e2e8f0;
                 display: flex;
-                gap: 0.5rem;
+                gap: 1rem;
             }}
             
             .chat-input input {{
                 flex: 1;
                 padding: 0.75rem;
-                border: 1px solid #d1d5db;
+                border: 2px solid #e2e8f0;
                 border-radius: 0.5rem;
-                font-size: 0.875rem;
+                font-size: 0.9rem;
             }}
             
             .chat-input button {{
-                padding: 0.75rem 1rem;
-                background: #10b981;
+                padding: 0.75rem 1.5rem;
+                background: #667eea;
                 color: white;
                 border: none;
                 border-radius: 0.5rem;
@@ -1528,17 +1038,17 @@ def generate_modern_results_page(results: Dict[str, Any]) -> str:
                 position: fixed;
                 bottom: 2rem;
                 right: 2rem;
-                width: 60px;
-                height: 60px;
-                background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+                width: 70px;
+                height: 70px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 border-radius: 50%;
                 border: none;
                 color: white;
                 font-size: 1.5rem;
                 cursor: pointer;
-                box-shadow: 0 4px 20px rgba(16, 185, 129, 0.4);
+                box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
                 z-index: 1001;
-                transition: all 0.2s ease;
+                transition: all 0.3s ease;
             }}
             
             .chat-toggle:hover {{
@@ -1556,199 +1066,195 @@ def generate_modern_results_page(results: Dict[str, Any]) -> str:
                 background: #f8fafc;
                 padding: 1.5rem;
                 border-radius: 0.75rem;
-                border-left: 4px solid #3b82f6;
+                border-left: 4px solid #667eea;
             }}
             
             .insight-title {{
                 font-weight: 700;
-                color: #1e293b;
+                color: #2d3748;
                 margin-bottom: 0.5rem;
             }}
             
             .insight-value {{
-                font-size: 1.125rem;
+                font-size: 1.25rem;
                 font-weight: 600;
-                color: #3b82f6;
-                margin-bottom: 0.25rem;
+                color: #667eea;
+                margin-bottom: 0.5rem;
             }}
             
-            .insight-description {{
-                font-size: 0.875rem;
-                color: #64748b;
+            .quick-actions {{
+                display: flex;
+                gap: 1rem;
+                margin: 1.5rem 0;
+                flex-wrap: wrap;
+            }}
+            
+            .quick-btn {{
+                padding: 0.75rem 1.5rem;
+                background: #667eea;
+                color: white;
+                border: none;
+                border-radius: 0.5rem;
+                cursor: pointer;
+                font-weight: 600;
+                transition: all 0.3s ease;
+            }}
+            
+            .quick-btn:hover {{
+                background: #5a67d8;
+                transform: translateY(-2px);
             }}
             
             @media (max-width: 768px) {{
-                .metrics-grid {{ grid-template-columns: 1fr; }}
-                .insights-grid {{ grid-template-columns: 1fr; }}
-                .chat-container {{ width: 90%; right: 5%; }}
-                .container {{ padding: 1rem; }}
-                .actions-bar {{ flex-direction: column; }}
+                .chat-interface {{
+                    width: 90%;
+                    right: 5%;
+                }}
+                .metrics-grid {{
+                    grid-template-columns: 1fr;
+                }}
             }}
         </style>
     </head>
     <body>
-        <div class="header">
-            <div class="header-content">
-                <div class="logo">
-                    <div class="logo-icon">Z</div>
-                    <div>Zee SEO Tool</div>
-                </div>
-                <a href="/" class="back-link">← New Analysis</a>
-            </div>
-        </div>
-        
         <div class="container">
-            <div class="report-hero">
-                <h1 class="report-title">{topic.title()}</h1>
-                <div class="report-meta">
-                    <span class="meta-badge">🎯 {content_type.replace('_', ' ').title()}</span>
-                    <span class="meta-badge">📝 {metrics['word_count']} words</span>
-                    <span class="meta-badge">🔒 {trust['trust_grade']} Trust Grade</span>
-                    <span class="meta-badge">📊 {quality['overall_quality_score']}/10 Quality</span>
-                    <span class="meta-badge">🎭 {reddit.get('data_source', 'simulation').replace('_', ' ').title()}</span>
-                </div>
+            <div class="header">
+                <h1 class="title">🚀 Enhanced Analysis: {topic.title()}</h1>
                 
                 <div class="metrics-grid">
                     <div class="metric-card">
-                        <div class="metric-value">{trust['overall_trust_score']}/10</div>
-                        <div class="metric-label">Trust Score</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-value">{quality['overall_quality_score']}/10</div>
+                        <div class="metric-value">{metrics['quality_score']:.1f}/10</div>
                         <div class="metric-label">Quality Score</div>
                     </div>
                     <div class="metric-card">
-                        <div class="metric-value">{quality['vs_ai_comparison']['performance_boost']}</div>
-                        <div class="metric-label">vs AI Performance</div>
+                        <div class="metric-value">{metrics['trust_score']:.1f}/10</div>
+                        <div class="metric-label">Trust Score</div>
                     </div>
                     <div class="metric-card">
-                        <div class="metric-value">{reddit['authenticity_score']:.1f}/10</div>
-                        <div class="metric-label">Reddit Authenticity</div>
+                        <div class="metric-value">{metrics['reddit_posts_analyzed']}</div>
+                        <div class="metric-label">Reddit Posts</div>
                     </div>
+                    <div class="metric-card">
+                        <div class="metric-value">{metrics['knowledge_entities']}</div>
+                        <div class="metric-label">Knowledge Entities</div>
+                    </div>
+                </div>
+                
+                <div class="quick-actions">
+                    <button class="quick-btn" onclick="askQuestion('What knowledge gaps should I cover?')">
+                        🧠 Knowledge Gaps
+                    </button>
+                    <button class="quick-btn" onclick="askQuestion('How can I improve my trust score?')">
+                        🔒 Improve Trust
+                    </button>
+                    <button class="quick-btn" onclick="askQuestion('SEO optimization tips?')">
+                        🔍 SEO Tips
+                    </button>
+                    <button class="quick-btn" onclick="askQuestion('Social media strategy?')">
+                        📱 Social Media
+                    </button>
                 </div>
             </div>
             
             <div class="content-section">
-                <div class="section-header">
-                    <h2 class="section-title">📊 Trust Score Analysis</h2>
-                </div>
+                <div class="section-header">🧠 Knowledge Graph Analysis</div>
                 <div class="section-content">
                     <div class="insights-grid">
                         <div class="insight-card">
-                            <div class="insight-title">Experience</div>
-                            <div class="insight-value">{trust['component_scores']['experience']}/10</div>
-                            <div class="insight-description">First-hand knowledge and practical application</div>
+                            <div class="insight-title">Entities Identified</div>
+                            <div class="insight-value">{len(kg_insights.get('entities', []))}</div>
+                            <div>Key topics and concepts to cover</div>
                         </div>
                         <div class="insight-card">
-                            <div class="insight-title">Expertise</div>
-                            <div class="insight-value">{trust['component_scores']['expertise']}/10</div>
-                            <div class="insight-description">Deep knowledge and skill in the subject area</div>
+                            <div class="insight-title">Content Gaps</div>
+                            <div class="insight-value">{len(kg_insights.get('content_gaps', []))}</div>
+                            <div>Missing topics that competitors don't cover</div>
                         </div>
                         <div class="insight-card">
-                            <div class="insight-title">Authoritativeness</div>
-                            <div class="insight-value">{trust['component_scores']['authoritativeness']}/10</div>
-                            <div class="insight-description">Recognition and credibility in the field</div>
+                            <div class="insight-title">Related Topics</div>
+                            <div class="insight-value">{len(kg_insights.get('related_topics', []))}</div>
+                            <div>Additional content opportunities</div>
                         </div>
-                        <div class="insight-card">
-                            <div class="insight-title">Trustworthiness</div>
-                            <div class="insight-value">{trust['component_scores']['trustworthiness']}/10</div>
-                            <div class="insight-description">Honesty, transparency, and user safety</div>
-                        </div>
-                    </div>
-                    
-                    <div style="margin-top: 1.5rem; padding: 1rem; background: #fef3c7; border-radius: 0.5rem; border-left: 4px solid #f59e0b;">
-                        <strong>🎯 Trust Level:</strong> {trust['trust_level'].replace('_', ' ').title()} | 
-                        <strong>YMYL Topic:</strong> {'Yes' if trust.get('is_ymyl_topic') else 'No'} |
-                        <strong>Performance:</strong> {quality['performance_prediction']}
                     </div>
                 </div>
             </div>
             
             <div class="content-section">
-                <div class="section-header">
-                    <h2 class="section-title">📱 Reddit Research Results</h2>
-                </div>
+                <div class="section-header">📱 Social Media Intelligence</div>
                 <div class="section-content">
                     <div class="insights-grid">
                         <div class="insight-card">
-                            <div class="insight-title">Data Source</div>
-                            <div class="insight-value">{reddit.get('data_source', 'simulation').replace('_', ' ').title()}</div>
-                            <div class="insight-description">{'Real-time API data' if reddit.get('data_source') == 'live_reddit_api' else 'Enhanced simulation'}</div>
+                            <div class="insight-title">Best Platform</div>
+                            <div class="insight-value">{reddit_insights.get('social_media_insights', {}).get('best_platform', 'N/A').title()}</div>
+                            <div>Optimal platform for content distribution</div>
                         </div>
                         <div class="insight-card">
-                            <div class="insight-title">Communities</div>
-                            <div class="insight-value">{reddit['communities_analyzed']}</div>
-                            <div class="insight-description">Subreddits analyzed for customer insights</div>
+                            <div class="insight-title">Viral Potential</div>
+                            <div class="insight-value">{reddit_insights.get('social_media_metrics', {}).get('viral_content_ratio', 0)*100:.1f}%</div>
+                            <div>Content shareability score</div>
                         </div>
                         <div class="insight-card">
-                            <div class="insight-title">Posts Analyzed</div>
-                            <div class="insight-value">{reddit['total_posts_analyzed']}</div>
-                            <div class="insight-description">Customer conversations reviewed</div>
+                            <div class="insight-title">Engagement Rate</div>
+                            <div class="insight-value">{reddit_insights.get('social_media_metrics', {}).get('avg_engagement_rate', 0):.1f}%</div>
+                            <div>Expected audience engagement</div>
                         </div>
                     </div>
-                    
-                    {"<div style='margin-top: 1rem;'><strong>Pain Points Discovered:</strong><ul>" + "".join([f"<li>{point[:100]}...</li>" for point in reddit['customer_voice']['pain_points'][:3]]) + "</ul></div>" if reddit['customer_voice']['pain_points'] else ""}
                 </div>
             </div>
             
             <div class="content-section">
-                <div class="section-header">
-                    <h2 class="section-title">✍️ Generated Content</h2>
-                    <div class="actions-bar">
-                        <button onclick="copyContent()" class="btn btn-outline">📋 Copy</button>
-                        <button onclick="exportContent()" class="btn btn-outline">💾 Export</button>
-                        <button onclick="toggleChat()" class="btn btn-primary">💬 Improve with AI</button>
-                    </div>
-                </div>
+                <div class="section-header">✍️ Generated Content</div>
                 <div class="section-content">
-                    <div class="content-display">
-                        <div class="content-text" id="contentText">{content}</div>
-                    </div>
+                    <div class="content-display" id="contentDisplay">{content}</div>
                 </div>
             </div>
         </div>
         
-        <!-- Chat Toggle Button -->
+        <!-- Chat Toggle -->
         <button class="chat-toggle" onclick="toggleChat()" id="chatToggle">💬</button>
         
-        <!-- Chat Container -->
-        <div class="chat-container" id="chatContainer">
+        <!-- Chat Interface -->
+        <div class="chat-interface" id="chatInterface">
             <div class="chat-header">
-                <h3>🚀 AI Content Improvement</h3>
-                <button onclick="toggleChat()" style="background: none; border: none; color: white; cursor: pointer;">×</button>
+                <h3>🤖 AI Content Assistant</h3>
+                <button onclick="toggleChat()" style="background: none; border: none; color: white; cursor: pointer; font-size: 1.5rem;">×</button>
             </div>
             <div class="chat-messages" id="chatMessages">
-                <div class="message ai">
-                    <strong>🤖 AI Assistant:</strong> Hi! I've analyzed your content. Your Trust Score is {trust['overall_trust_score']}/10 and Quality Score is {quality['overall_quality_score']}/10. I can help you improve both! What would you like to work on?
-                </div>
-                <div class="message ai">
-                    <strong>💡 Quick suggestions:</strong><br>
-                    • Ask "How to improve trust score?" for specific recommendations<br>
-                    • Ask "Better content structure?" for formatting tips<br>
-                    • Ask "SEO optimization?" for search engine improvements<br>
-                    • Ask "Social media version?" for platform-specific content
+                <div class="message assistant">
+                    <strong>🚀 Enhanced Analysis Complete!</strong><br><br>
+                    I've analyzed your content with all advanced agents:<br>
+                    • Quality Score: {metrics['quality_score']:.1f}/10<br>
+                    • Trust Score: {metrics['trust_score']:.1f}/10<br>
+                    • Knowledge Entities: {metrics['knowledge_entities']}<br>
+                    • Reddit Posts: {metrics['reddit_posts_analyzed']}<br><br>
+                    <strong>What would you like to improve?</strong>
                 </div>
             </div>
             <div class="chat-input">
-                <input type="text" id="chatInput" placeholder="Ask me how to improve your content...">
+                <input type="text" id="chatInput" placeholder="Ask me anything about your content..." onkeypress="handleKeyPress(event)">
                 <button onclick="sendMessage()">Send</button>
             </div>
         </div>
         
         <script>
             let chatVisible = false;
-            const trustScore = {trust['overall_trust_score']};
-            const qualityScore = {quality['overall_quality_score']};
-            const contentType = '{content_type}';
-            const content = document.getElementById('contentText').textContent;
+            const analysisData = {analysis_json};
             
             function toggleChat() {{
-                const container = document.getElementById('chatContainer');
-                const toggle = document.getElementById('chatToggle');
-                chatVisible = !chatVisible;
+                const chatInterface = document.getElementById('chatInterface');
+                const chatToggle = document.getElementById('chatToggle');
                 
-                container.style.display = chatVisible ? 'flex' : 'none';
-                toggle.style.display = chatVisible ? 'none' : 'block';
+                chatVisible = !chatVisible;
+                chatInterface.style.display = chatVisible ? 'flex' : 'none';
+                chatToggle.style.display = chatVisible ? 'none' : 'block';
+            }}
+            
+            function askQuestion(question) {{
+                if (!chatVisible) toggleChat();
+                
+                const chatInput = document.getElementById('chatInput');
+                chatInput.value = question;
+                sendMessage();
             }}
             
             async function sendMessage() {{
@@ -1759,28 +1265,17 @@ def generate_modern_results_page(results: Dict[str, Any]) -> str:
                 const messagesContainer = document.getElementById('chatMessages');
                 
                 // Add user message
-                const userMsg = document.createElement('div');
-                userMsg.className = 'message user';
-                userMsg.innerHTML = `<strong>You:</strong> ${{message}}`;
-                messagesContainer.appendChild(userMsg);
+                addMessage('user', message);
                 
-                // Add typing indicator
-                const typingMsg = document.createElement('div');
-                typingMsg.className = 'message ai';
-                typingMsg.innerHTML = '<strong>🤖 AI:</strong> <em>Thinking...</em>';
-                messagesContainer.appendChild(typingMsg);
+                // Add thinking indicator
+                const thinkingDiv = addMessage('assistant', '🤔 Analyzing...');
                 
                 input.value = '';
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
                 
                 try {{
-                    // Call the API
                     const formData = new FormData();
                     formData.append('message', message);
-                    formData.append('trust_score', trustScore);
-                    formData.append('quality_score', qualityScore);
-                    formData.append('content_type', contentType);
-                    formData.append('content', content);
+                    formData.append('analysis_data', JSON.stringify(analysisData));
                     
                     const response = await fetch('/api/chat', {{
                         method: 'POST',
@@ -1788,63 +1283,33 @@ def generate_modern_results_page(results: Dict[str, Any]) -> str:
                     }});
                     
                     const data = await response.json();
-                    typingMsg.innerHTML = `<strong>🤖 AI:</strong> ${{data.response}}`;
+                    thinkingDiv.innerHTML = data.response;
                 }} catch (error) {{
-                    // Fallback response
-                    typingMsg.innerHTML = `<strong>🤖 AI:</strong> ${{getSmartResponse(message)}}`;
+                    thinkingDiv.innerHTML = "I'm having trouble processing your request. Please try again.";
                 }}
                 
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }}
             
-            function getSmartResponse(message) {{
-                const msg = message.toLowerCase();
-                
-                if (msg.includes('trust') || msg.includes('credibility')) {{
-                    if (trustScore < 6.0) {{
-                        return `Your Trust Score of ${{trustScore}}/10 needs improvement. Try: 1) Add author credentials 2) Include customer testimonials 3) Add industry statistics 4) Show contact information. Expected impact: +1.5 to +2.0 points.`;
-                    }} else {{
-                        return `Your Trust Score of ${{trustScore}}/10 is good! To optimize further: 1) Add more authority signals 2) Include recent success stories 3) Update with latest data 4) Add expert quotes.`;
-                    }}
-                }} else if (msg.includes('seo')) {{
-                    return 'For SEO optimization: 1) Use target keywords in headings 2) Add internal links 3) Optimize meta descriptions 4) Include related keywords naturally 5) Add FAQ sections.';
-                }} else if (msg.includes('social')) {{
-                    return 'For social media adaptation: 1) Shorten for platform limits 2) Add platform-specific hashtags 3) Include engaging visuals 4) Use call-to-actions 5) Optimize for mobile viewing.';
-                }} else if (msg.includes('improve') || msg.includes('better')) {{
-                    return `For your ${{qualityScore}}/10 quality score: 1) Add more specific examples 2) Include actionable steps 3) Improve content structure 4) Add visual elements like bullet points 5) Include more data and statistics.`;
-                }} else {{
-                    return `Great question! With Trust Score ${{trustScore}}/10 and Quality Score ${{qualityScore}}/10, I can help improve specific areas. Ask about: trust building, SEO optimization, content structure, or social media adaptation.`;
-                }}
+            function addMessage(role, content) {{
+                const messagesContainer = document.getElementById('chatMessages');
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${{role}}`;
+                messageDiv.innerHTML = content;
+                messagesContainer.appendChild(messageDiv);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                return messageDiv;
             }}
             
-            function copyContent() {{
-                navigator.clipboard.writeText(content).then(() => {{
-                    alert('✅ Content copied to clipboard!');
-                }});
-            }}
-            
-            function exportContent() {{
-                const blob = new Blob([content], {{ type: 'text/plain' }});
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = '{topic.replace(" ", "_")}_zee_seo_content.txt';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-            }}
-            
-            // Enter key support for chat
-            document.getElementById('chatInput').addEventListener('keypress', function(e) {{
-                if (e.key === 'Enter') {{
+            function handleKeyPress(event) {{
+                if (event.key === 'Enter') {{
                     sendMessage();
                 }}
-            }});
+            }}
             
             // Auto-show chat if scores need improvement
             setTimeout(() => {{
-                if (trustScore < 7.0 || qualityScore < 7.5) {{
+                if (analysisData.performance_metrics.quality_score < 8.0 || analysisData.performance_metrics.trust_score < 8.0) {{
                     toggleChat();
                 }}
             }}, 3000);
@@ -1855,28 +1320,38 @@ def generate_modern_results_page(results: Dict[str, Any]) -> str:
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
+    """Health check with agent status"""
     return {
         "status": "healthy",
-        "version": "3.0 - Modern Subtle Design",
+        "version": "4.0 - Enhanced Agent Integration",
+        "agents": {
+            "reddit_researcher": "✅ Enhanced with social media analysis",
+            "content_generator": "✅ Multiple content types supported",
+            "knowledge_graph": "✅ Railway API integration",
+            "business_context": "✅ Comprehensive collection",
+            "quality_scorer": "✅ Advanced scoring system",
+            "eeat_assessor": "✅ Trust score calculation",
+            "intent_classifier": "✅ User intent analysis",
+            "journey_mapper": "✅ Customer journey mapping",
+            "human_input_identifier": "✅ Authenticity enhancement"
+        },
         "features": {
-            "modern_design": "✅ Subtle professional theme",
-            "working_chat": "✅ Real conversational AI",
-            "content_types": "✅ Expanded social media options",
-            "trust_score": "✅ Fixed calculation",
-            "reddit_api": "✅" if zee_orchestrator.reddit_client.available else "⚠️ Simulation"
+            "conversational_ai": "✅ ChatGPT-like interface",
+            "knowledge_gaps": "✅ Gap analysis from Knowledge Graph",
+            "social_media_insights": "✅ Platform-specific optimization",
+            "real_time_chat": "✅ Working API endpoints"
         }
     }
 
 if __name__ == "__main__":
-    print("🚀 Starting Zee SEO Tool v3.0 - Modern Design...")
-    print("=" * 60)
-    print("✅ ENHANCEMENTS:")
-    print("  🎨 Modern, subtle design inspired by professional themes")
-    print("  💬 Working conversational AI with real API integration")
-    print("  📱 Expanded content types (Facebook, LinkedIn, Instagram, etc.)")
-    print("  🔧 Fixed all UI/UX issues and API endpoints")
-    print("=" * 60)
+    print("🚀 Starting Enhanced Zee SEO Tool v4.0...")
+    print("=" * 70)
+    print("✅ NEW FEATURES:")
+    print("  🧠 Knowledge Graph API integration (Railway)")
+    print("  📱 Enhanced Reddit research with social media analysis")
+    print("  💬 Conversational AI interface (ChatGPT-like)")
+    print("  ⚡ All agents integrated in comprehensive pipeline")
+    print("  🎯 Real-time content optimization and gap analysis")
+    print("=" * 70)
     
-    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=config.PORT)
