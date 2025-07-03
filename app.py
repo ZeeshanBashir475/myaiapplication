@@ -135,15 +135,19 @@ class ComprehensiveZeeOrchestrator:
         
         # Initialize Anthropic client if available
         self.anthropic_client = None
-        if config.ANTHROPIC_API_KEY:
-            try:
-                import anthropic
-                self.anthropic_client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
-                logger.info("✅ Anthropic client initialized")
-            except ImportError:
-                logger.warning("⚠️ Anthropic library not installed")
-            except Exception as e:
-                logger.error(f"❌ Anthropic client initialization failed: {e}")
+      if config.ANTHROPIC_API_KEY:
+    try:
+        import anthropic
+        # the official SDK uses Client, not Anthropic
+        self.anthropic_client = anthropic.Client(api_key=config.ANTHROPIC_API_KEY)
+        # if your agents expect a .messages list, you can seed it here
+        setattr(self.anthropic_client, "messages", [])
+        logger.info("✅ Anthropic client initialized")
+    except ImportError:
+        logger.warning("⚠️ Anthropic library not installed")
+    except Exception as e:
+        logger.error(f"❌ Anthropic client initialization failed: {e}")
+
         
         # Initialize all loaded agents
         for agent_name, agent_class in loaded_agents.items():
