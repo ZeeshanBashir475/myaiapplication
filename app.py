@@ -432,6 +432,11 @@ class ComprehensiveZeeOrchestrator:
         # Step 12: Calculate Performance Metrics
         analysis_results['performance_metrics'] = self._calculate_performance_metrics(analysis_results)
         
+        # Make key data available at top level for easier access
+        analysis_results['generated_content'] = analysis_results['agent_results'].get('generated_content', '')
+        analysis_results['reddit_insights'] = analysis_results['agent_results'].get('reddit_insights', {})
+        analysis_results['knowledge_graph'] = analysis_results['agent_results'].get('knowledge_graph', {})
+        
         logger.info(f"✅ Comprehensive analysis completed for: {topic}")
         return analysis_results
 
@@ -1571,7 +1576,14 @@ async def generate_enhanced_content(
     target_audience: str = Form(...),
     industry: str = Form(...),
     unique_value_prop: str = Form(...),
-    customer_pain_points: str = Form(...)
+    customer_pain_points: str = Form(...),
+    content_type: str = Form(default="let_ai_decide"),
+    target_keywords: str = Form(default=""),
+    custom_subreddits: str = Form(default=""),
+    business_goals: str = Form(default=""),
+    competition_analysis: str = Form(default=""),
+    brand_voice: str = Form(default="professional"),
+    ai_instructions: str = Form(default="")
 ):
     """Generate enhanced content with crash-proof error handling"""
     try:
@@ -1580,164 +1592,26 @@ async def generate_enhanced_content(
             'target_audience': target_audience,
             'industry': industry,
             'unique_value_prop': unique_value_prop,
-            'customer_pain_points': customer_pain_points
+            'customer_pain_points': customer_pain_points,
+            'content_type': content_type,
+            'target_keywords': target_keywords,
+            'custom_subreddits': custom_subreddits,
+            'business_goals': business_goals,
+            'competition_analysis': competition_analysis,
+            'brand_voice': brand_voice,
+            'ai_instructions': ai_instructions
         }
         
-        analysis = await zee_orchestrator.generate_comprehensive_analysis(form_data)
+        analysis_results = await zee_orchestrator.generate_comprehensive_analysis(form_data)
         
-        # Extract data for results page
-        metrics = analysis['performance_metrics']
-        content = analysis['generated_content']
-        kg_insights = analysis['knowledge_graph']
-        reddit_insights = analysis['reddit_insights']
-        system_status = analysis['system_status']
-        
-        # Create safe HTML content
-        html_content = create_results_html(
-            topic=topic,
-            metrics=metrics,
-            content=content,
-            kg_insights=kg_insights,
-            reddit_insights=reddit_insights,
-            system_status=system_status,
-            analysis=analysis
-        )
+        # Generate comprehensive report HTML
+        html_content = generate_comprehensive_report_html(analysis_results)
         
         return HTMLResponse(content=html_content)
         
     except Exception as e:
         logger.error(f"Error generating content: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Content generation failed, but the system is still operational: {str(e)}")
-
-
-    
-    # Escape content for HTML
-    escaped_content = content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-    
-    # Create safe JSON for JavaScript (without complex escaping)
-    safe_analysis = {
-        'topic': topic,
-        'performance_metrics': metrics,
-        'knowledge_graph': {
-            'entities': kg_insights.get('entities', [])[:10],  # Limit for safety
-            'content_gaps': kg_insights.get('content_gaps', [])[:10],
-            'confidence_score': kg_insights.get('confidence_score', 0.87)
-        },
-        'reddit_insights': {
-            'social_media_insights': reddit_insights.get('social_media_insights', {}),
-            'social_media_metrics': reddit_insights.get('social_media_metrics', {}),
-            'customer_voice': reddit_insights.get('customer_voice', {})
-        },
-        'system_status': system_status
-    }
-    
-    # Convert to JSON string safely
-    analysis_json = json.dumps(safe_analysis, default=str)
-    def create_results_html(topic, metrics, escaped_content, system_status, kg_insights, reddit_insights, analysis_json):
-    # Returns the full HTML page as a single f-string, with closing quotes after </html>
-    return f"""<!DOCTYPE html>
-<html>
-<head>
-    <title>Enhanced Results - {topic}</title>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        /* ... all your CSS styles here ... */
-    </style>
-</head>
-<body>
-    <!-- Header and metrics sections -->
-    <div class="header">
-        <h1 class="title">🚀 Enhanced Analysis: {topic.title()}</h1>
-        <div class="metrics">
-            <div class="metric">
-                <div class="metric-value">{metrics['quality_score']:.1f}/10</div>
-                <div class="metric-label">Quality Score</div>
-            </div>
-            <div class="metric">
-                <div class="metric-value">{metrics['trust_score']:.1f}/10</div>
-                <div class="metric-label">Trust Score</div>
-            </div>
-            <div class="metric">
-                <div class="metric-value">{metrics['reddit_posts_analyzed']}</div>
-                <div class="metric-label">Reddit Posts</div>
-            </div>
-            <div class="metric">
-                <div class="metric-value">{metrics['knowledge_entities']}</div>
-                <div class="metric-label">Knowledge Entities</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Chat toggle and container -->
-    <button class="chat-toggle" onclick="toggleChat()" id="chatToggle">💬</button>
-    <div class="chat-container" id="chatContainer">
-        <!-- Chat header -->
-        <div class="chat-header">
-            <span>🤖 AI Content Assistant</span>
-            <button onclick="toggleChat()" style="background: none; border: none; color: white; cursor: pointer; font-size: 1.5rem;">×</button>
-        </div>
-        <!-- Messages -->
-        <div class="chat-messages" id="chatMessages">
-            <div class="message assistant">
-                <strong>🚀 Enhanced Analysis Complete!</strong><br><br>
-                Your content analysis is ready with:<br>
-                • Quality Score: {metrics['quality_score']:.1f}/10<br>
-                • Trust Score: {metrics['trust_score']:.1f}/10<br>
-                • {metrics['knowledge_entities']} Knowledge Entities<br>
-                • {metrics['reddit_posts_analyzed']} Reddit Posts Analyzed<br><br>
-                <strong>What would you like to optimize?</strong>
-            </div>
-        </div>
-        <!-- Input -->
-        <div class="chat-input">
-            <input type="text" id="chatInput" placeholder="Ask me anything about your content..." onkeypress="handleKeyPress(event)">
-            <button onclick="sendMessage()">Send</button>
-        </div>
-    </div>
-
-    <!-- JavaScript must remain inside the string until after </html> -->
-    <script>
-        const analysisData = {analysis_json};
-        let chatVisible = false;
-        function toggleChat() {{
-            const container = document.getElementById('chatContainer');
-            const toggle = document.getElementById('chatToggle');
-            chatVisible = !chatVisible;
-            if (chatVisible) {{ container.style.display = 'flex'; toggle.style.display = 'none'; }} 
-            else {{ container.style.display = 'none'; toggle.style.display = 'block'; }}
-        }}
-        function askQuestion(question) {{
-            if (!chatVisible) {{ toggleChat(); }}
-            const inputEl = document.getElementById('chatInput');
-            if (inputEl) {{ inputEl.value = question; sendMessage(); }}
-        }}
-        async function sendMessage() {{
-            const inputEl = document.getElementById('chatInput');
-            const msg = inputEl.value.trim();
-            if (!msg) return;
-            const msgsDiv = document.getElementById('chatMessages');
-            const userDiv = document.createElement('div'); userDiv.className = 'message user'; userDiv.textContent = msg; msgsDiv.appendChild(userDiv);
-            const thinking = document.createElement('div'); thinking.className = 'message assistant'; thinking.id = 'thinking'; thinking.textContent = '🤔 Analyzing...'; msgsDiv.appendChild(thinking);
-            msgsDiv.scrollTop = msgsDiv.scrollHeight; inputEl.value = '';
-            try {{
-                const resp = await fetch('/api/chat', {{method:'POST', headers:{{'Content-Type':'application/x-www-form-urlencoded'}}, body:'message='+encodeURIComponent(msg)+'&analysis_data='+encodeURIComponent(JSON.stringify(analysisData))}});
-                if (resp.ok) {{ const data = await resp.json(); thinking.innerHTML = data.response; }} 
-                else {{ thinking.innerHTML = 'Error. Please try again.'; }}
-            }} catch (e) {{ thinking.innerHTML = 'I had trouble processing your request.'; }}
-            msgsDiv.scrollTop = msgsDiv.scrollHeight;
-        }}
-        function handleKeyPress(e) {{ if (e.key === 'Enter') sendMessage(); }}
-        setTimeout(function() {{
-            try {{ const m = analysisData.performance_metrics; if (m && (m.quality_score < 9.0 || m.trust_score < 9.0)) toggleChat(); }}
-            catch (e) {{ console.log('Auto-chat error', e); }}
-        }}, 3000);
-    </script>
-</body>
-</html>
-"""
-
-# Also need to add this route for the app interface
 @app.get("/app", response_class=HTMLResponse)
 async def app_interface():
     """Enhanced app interface"""
@@ -2499,54 +2373,54 @@ def generate_comprehensive_report_html(analysis_result: Dict) -> str:
         </div>
         
         <script>
-            function handleChatMessage() {
+            function handleChatMessage() {{
                 const input = document.querySelector('.chat-input input');
                 const message = input.value.trim();
                 
-                if (message) {
+                if (message) {{
                     // Add user message to chat
                     const chatContent = document.querySelector('.chat-content');
                     const userMessage = document.createElement('div');
                     userMessage.style.cssText = 'background: #e2e8f0; padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem; text-align: right;';
-                    userMessage.innerHTML = `<strong>You:</strong> ${message}`;
+                    userMessage.innerHTML = `<strong>You:</strong> ${{message}}`;
                     chatContent.appendChild(userMessage);
                     
                     // Add AI response
                     const aiResponse = document.createElement('div');
                     aiResponse.style.cssText = 'background: #f0fff4; padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem;';
-                    aiResponse.innerHTML = `<strong>AI Assistant:</strong> ${getAIResponse(message)}`;
+                    aiResponse.innerHTML = `<strong>AI Assistant:</strong> ${{getAIResponse(message)}}`;
                     chatContent.appendChild(aiResponse);
                     
                     // Clear input and scroll to bottom
                     input.value = '';
                     chatContent.scrollTop = chatContent.scrollHeight;
-                }
-            }
+                }}
+            }}
             
-            function getAIResponse(message) {
+            function getAIResponse(message) {{
                 const msg = message.toLowerCase();
                 
-                if (msg.includes('trust') || msg.includes('score')) {
+                if (msg.includes('trust') || msg.includes('score')) {{
                     return "To improve your trust score, consider adding: 1) Author credentials and bio, 2) Customer testimonials with specific results, 3) Data sources and references, 4) Regular content updates. Your current trust score of {trust_score:.1f}/10 shows good potential for improvement!";
-                } else if (msg.includes('seo')) {
+                }} else if (msg.includes('seo')) {{
                     return "For SEO improvement: 1) Add FAQ sections with customer questions, 2) Use semantic keywords from our knowledge graph, 3) Include related topics as H2/H3 headings, 4) Add internal links to related content. Your content covers {performance_metrics.get('knowledge_entities', 0)} key entities!";
-                } else if (msg.includes('social')) {
+                }} else if (msg.includes('social')) {{
                     return "For social media: 1) Break content into 5-7 shareable posts, 2) Create quote cards from key insights, 3) Develop platform-specific versions, 4) Focus on Reddit-style Q&A format. Based on analysis, Reddit performs best for your topic!";
-                } else if (msg.includes('example')) {
+                }} else if (msg.includes('example')) {{
                     return "Add more examples by: 1) Including real customer success stories, 2) Adding before/after scenarios, 3) Creating step-by-step walkthroughs, 4) Including common mistake examples. This will boost your quality score from {quality_score:.1f}/10!";
-                } else if (msg.includes('gap') || msg.includes('knowledge')) {
+                }} else if (msg.includes('gap') || msg.includes('knowledge')) {{
                     return "Knowledge gaps to fill: 1) Advanced techniques section, 2) Industry-specific considerations, 3) Cost-benefit analysis, 4) Future trends and predictions. These gaps represent untapped content opportunities!";
-                } else {
+                }} else {{
                     return "I can help you improve your content in several ways. Try asking about: trust score improvement, SEO optimization, social media adaptations, adding examples, or knowledge gaps. What specific area interests you most?";
-                }
-            }
+                }}
+            }}
             
             // Handle Enter key in chat input
-            document.querySelector('.chat-input input').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
+            document.querySelector('.chat-input input').addEventListener('keypress', function(e) {{
+                if (e.key === 'Enter') {{
                     handleChatMessage();
-                }
-            });
+                }}
+            }});
         </script>
     </body>
     </html>
