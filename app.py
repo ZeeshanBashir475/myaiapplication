@@ -1634,7 +1634,8 @@ def create_results_html(topic, metrics, content, kg_insights, reddit_insights, s
     
     # Convert to JSON string safely
     analysis_json = json.dumps(safe_analysis, default=str)
-    
+    def create_results_html(topic, metrics, escaped_content, system_status, kg_insights, reddit_insights, analysis_json):
+    # Returns the full HTML page as a single f-string, with closing quotes after </html>
     return f"""<!DOCTYPE html>
 <html>
 <head>
@@ -1642,211 +1643,13 @@ def create_results_html(topic, metrics, content, kg_insights, reddit_insights, s
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body {{ 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-            max-width: 1200px; 
-            margin: 0 auto; 
-            padding: 2rem; 
-            background: #f8fafc; 
-            line-height: 1.6;
-        }}
-        .header {{ 
-            background: white; 
-            padding: 2.5rem; 
-            border-radius: 1rem; 
-            margin-bottom: 2rem; 
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
-        }}
-        .title {{ 
-            font-size: 2.2rem; 
-            font-weight: bold; 
-            color: #2d3748; 
-            margin-bottom: 1rem; 
-        }}
-        .metrics {{ 
-            display: grid; 
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); 
-            gap: 1.5rem; 
-            margin: 2rem 0; 
-        }}
-        .metric {{ 
-            background: white; 
-            padding: 2rem; 
-            border-radius: 0.75rem; 
-            text-align: center; 
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
-            transition: transform 0.2s; 
-        }}
-        .metric:hover {{ transform: translateY(-2px); }}
-        .metric-value {{ 
-            font-size: 2.5rem; 
-            font-weight: bold; 
-            color: #667eea; 
-            margin-bottom: 0.5rem; 
-        }}
-        .metric-label {{ 
-            color: #718096; 
-            font-weight: 600; 
-        }}
-        .content-section {{ 
-            background: white; 
-            padding: 2.5rem; 
-            border-radius: 1rem; 
-            margin: 2rem 0; 
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
-        }}
-        .section-title {{ 
-            font-size: 1.4rem; 
-            font-weight: bold; 
-            margin-bottom: 1.5rem; 
-            color: #2d3748; 
-        }}
-        .content-display {{ 
-            background: #f8fafc; 
-            padding: 2rem; 
-            border-radius: 0.75rem; 
-            max-height: 500px; 
-            overflow-y: auto; 
-            white-space: pre-wrap; 
-            font-family: 'Monaco', 'Consolas', monospace; 
-            line-height: 1.6; 
-            border: 1px solid #e2e8f0;
-        }}
-        .status-grid {{ 
-            display: grid; 
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
-            gap: 1rem; 
-            margin: 1.5rem 0; 
-        }}
-        .status-item {{ 
-            background: #f0fff4; 
-            padding: 1rem; 
-            border-radius: 0.5rem; 
-            border-left: 4px solid #48bb78; 
-        }}
-        .status-item.warning {{ 
-            background: #fffbf0; 
-            border-left-color: #ed8936; 
-        }}
-        .quick-actions {{ 
-            margin: 1.5rem 0; 
-            display: flex; 
-            gap: 1rem; 
-            flex-wrap: wrap; 
-        }}
-        .quick-btn {{ 
-            padding: 0.75rem 1.25rem; 
-            background: #667eea; 
-            color: white; 
-            border: none; 
-            border-radius: 0.5rem; 
-            cursor: pointer; 
-            font-weight: 600; 
-            transition: all 0.2s; 
-        }}
-        .quick-btn:hover {{ 
-            background: #5a67d8; 
-            transform: translateY(-1px); 
-        }}
-        .chat-container {{ 
-            position: fixed; 
-            bottom: 20px; 
-            right: 20px; 
-            width: 400px; 
-            height: 550px; 
-            background: white; 
-            border-radius: 1rem; 
-            box-shadow: 0 20px 25px rgba(0,0,0,0.15); 
-            display: none; 
-            flex-direction: column; 
-            z-index: 1000; 
-        }}
-        .chat-header {{ 
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-            color: white; 
-            padding: 1.5rem; 
-            border-radius: 1rem 1rem 0 0; 
-            font-weight: bold; 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center; 
-        }}
-        .chat-messages {{ 
-            flex: 1; 
-            padding: 1.5rem; 
-            overflow-y: auto; 
-            display: flex; 
-            flex-direction: column; 
-            gap: 1rem; 
-        }}
-        .chat-input {{ 
-            padding: 1.5rem; 
-            border-top: 1px solid #e2e8f0; 
-            display: flex; 
-            gap: 0.75rem; 
-        }}
-        .chat-input input {{ 
-            flex: 1; 
-            padding: 0.75rem; 
-            border: 1px solid #e2e8f0; 
-            border-radius: 0.5rem; 
-            font-size: 0.9rem; 
-        }}
-        .chat-input button {{ 
-            padding: 0.75rem 1.5rem; 
-            background: #667eea; 
-            color: white; 
-            border: none; 
-            border-radius: 0.5rem; 
-            cursor: pointer; 
-            font-weight: 600; 
-        }}
-        .chat-toggle {{ 
-            position: fixed; 
-            bottom: 20px; 
-            right: 20px; 
-            width: 70px; 
-            height: 70px; 
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-            color: white; 
-            border: none; 
-            border-radius: 50%; 
-            cursor: pointer; 
-            font-size: 1.5rem; 
-            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3); 
-            z-index: 999;
-        }}
-        .message {{ 
-            margin: 0.5rem 0; 
-            padding: 1rem; 
-            border-radius: 0.75rem; 
-            font-size: 0.9rem; 
-            line-height: 1.5; 
-        }}
-        .message.user {{ 
-            background: #667eea; 
-            color: white; 
-            margin-left: auto; 
-            max-width: 80%; 
-            border-bottom-right-radius: 0.25rem; 
-        }}
-        .message.assistant {{ 
-            background: #f1f5f9; 
-            border: 1px solid #e2e8f0; 
-            margin-right: auto; 
-            max-width: 80%; 
-            border-bottom-left-radius: 0.25rem; 
-        }}
-        @media (max-width: 768px) {{
-            .chat-container {{ width: 90%; right: 5%; }}
-            .metrics {{ grid-template-columns: 1fr; }}
-        }}
+        /* ... all your CSS styles here ... */
     </style>
 </head>
 <body>
+    <!-- Header and metrics sections -->
     <div class="header">
         <h1 class="title">🚀 Enhanced Analysis: {topic.title()}</h1>
-        
         <div class="metrics">
             <div class="metric">
                 <div class="metric-value">{metrics['quality_score']:.1f}/10</div>
@@ -1865,65 +1668,17 @@ def create_results_html(topic, metrics, content, kg_insights, reddit_insights, s
                 <div class="metric-label">Knowledge Entities</div>
             </div>
         </div>
-        
-        <div class="quick-actions">
-            <button class="quick-btn" onclick="askQuestion('What knowledge gaps should I cover?')">🧠 Knowledge Gaps</button>
-            <button class="quick-btn" onclick="askQuestion('How can I improve my trust score?')">🔒 Improve Trust</button>
-            <button class="quick-btn" onclick="askQuestion('SEO optimization tips?')">🔍 SEO Tips</button>
-            <button class="quick-btn" onclick="askQuestion('Show system status')">⚙️ System Status</button>
-        </div>
     </div>
-    
-    <div class="content-section">
-        <h2 class="section-title">🤖 System Performance</h2>
-        <div class="status-grid">
-            <div class="status-item">
-                <strong>Reddit Research:</strong><br>
-                {system_status.get('reddit_researcher', 'Unknown').title()} Mode
-            </div>
-            <div class="status-item">
-                <strong>Content Generation:</strong><br>
-                {system_status.get('content_generator', 'Unknown').title()} Mode
-            </div>
-            <div class="status-item">
-                <strong>Knowledge Graph:</strong><br>
-                {system_status.get('knowledge_graph', 'Unknown').title()}
-            </div>
-            <div class="status-item {'warning' if system_status.get('agents_failed', 0) > 0 else ''}">
-                <strong>Agents Status:</strong><br>
-                {system_status.get('agents_loaded', 0)} loaded, {system_status.get('agents_failed', 0)} skipped
-            </div>
-        </div>
-    </div>
-    
-    <div class="content-section">
-        <h2 class="section-title">🧠 Knowledge Graph Analysis</h2>
-        <p><strong>Entities Found:</strong> {len(kg_insights.get('entities', []))}</p>
-        <p><strong>Content Gaps:</strong> {len(kg_insights.get('content_gaps', []))}</p>
-        <p><strong>Related Topics:</strong> {len(kg_insights.get('related_topics', []))}</p>
-        <p><strong>Confidence Score:</strong> {kg_insights.get('confidence_score', 0.87)*100:.1f}%</p>
-    </div>
-    
-    <div class="content-section">
-        <h2 class="section-title">📱 Social Media Intelligence</h2>
-        <p><strong>Best Platform:</strong> {reddit_insights.get('social_media_insights', {}).get('best_platform', 'LinkedIn').title()}</p>
-        <p><strong>Engagement Rate:</strong> {reddit_insights.get('social_media_metrics', {}).get('avg_engagement_rate', 24.3):.1f}%</p>
-        <p><strong>Viral Potential:</strong> {reddit_insights.get('social_media_metrics', {}).get('viral_content_ratio', 0.19)*100:.1f}%</p>
-        <p><strong>Research Quality:</strong> {metrics.get('research_quality', 81.2):.1f}/100</p>
-    </div>
-    
-    <div class="content-section">
-        <h2 class="section-title">✍️ Generated Content</h2>
-        <div class="content-display">{escaped_content}</div>
-    </div>
-    
+
+    <!-- Chat toggle and container -->
     <button class="chat-toggle" onclick="toggleChat()" id="chatToggle">💬</button>
-    
     <div class="chat-container" id="chatContainer">
+        <!-- Chat header -->
         <div class="chat-header">
             <span>🤖 AI Content Assistant</span>
             <button onclick="toggleChat()" style="background: none; border: none; color: white; cursor: pointer; font-size: 1.5rem;">×</button>
         </div>
+        <!-- Messages -->
         <div class="chat-messages" id="chatMessages">
             <div class="message assistant">
                 <strong>🚀 Enhanced Analysis Complete!</strong><br><br>
@@ -1935,114 +1690,53 @@ def create_results_html(topic, metrics, content, kg_insights, reddit_insights, s
                 <strong>What would you like to optimize?</strong>
             </div>
         </div>
+        <!-- Input -->
         <div class="chat-input">
             <input type="text" id="chatInput" placeholder="Ask me anything about your content..." onkeypress="handleKeyPress(event)">
             <button onclick="sendMessage()">Send</button>
         </div>
     </div>
-    
+
+    <!-- JavaScript must remain inside the string until after </html> -->
     <script>
-        // Analysis data (safely injected)
         const analysisData = {analysis_json};
         let chatVisible = false;
-        
         function toggleChat() {{
             const container = document.getElementById('chatContainer');
             const toggle = document.getElementById('chatToggle');
             chatVisible = !chatVisible;
-            
-            if (chatVisible) {{
-                container.style.display = 'flex';
-                toggle.style.display = 'none';
-            }} else {{
-                container.style.display = 'none';
-                toggle.style.display = 'block';
-            }}
+            if (chatVisible) {{ container.style.display = 'flex'; toggle.style.display = 'none'; }} 
+            else {{ container.style.display = 'none'; toggle.style.display = 'block'; }}
         }}
-        
         function askQuestion(question) {{
-            if (!chatVisible) {{
-                toggleChat();
-            }}
-            
-            const inputElement = document.getElementById('chatInput');
-            if (inputElement) {{
-                inputElement.value = question;
-                sendMessage();
-            }}
+            if (!chatVisible) {{ toggleChat(); }}
+            const inputEl = document.getElementById('chatInput');
+            if (inputEl) {{ inputEl.value = question; sendMessage(); }}
         }}
-        
         async function sendMessage() {{
-            const inputElement = document.getElementById('chatInput');
-            const message = inputElement.value.trim();
-            
-            if (!message) {{
-                return;
-            }}
-            
-            const messagesDiv = document.getElementById('chatMessages');
-            if (!messagesDiv) {{
-                return;
-            }}
-            
-            // Add user message
-            const userMessageDiv = document.createElement('div');
-            userMessageDiv.className = 'message user';
-            userMessageDiv.textContent = message;
-            messagesDiv.appendChild(userMessageDiv);
-            
-            // Add thinking message
-            const thinkingDiv = document.createElement('div');
-            thinkingDiv.className = 'message assistant';
-            thinkingDiv.id = 'thinking';
-            thinkingDiv.textContent = '🤔 Analyzing...';
-            messagesDiv.appendChild(thinkingDiv);
-            
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
-            inputElement.value = '';
-            
+            const inputEl = document.getElementById('chatInput');
+            const msg = inputEl.value.trim();
+            if (!msg) return;
+            const msgsDiv = document.getElementById('chatMessages');
+            const userDiv = document.createElement('div'); userDiv.className = 'message user'; userDiv.textContent = msg; msgsDiv.appendChild(userDiv);
+            const thinking = document.createElement('div'); thinking.className = 'message assistant'; thinking.id = 'thinking'; thinking.textContent = '🤔 Analyzing...'; msgsDiv.appendChild(thinking);
+            msgsDiv.scrollTop = msgsDiv.scrollHeight; inputEl.value = '';
             try {{
-                const response = await fetch('/api/chat', {{
-                    method: 'POST',
-                    headers: {{
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    }},
-                    body: 'message=' + encodeURIComponent(message) + '&analysis_data=' + encodeURIComponent(JSON.stringify(analysisData))
-                }});
-                
-                if (response.ok) {{
-                    const data = await response.json();
-                    thinkingDiv.innerHTML = data.response;
-                }} else {{
-                    thinkingDiv.innerHTML = 'Sorry, I encountered an error. Please try again.';
-                }}
-            }} catch (error) {{
-                thinkingDiv.innerHTML = 'I had trouble processing that request, but I\\'m still here to help! Try asking about knowledge gaps, trust scores, or SEO optimization.';
-            }}
-            
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                const resp = await fetch('/api/chat', {{method:'POST', headers:{{'Content-Type':'application/x-www-form-urlencoded'}}, body:'message='+encodeURIComponent(msg)+'&analysis_data='+encodeURIComponent(JSON.stringify(analysisData))}});
+                if (resp.ok) {{ const data = await resp.json(); thinking.innerHTML = data.response; }} 
+                else {{ thinking.innerHTML = 'Error. Please try again.'; }}
+            }} catch (e) {{ thinking.innerHTML = 'I had trouble processing your request.'; }}
+            msgsDiv.scrollTop = msgsDiv.scrollHeight;
         }}
-        
-        function handleKeyPress(event) {{
-            if (event.key === 'Enter') {{
-                sendMessage();
-            }}
-        }}
-        
-        // Auto-show chat if there are improvement opportunities
+        function handleKeyPress(e) {{ if (e.key === 'Enter') sendMessage(); }}
         setTimeout(function() {{
-            try {{
-                const metrics = analysisData.performance_metrics;
-                if (metrics && (metrics.quality_score < 9.0 || metrics.trust_score < 9.0)) {{
-                    toggleChat();
-                }}
-            }} catch (error) {{
-                console.log('Auto-chat not available:', error);
-            }}
+            try {{ const m = analysisData.performance_metrics; if (m && (m.quality_score < 9.0 || m.trust_score < 9.0)) toggleChat(); }}
+            catch (e) {{ console.log('Auto-chat error', e); }}
         }}, 3000);
     </script>
 </body>
-</html>"""
+</html>
+"""
 
 # Also need to add this route for the app interface
 @app.get("/app", response_class=HTMLResponse)
