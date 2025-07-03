@@ -1,0 +1,793 @@
+import json
+import requests
+import re
+from typing import Dict, List, Any, Optional, Tuple
+from collections import Counter, defaultdict
+from datetime import datetime, timedelta
+from pytrends.request import TrendReq
+import time
+from src.utils.llm_client import LLMClient
+
+class KnowledgeGraphTrendsAgent:
+    def __init__(self, kg_api_key: str):
+        self.kg_api_key = kg_api_key
+        self.llm = LLMClient()
+        
+        # Initialize Google Trends
+        self.pytrends = TrendReq(hl='en-US', tz=360)
+        
+        # Knowledge Graph API endpoint
+        self.kg_endpoint = 'https://kgsearch.googleapis.com/v1/entities:search'
+        
+        # Entity relationship framework
+        self.entity_framework = {
+            'core_relationships': {
+                'sameAs': 'identical_entities',
+                'subjectOf': 'content_about_entity',
+                'mentions': 'entity_references',
+                'about': 'topical_relationships',
+                'isPartOf': 'hierarchical_relationships',
+                'hasPart': 'component_relationships'
+            },
+            'content_relationships': {
+                'author': 'content_creator',
+                'publisher': 'content_publisher',
+                'audience': 'target_audience',
+                'category': 'content_classification',
+                'keywords': 'topic_keywords',
+                'datePublished': 'temporal_relevance'
+            },
+            'semantic_relationships': {
+                'broader': 'parent_concepts',
+                'narrower': 'child_concepts',
+                'related': 'associated_concepts',
+                'similar': 'equivalent_concepts'
+            }
+        }
+        
+        # Trend analysis parameters
+        self.trend_timeframes = {
+            'now_1_H': 'Last hour',
+            'now_4_H': 'Last 4 hours', 
+            'now_1_d': 'Last day',
+            'now_7_d': 'Last 7 days',
+            'today_1_m': 'Last month',
+            'today_3_m': 'Last 3 months',
+            'today_12_m': 'Last year'
+        }
+        
+    def analyze_entity_ecosystem(self, primary_entity: str, industry: str = None, 
+                                target_audience: str = None, content_goals: List[str] = None,
+                                competitor_entities: List[str] = None) -> Dict[str, Any]:
+        """
+        Comprehensive analysis of entity ecosystem using Knowledge Graph and Google Trends
+        """
+        
+        print(f"🔍 Analyzing entity ecosystem for: {primary_entity}")
+        
+        # 1. Knowledge Graph entity analysis
+        print("📊 Fetching Knowledge Graph data...")
+        kg_analysis = self._analyze_knowledge_graph_entities(primary_entity, competitor_entities)
+        
+        # 2. Google Trends analysis
+        print("📈 Analyzing Google Trends data...")
+        trends_analysis = self._analyze_google_trends(primary_entity, kg_analysis, industry)
+        
+        # 3. Entity relationship mapping
+        print("🗺️ Mapping entity relationships...")
+        relationship_mapping = self._map_entity_relationships(kg_analysis, trends_analysis)
+        
+        # 4. Content gap identification
+        print("📋 Identifying content gaps...")
+        content_gaps = self._identify_content_gaps(kg_analysis, trends_analysis, relationship_mapping)
+        
+        # 5. Trending opportunity analysis
+        print("⚡ Analyzing trending opportunities...")
+        trending_opportunities = self._analyze_trending_opportunities(trends_analysis, kg_analysis)
+        
+        # 6. Semantic relationship strengthening
+        print("🔗 Identifying relationship strengthening opportunities...")
+        relationship_opportunities = self._identify_relationship_opportunities(
+            kg_analysis, relationship_mapping, content_gaps
+        )
+        
+        # 7. Content strategy recommendations
+        print("💡 Generating content strategy recommendations...")
+        content_strategy = self._generate_content_strategy(
+            kg_analysis, trends_analysis, content_gaps, trending_opportunities, content_goals
+        )
+        
+        # 8. Implementation roadmap
+        print("🗓️ Creating implementation roadmap...")
+        implementation_roadmap = self._create_implementation_roadmap(
+            content_strategy, relationship_opportunities, trending_opportunities
+        )
+        
+        return {
+            'analysis_summary': {
+                'primary_entity': primary_entity,
+                'total_related_entities': len(kg_analysis.get('related_entities', [])),
+                'trending_topics_found': len(trending_opportunities.get('high_priority', [])),
+                'content_gaps_identified': len(content_gaps.get('priority_gaps', [])),
+                'relationship_opportunities': len(relationship_opportunities.get('immediate_opportunities', []))
+            },
+            'knowledge_graph_analysis': kg_analysis,
+            'trends_analysis': trends_analysis,
+            'entity_relationships': relationship_mapping,
+            'content_gaps': content_gaps,
+            'trending_opportunities': trending_opportunities,
+            'relationship_strengthening': relationship_opportunities,
+            'content_strategy': content_strategy,
+            'implementation_roadmap': implementation_roadmap,
+            'semantic_recommendations': self._generate_semantic_recommendations(kg_analysis, relationship_mapping)
+        }
+    
+    def _analyze_knowledge_graph_entities(self, primary_entity: str, 
+                                        competitor_entities: List[str] = None) -> Dict[str, Any]:
+        """Analyze entities using Google Knowledge Graph API"""
+        
+        entities_data = {}
+        related_entities = []
+        entity_types = []
+        
+        # Query primary entity
+        primary_data = self._query_knowledge_graph(primary_entity)
+        if primary_data:
+            entities_data[primary_entity] = primary_data
+            
+            # Extract related entities and types
+            for item in primary_data.get('itemListElement', []):
+                result = item.get('result', {})
+                
+                # Extract entity types
+                types = result.get('@type', [])
+                if isinstance(types, list):
+                    entity_types.extend(types)
+                elif isinstance(types, str):
+                    entity_types.append(types)
+                
+                # Extract detailed properties for relationships
+                detailed_description = result.get('detailedDescription', {})
+                if detailed_description:
+                    # Extract entities mentioned in description
+                    description_text = detailed_description.get('articleBody', '')
+                    extracted_entities = self._extract_entities_from_text(description_text)
+                    related_entities.extend(extracted_entities)
+        
+        # Query competitor entities if provided
+        competitor_data = {}
+        if competitor_entities:
+            for competitor in competitor_entities:
+                comp_data = self._query_knowledge_graph(competitor)
+                if comp_data:
+                    competitor_data[competitor] = comp_data
+        
+        # Find related entities through semantic analysis
+        semantic_entities = self._find_semantic_related_entities(primary_entity, entity_types)
+        related_entities.extend(semantic_entities)
+        
+        # Remove duplicates and clean related entities
+        related_entities = list(set([entity.lower().strip() for entity in related_entities if entity]))
+        entity_types = list(set(entity_types))
+        
+        return {
+            'primary_entity_data': entities_data.get(primary_entity, {}),
+            'competitor_entities_data': competitor_data,
+            'related_entities': related_entities[:50],  # Limit to top 50
+            'entity_types': entity_types,
+            'semantic_categories': self._categorize_entities(entity_types),
+            'authority_signals': self._extract_authority_signals(entities_data.get(primary_entity, {})),
+            'knowledge_panel_data': self._extract_knowledge_panel_data(entities_data.get(primary_entity, {}))
+        }
+    
+    def _query_knowledge_graph(self, query: str, limit: int = 20) -> Optional[Dict]:
+        """Query Google Knowledge Graph API"""
+        
+        try:
+            params = {
+                'query': query,
+                'key': self.kg_api_key,
+                'limit': limit,
+                'indent': True
+            }
+            
+            response = requests.get(self.kg_endpoint, params=params)
+            response.raise_for_status()
+            
+            return response.json()
+            
+        except requests.exceptions.RequestException as e:
+            print(f"Knowledge Graph API error: {e}")
+            return None
+        except Exception as e:
+            print(f"Unexpected error querying Knowledge Graph: {e}")
+            return None
+    
+    def _analyze_google_trends(self, primary_entity: str, kg_analysis: Dict, 
+                             industry: str = None) -> Dict[str, Any]:
+        """Analyze Google Trends data for entity and related topics"""
+        
+        trends_data = {}
+        
+        # Build keyword list for trends analysis
+        keywords = [primary_entity]
+        
+        # Add related entities from Knowledge Graph
+        related_entities = kg_analysis.get('related_entities', [])
+        keywords.extend(related_entities[:10])  # Limit to avoid API limits
+        
+        # Add industry-specific keywords
+        if industry:
+            keywords.extend([f"{primary_entity} {industry}", f"{industry} {primary_entity}"])
+        
+        # Analyze trends for different timeframes
+        for timeframe, description in self.trend_timeframes.items():
+            try:
+                timeframe_data = self._get_trends_for_timeframe(keywords[:5], timeframe)
+                if timeframe_data:
+                    trends_data[timeframe] = {
+                        'description': description,
+                        'data': timeframe_data,
+                        'top_keywords': self._extract_top_trending_keywords(timeframe_data),
+                        'trend_direction': self._analyze_trend_direction(timeframe_data)
+                    }
+                
+                # Avoid rate limiting
+                time.sleep(1)
+                
+            except Exception as e:
+                print(f"Error fetching trends for {timeframe}: {e}")
+                continue
+        
+        # Get related queries and topics
+        related_queries = self._get_related_queries(primary_entity)
+        rising_topics = self._get_rising_topics(primary_entity)
+        
+        # Seasonal analysis
+        seasonal_patterns = self._analyze_seasonal_patterns(primary_entity)
+        
+        return {
+            'primary_entity_trends': trends_data,
+            'related_queries': related_queries,
+            'rising_topics': rising_topics,
+            'seasonal_patterns': seasonal_patterns,
+            'trend_insights': self._generate_trend_insights(trends_data, related_queries),
+            'opportunity_windows': self._identify_opportunity_windows(trends_data),
+            'competitive_trend_analysis': self._analyze_competitive_trends(primary_entity, kg_analysis)
+        }
+    
+    def _get_trends_for_timeframe(self, keywords: List[str], timeframe: str) -> Optional[Dict]:
+        """Get Google Trends data for specific timeframe"""
+        
+        try:
+            # Clean keywords for trends API
+            clean_keywords = [kw for kw in keywords if kw and len(kw) > 2][:5]
+            
+            if not clean_keywords:
+                return None
+            
+            # Build payload for trends
+            self.pytrends.build_payload(clean_keywords, timeframe=timeframe)
+            
+            # Get interest over time
+            interest_over_time = self.pytrends.interest_over_time()
+            
+            # Get interest by region
+            interest_by_region = self.pytrends.interest_by_region(resolution='COUNTRY', inc_low_vol=True, inc_geo_code=False)
+            
+            return {
+                'interest_over_time': interest_over_time.to_dict() if not interest_over_time.empty else {},
+                'interest_by_region': interest_by_region.to_dict() if not interest_by_region.empty else {},
+                'keywords_analyzed': clean_keywords
+            }
+            
+        except Exception as e:
+            print(f"Error getting trends for timeframe {timeframe}: {e}")
+            return None
+    
+    def _get_related_queries(self, primary_entity: str) -> Dict[str, Any]:
+        """Get related queries from Google Trends"""
+        
+        try:
+            self.pytrends.build_payload([primary_entity])
+            
+            # Get related queries
+            related_queries = self.pytrends.related_queries()
+            
+            return {
+                'top_queries': related_queries.get(primary_entity, {}).get('top', {}),
+                'rising_queries': related_queries.get(primary_entity, {}).get('rising', {})
+            }
+            
+        except Exception as e:
+            print(f"Error getting related queries: {e}")
+            return {'top_queries': {}, 'rising_queries': {}}
+    
+    def _get_rising_topics(self, primary_entity: str) -> Dict[str, Any]:
+        """Get rising topics from Google Trends"""
+        
+        try:
+            self.pytrends.build_payload([primary_entity])
+            
+            # Get related topics
+            related_topics = self.pytrends.related_topics()
+            
+            return {
+                'top_topics': related_topics.get(primary_entity, {}).get('top', {}),
+                'rising_topics': related_topics.get(primary_entity, {}).get('rising', {})
+            }
+            
+        except Exception as e:
+            print(f"Error getting rising topics: {e}")
+            return {'top_topics': {}, 'rising_topics': {}}
+    
+    def _map_entity_relationships(self, kg_analysis: Dict, trends_analysis: Dict) -> Dict[str, Any]:
+        """Map relationships between entities using Knowledge Graph and Trends data"""
+        
+        # Extract entity relationships from Knowledge Graph
+        kg_relationships = self._extract_kg_relationships(kg_analysis)
+        
+        # Extract trend-based relationships
+        trend_relationships = self._extract_trend_relationships(trends_analysis)
+        
+        # Combine and analyze relationships
+        combined_relationships = self._combine_relationship_data(kg_relationships, trend_relationships)
+        
+        # Create relationship strength matrix
+        relationship_matrix = self._create_relationship_matrix(combined_relationships)
+        
+        # Identify relationship gaps
+        relationship_gaps = self._identify_relationship_gaps(combined_relationships, kg_analysis)
+        
+        return {
+            'knowledge_graph_relationships': kg_relationships,
+            'trend_based_relationships': trend_relationships,
+            'combined_relationships': combined_relationships,
+            'relationship_strength_matrix': relationship_matrix,
+            'relationship_gaps': relationship_gaps,
+            'strongest_connections': self._identify_strongest_connections(relationship_matrix),
+            'weakest_connections': self._identify_weakest_connections(relationship_matrix),
+            'opportunity_connections': self._identify_opportunity_connections(relationship_gaps)
+        }
+    
+    def _identify_content_gaps(self, kg_analysis: Dict, trends_analysis: Dict, 
+                             relationship_mapping: Dict) -> Dict[str, Any]:
+        """Identify content gaps based on Knowledge Graph and Trends analysis"""
+        
+        # Knowledge Graph content gaps
+        kg_gaps = self._identify_kg_content_gaps(kg_analysis)
+        
+        # Trending content gaps
+        trend_gaps = self._identify_trending_content_gaps(trends_analysis)
+        
+        # Relationship-based content gaps
+        relationship_gaps = self._identify_relationship_content_gaps(relationship_mapping)
+        
+        # Seasonal content gaps
+        seasonal_gaps = self._identify_seasonal_gaps(trends_analysis)
+        
+        # Prioritize gaps
+        priority_gaps = self._prioritize_content_gaps(kg_gaps, trend_gaps, relationship_gaps, seasonal_gaps)
+        
+        return {
+            'knowledge_graph_gaps': kg_gaps,
+            'trending_gaps': trend_gaps,
+            'relationship_gaps': relationship_gaps,
+            'seasonal_gaps': seasonal_gaps,
+            'priority_gaps': priority_gaps,
+            'quick_win_gaps': self._identify_quick_win_gaps(priority_gaps),
+            'strategic_gaps': self._identify_strategic_gaps(priority_gaps),
+            'content_suggestions': self._generate_gap_content_suggestions(priority_gaps)
+        }
+    
+    def _analyze_trending_opportunities(self, trends_analysis: Dict, kg_analysis: Dict) -> Dict[str, Any]:
+        """Analyze trending opportunities based on Trends and Knowledge Graph data"""
+        
+        # Extract rising trends
+        rising_trends = self._extract_rising_trends(trends_analysis)
+        
+        # Analyze trend momentum
+        trend_momentum = self._analyze_trend_momentum(trends_analysis)
+        
+        # Cross-reference with entity relationships
+        entity_aligned_trends = self._cross_reference_entity_trends(rising_trends, kg_analysis)
+        
+        # Identify opportunity windows
+        opportunity_windows = self._identify_trending_opportunity_windows(trends_analysis)
+        
+        # Competitive trend analysis
+        competitive_opportunities = self._identify_competitive_trend_opportunities(trends_analysis, kg_analysis)
+        
+        return {
+            'rising_trends': rising_trends,
+            'trend_momentum': trend_momentum,
+            'entity_aligned_trends': entity_aligned_trends,
+            'opportunity_windows': opportunity_windows,
+            'competitive_opportunities': competitive_opportunities,
+            'high_priority': self._prioritize_trending_opportunities(rising_trends, entity_aligned_trends),
+            'seasonal_opportunities': self._identify_seasonal_opportunities(trends_analysis),
+            'content_timing_recommendations': self._generate_timing_recommendations(opportunity_windows)
+        }
+    
+    def _identify_relationship_opportunities(self, kg_analysis: Dict, relationship_mapping: Dict,
+                                          content_gaps: Dict) -> Dict[str, Any]:
+        """Identify opportunities to strengthen entity relationships"""
+        
+        # Analyze relationship strength
+        relationship_strength_analysis = self._analyze_relationship_strengths(relationship_mapping)
+        
+        # Identify weak relationships that could be strengthened
+        strengthening_opportunities = self._identify_strengthening_opportunities(relationship_strength_analysis)
+        
+        # Schema markup opportunities
+        schema_opportunities = self._identify_schema_opportunities(kg_analysis, relationship_mapping)
+        
+        # Internal linking opportunities
+        linking_opportunities = self._identify_linking_opportunities(relationship_mapping, content_gaps)
+        
+        # Content creation opportunities for relationship building
+        content_relationship_opportunities = self._identify_content_relationship_opportunities(
+            relationship_mapping, content_gaps
+        )
+        
+        return {
+            'relationship_strength_analysis': relationship_strength_analysis,
+            'strengthening_opportunities': strengthening_opportunities,
+            'schema_markup_opportunities': schema_opportunities,
+            'internal_linking_opportunities': linking_opportunities,
+            'content_relationship_opportunities': content_relationship_opportunities,
+            'immediate_opportunities': self._prioritize_immediate_opportunities(
+                strengthening_opportunities, schema_opportunities
+            ),
+            'long_term_strategy': self._develop_long_term_relationship_strategy(relationship_mapping),
+            'implementation_priorities': self._prioritize_relationship_implementations(
+                schema_opportunities, linking_opportunities, content_relationship_opportunities
+            )
+        }
+    
+    def _generate_content_strategy(self, kg_analysis: Dict, trends_analysis: Dict,
+                                 content_gaps: Dict, trending_opportunities: Dict,
+                                 content_goals: List[str] = None) -> Dict[str, Any]:
+        """Generate comprehensive content strategy based on all analyses"""
+        
+        # Content themes based on entity relationships
+        content_themes = self._identify_content_themes(kg_analysis, trending_opportunities)
+        
+        # Content calendar recommendations
+        content_calendar = self._generate_content_calendar(
+            content_gaps, trending_opportunities, trends_analysis
+        )
+        
+        # SEO content strategy
+        seo_strategy = self._generate_seo_content_strategy(kg_analysis, content_gaps)
+        
+        # Trending content strategy
+        trending_strategy = self._generate_trending_content_strategy(trending_opportunities)
+        
+        # Authority building strategy
+        authority_strategy = self._generate_authority_building_strategy(kg_analysis, content_themes)
+        
+        return {
+            'content_themes': content_themes,
+            'content_calendar': content_calendar,
+            'seo_strategy': seo_strategy,
+            'trending_strategy': trending_strategy,
+            'authority_building_strategy': authority_strategy,
+            'content_priorities': self._prioritize_content_strategy(
+                content_gaps, trending_opportunities, content_goals
+            ),
+            'resource_allocation': self._recommend_resource_allocation(content_themes, trending_opportunities),
+            'success_metrics': self._define_content_success_metrics(kg_analysis, trending_opportunities)
+        }
+    
+    def _create_implementation_roadmap(self, content_strategy: Dict, relationship_opportunities: Dict,
+                                     trending_opportunities: Dict) -> Dict[str, Any]:
+        """Create detailed implementation roadmap"""
+        
+        # Phase 1: Immediate opportunities (0-30 days)
+        phase_1 = {
+            'timeline': '0-30 days',
+            'focus': 'Quick wins and trending opportunities',
+            'activities': [
+                'Implement high-priority schema markup',
+                'Create content for trending topics',
+                'Optimize existing content for strongest entity relationships',
+                'Set up tracking for knowledge graph mentions'
+            ],
+            'deliverables': self._define_phase_1_deliverables(trending_opportunities, relationship_opportunities),
+            'success_metrics': ['Schema markup implementation', 'Trending content published', 'KG mentions tracked']
+        }
+        
+        # Phase 2: Strategic development (30-90 days)
+        phase_2 = {
+            'timeline': '30-90 days',
+            'focus': 'Content gap filling and relationship strengthening',
+            'activities': [
+                'Fill priority content gaps',
+                'Build comprehensive entity relationship content',
+                'Implement internal linking strategy',
+                'Create authority-building content'
+            ],
+            'deliverables': self._define_phase_2_deliverables(content_strategy, relationship_opportunities),
+            'success_metrics': ['Content gaps filled', 'Entity relationships strengthened', 'Authority signals improved']
+        }
+        
+        # Phase 3: Authority and optimization (90-180 days)
+        phase_3 = {
+            'timeline': '90-180 days',
+            'focus': 'Authority building and ecosystem optimization',
+            'activities': [
+                'Develop thought leadership content',
+                'Build comprehensive knowledge graph',
+                'Optimize entity ecosystem',
+                'Monitor and adjust strategy'
+            ],
+            'deliverables': self._define_phase_3_deliverables(content_strategy),
+            'success_metrics': ['Knowledge graph presence', 'Industry authority', 'Organic growth']
+        }
+        
+        return {
+            'implementation_phases': {
+                'phase_1': phase_1,
+                'phase_2': phase_2,
+                'phase_3': phase_3
+            },
+            'critical_success_factors': [
+                'Consistent schema markup implementation',
+                'Regular trend monitoring and adaptation',
+                'Strong internal linking strategy',
+                'Quality content creation'
+            ],
+            'resource_requirements': {
+                'content_creation': '50% of effort',
+                'technical_implementation': '30% of effort',
+                'monitoring_optimization': '20% of effort'
+            },
+            'risk_mitigation': self._identify_implementation_risks(),
+            'milestone_tracking': self._define_milestone_tracking()
+        }
+    
+    def _generate_semantic_recommendations(self, kg_analysis: Dict, relationship_mapping: Dict) -> Dict[str, Any]:
+        """Generate semantic SEO and schema markup recommendations"""
+        
+        # Schema markup recommendations
+        schema_recommendations = self._generate_schema_recommendations(kg_analysis, relationship_mapping)
+        
+        # Semantic keyword recommendations
+        semantic_keywords = self._generate_semantic_keyword_recommendations(kg_analysis)
+        
+        # Entity linking recommendations
+        entity_linking = self._generate_entity_linking_recommendations(kg_analysis)
+        
+        # Structured data optimization
+        structured_data = self._generate_structured_data_recommendations(kg_analysis, relationship_mapping)
+        
+        return {
+            'schema_markup_recommendations': schema_recommendations,
+            'semantic_keyword_strategy': semantic_keywords,
+            'entity_linking_strategy': entity_linking,
+            'structured_data_optimization': structured_data,
+            'knowledge_graph_optimization': self._generate_kg_optimization_recommendations(kg_analysis),
+            'semantic_content_optimization': self._generate_semantic_content_recommendations(relationship_mapping)
+        }
+    
+    # Helper methods for analysis
+    def _extract_entities_from_text(self, text: str) -> List[str]:
+        """Extract potential entities from text using NLP techniques"""
+        
+        # Simple entity extraction - in production, use more sophisticated NLP
+        entities = []
+        
+        # Extract capitalized words/phrases (potential proper nouns)
+        proper_nouns = re.findall(r'\b[A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*)*\b', text)
+        entities.extend(proper_nouns)
+        
+        # Extract quoted terms
+        quoted_terms = re.findall(r'"([^"]*)"', text)
+        entities.extend(quoted_terms)
+        
+        # Extract terms in parentheses
+        parenthetical = re.findall(r'\(([^)]+)\)', text)
+        entities.extend(parenthetical)
+        
+        return [entity.strip() for entity in entities if len(entity.strip()) > 2]
+    
+    def _find_semantic_related_entities(self, primary_entity: str, entity_types: List[str]) -> List[str]:
+        """Find semantically related entities using AI analysis"""
+        
+        prompt = f"""
+        Based on the entity "{primary_entity}" and its types {entity_types}, 
+        generate a list of semantically related entities that would be valuable for content strategy.
+        
+        Include:
+        1. Related concepts and topics
+        2. Industry-specific entities
+        3. Complementary services/products
+        4. Target audience segments
+        5. Geographic or temporal entities if relevant
+        
+        Return as a simple list of entity names, one per line.
+        Maximum 20 entities.
+        """
+        
+        try:
+            response = self.llm.generate_structured(prompt)
+            entities = [line.strip() for line in response.split('\n') if line.strip()]
+            return entities[:20]
+        except:
+            return []
+    
+    def _categorize_entities(self, entity_types: List[str]) -> Dict[str, List[str]]:
+        """Categorize entities by type for better organization"""
+        
+        categories = {
+            'organizations': [],
+            'people': [],
+            'places': [],
+            'concepts': [],
+            'products': [],
+            'events': [],
+            'other': []
+        }
+        
+        for entity_type in entity_types:
+            if 'organization' in entity_type.lower() or 'company' in entity_type.lower():
+                categories['organizations'].append(entity_type)
+            elif 'person' in entity_type.lower():
+                categories['people'].append(entity_type)
+            elif 'place' in entity_type.lower() or 'location' in entity_type.lower():
+                categories['places'].append(entity_type)
+            elif 'product' in entity_type.lower():
+                categories['products'].append(entity_type)
+            elif 'event' in entity_type.lower():
+                categories['events'].append(entity_type)
+            elif 'thing' in entity_type.lower() or 'concept' in entity_type.lower():
+                categories['concepts'].append(entity_type)
+            else:
+                categories['other'].append(entity_type)
+        
+        return {k: v for k, v in categories.items() if v}
+    
+    def _extract_authority_signals(self, entity_data: Dict) -> List[str]:
+        """Extract authority signals from Knowledge Graph data"""
+        
+        authority_signals = []
+        
+        if not entity_data:
+            return authority_signals
+        
+        for item in entity_data.get('itemListElement', []):
+            result = item.get('result', {})
+            
+            # Check for Wikipedia links
+            if 'url' in result and 'wikipedia.org' in result.get('url', ''):
+                authority_signals.append('wikipedia_presence')
+            
+            # Check for official website
+            if 'url' in result:
+                authority_signals.append('official_website')
+            
+            # Check for detailed description
+            if result.get('detailedDescription'):
+                authority_signals.append('detailed_description')
+            
+            # Check for images
+            if result.get('image'):
+                authority_signals.append('knowledge_graph_image')
+        
+        return authority_signals
+    
+    def _prioritize_content_gaps(self, kg_gaps: List, trend_gaps: List, 
+                               relationship_gaps: List, seasonal_gaps: List) -> List[Dict]:
+        """Prioritize content gaps based on multiple factors"""
+        
+        all_gaps = []
+        
+        # Add knowledge graph gaps with high priority for authority building
+        for gap in kg_gaps:
+            all_gaps.append({
+                'gap': gap,
+                'source': 'knowledge_graph',
+                'priority': 'high',
+                'reasoning': 'Important for entity authority and knowledge graph presence'
+            })
+        
+        # Add trending gaps with urgency
+        for gap in trend_gaps:
+            all_gaps.append({
+                'gap': gap,
+                'source': 'trending',
+                'priority': 'urgent',
+                'reasoning': 'Time-sensitive trending opportunity'
+            })
+        
+        # Add relationship gaps with medium priority
+        for gap in relationship_gaps:
+            all_gaps.append({
+                'gap': gap,
+                'source': 'relationships',
+                'priority': 'medium',
+                'reasoning': 'Strengthens entity relationships and semantic connections'
+            })
+        
+        # Add seasonal gaps with appropriate timing
+        for gap in seasonal_gaps:
+            all_gaps.append({
+                'gap': gap,
+                'source': 'seasonal',
+                'priority': 'scheduled',
+                'reasoning': 'Seasonal opportunity with specific timing requirements'
+            })
+        
+        # Sort by priority
+        priority_order = {'urgent': 1, 'high': 2, 'medium': 3, 'scheduled': 4}
+        return sorted(all_gaps, key=lambda x: priority_order.get(x['priority'], 5))
+    
+    # Simplified implementations for referenced methods (due to length constraints)
+    def _analyze_trend_direction(self, timeframe_data: Dict) -> str:
+        """Analyze if trend is rising, falling, or stable"""
+        interest_data = timeframe_data.get('interest_over_time', {})
+        if not interest_data:
+            return 'unknown'
+        
+        # Simple trend analysis - in production, use more sophisticated analysis
+        values = []
+        for keyword_data in interest_data.values():
+            if isinstance(keyword_data, dict):
+                values.extend([v for v in keyword_data.values() if isinstance(v, (int, float))])
+        
+        if not values:
+            return 'unknown'
+        
+        # Compare first half to second half
+        mid = len(values) // 2
+        first_half_avg = sum(values[:mid]) / mid if mid > 0 else 0
+        second_half_avg = sum(values[mid:]) / (len(values) - mid) if len(values) > mid else 0
+        
+        if second_half_avg > first_half_avg * 1.1:
+            return 'rising'
+        elif second_half_avg < first_half_avg * 0.9:
+            return 'falling'
+        else:
+            return 'stable'
+    
+    def _generate_schema_recommendations(self, kg_analysis: Dict, relationship_mapping: Dict) -> List[Dict]:
+        """Generate specific schema markup recommendations"""
+        
+        recommendations = []
+        
+        # Basic Organization schema
+        recommendations.append({
+            'schema_type': 'Organization',
+            'priority': 'high',
+            'reason': 'Establish basic entity presence in knowledge graph',
+            'properties': ['name', 'url', 'logo', 'description', 'sameAs']
+        })
+        
+        # Article/BlogPosting schema for content
+        recommendations.append({
+            'schema_type': 'Article',
+            'priority': 'high',
+            'reason': 'Connect content to entity for topical authority',
+            'properties': ['headline', 'author', 'publisher', 'datePublished', 'about', 'mentions']
+        })
+        
+        # Person schema for authors
+        recommendations.append({
+            'schema_type': 'Person',
+            'priority': 'medium',
+            'reason': 'Build author authority and E-A-T signals',
+            'properties': ['name', 'jobTitle', 'worksFor', 'knowsAbout', 'sameAs']
+        })
+        
+        return recommendations
+    
+    def _identify_implementation_risks(self) -> List[str]:
+        """Identify potential implementation risks"""
+        return [
+            'API rate limiting affecting data collection',
+            'Trend volatility making strategies obsolete quickly',
+            'Schema markup implementation errors',
+            'Content quality not meeting E-A-T standards',
+            'Insufficient resources for comprehensive implementation'
+        ]
