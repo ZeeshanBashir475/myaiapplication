@@ -20,15 +20,19 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 # Import your enhanced agents
-from reddit_researcher import EnhancedRedditResearcher
-from full_content_generator import FullContentGenerator
-from business_context_collector import BusinessContextCollector
-from content_quality_scorer import ContentQualityScorer
-from content_type_classifier import ContentTypeClassifier
-from eeat_assessor import EEATAssessor
-from human_input_identifier import HumanInputIdentifier
-from intent_classifier import IntentClassifier
-from journey_mapper import JourneyMapper
++from reddit_researcher import EnhancedRedditResearcher, AdvancedTopicResearchAgent
++from knowledge_graph_trends_agent import KnowledgeGraphTrendsAgent
++from customer_journey_mapper import CustomerJourneyMapper
++from full_content_generator import FullContentGenerator
++from content_generator import ContentGenerator
++from business_context_collector import BusinessContextCollector
++from content_quality_scorer import ContentQualityScorer
++from content_type_classifier import ContentTypeClassifier
++from eeat_assessor import EnhancedEEATAssessor
++from human_input_identifier import HumanInputIdentifier
++from intent_classifier import IntentClassifier
++from customer_journey_mapper import CustomerJourneyMapper
++from content_analysis_snapshot import ContentAnalysisSnapshot
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -57,15 +61,19 @@ class EnhancedZeeOrchestrator:
     
     def __init__(self):
         # Initialize all enhanced agents
-        self.reddit_researcher = EnhancedRedditResearcher()
-        self.content_generator = FullContentGenerator()
-        self.business_context_collector = BusinessContextCollector()
-        self.content_quality_scorer = ContentQualityScorer()
-        self.content_type_classifier = ContentTypeClassifier()
-        self.eeat_assessor = EEATAssessor()
-        self.human_input_identifier = HumanInputIdentifier()
-        self.intent_classifier = IntentClassifier()
-        self.journey_mapper = JourneyMapper()
+    self.reddit_researcher    = EnhancedRedditResearcher()
++        self.topic_research_agent = AdvancedTopicResearchAgent()
++        self.kg_trends_agent      = KnowledgeGraphTrendsAgent()
++        self.business_context_collector = BusinessContextCollector()
++        self.content_quality_scorer     = ContentQualityScorer()
++        self.content_type_classifier    = ContentTypeClassifier()
++        self.eeat_assessor              = EnhancedEEATAssessor()
++        self.human_input_identifier     = HumanInputIdentifier()
++        self.intent_classifier          = IntentClassifier()
++        self.journey_mapper             = CustomerJourneyMapper()
++        self.full_content_generator     = FullContentGenerator()
++        self.content_generator          = ContentGenerator()
++        self.content_snapshot           = ContentAnalysisSnapshot()
         
         # Knowledge Graph API integration
         self.knowledge_graph_api = config.KNOWLEDGE_GRAPH_API
