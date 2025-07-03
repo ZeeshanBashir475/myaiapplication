@@ -1,4 +1,34 @@
-fastapi
-uvicorn
-python-multipart
-requests
+# Core FastAPI dependencies
+fastapi==0.104.1
+uvicorn==0.24.0
+
+# Reddit API
+praw==7.7.1
+
+# HTTP requests and utilities
+requests==2.31.0
+urllib3==2.0.4
+
+# Python standard library extensions
+python-multipart==0.0.6
+
+# Data processing (optional but useful)
+python-dateutil==2.8.2
+
+# Anthropic/OpenAI (if using)
+anthropic==0.3.11
+
+# Environment and configuration (optional)
+python-dotenv==1.0.0
+
+# JSON handling (built-in but good to specify version)
+# json is built-in to Python
+
+# Regular expressions (built-in but sometimes helps to specify)
+# re is built-in to Python
+
+# Typing extensions for better type hints
+typing-extensions==4.8.0
+
+# Optional: Better error handling
+httpx==0.25.2
