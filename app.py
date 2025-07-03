@@ -12,20 +12,21 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-# Import your enhanced agents
-from reddit_researcher import EnhancedRedditResearcher
-from advanced_topic_research_agent import AdvancedTopicResearchAgent
-from knowledge_graph_trends_agent import KnowledgeGraphTrendsAgent
-from customer_journey_mapper import CustomerJourneyMapper
-from full_content_generator import FullContentGenerator
-from content_generator import ContentGenerator
-from business_context_collector import BusinessContextCollector
-from content_quality_scorer import ContentQualityScorer
-from content_type_classifier import ContentTypeClassifier
-from eeat_assessor import EnhancedEEATAssessor
-from human_input_identifier import HumanInputIdentifier
-from intent_classifier import IntentClassifier
-from content_analysis_snapshot import ContentAnalysisSnapshot
+
+# Import your enhanced agents from the `agents` package
+from agents.reddit_researcher import EnhancedRedditResearcher
+from agents.advanced_topic_research_agent import AdvancedTopicResearchAgent
+from agents.knowledge_graph_trends_agent import KnowledgeGraphTrendsAgent
+from agents.customer_journey_mapper import CustomerJourneyMapper
+from agents.full_content_generator import FullContentGenerator
+from agents.content_generator import ContentGenerator
+from agents.business_context_collector import BusinessContextCollector
+from agents.content_quality_scorer import ContentQualityScorer
+from agents.content_type_classifier import ContentTypeClassifier
+from agents.eeat_assessor import EnhancedEEATAssessor
+from agents.human_input_identifier import HumanInputIdentifier
+from agents.intent_classifier import IntentClassifier
+from agents.content_analysis_snapshot import ContentAnalysisSnapshot
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
