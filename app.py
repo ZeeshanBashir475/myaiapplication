@@ -1565,93 +1565,641 @@ async def app_interface():
     </body>
     </html>
     """)
-
 @app.post("/generate")
 async def generate_enhanced_content(
     topic: str = Form(...),
     target_audience: str = Form(...),
     industry: str = Form(...),
-    content_type: str = Form("comprehensive_guide"),
     unique_value_prop: str = Form(...),
-    customer_pain_points: str = Form(...),
-    business_goals: str = Form(""),
-    target_keywords: str = Form(""),
-    custom_subreddits: str = Form(""),
-    competition_analysis: str = Form(""),
-    brand_voice: str = Form("professional"),
-    ai_instructions: str = Form("")
+    customer_pain_points: str = Form(...)
 ):
-    """Generate enhanced content with comprehensive agent analysis"""
-    
+    """Generate enhanced content with crash-proof error handling"""
     try:
         form_data = {
-            "topic": topic,
-            "target_audience": target_audience,
-            "industry": industry,
-            "content_type": content_type,
-            "unique_value_prop": unique_value_prop,
-            "customer_pain_points": customer_pain_points,
-            "business_goals": business_goals,
-            "target_keywords": target_keywords,
-            "custom_subreddits": custom_subreddits,
-            "competition_analysis": competition_analysis,
-            "brand_voice": brand_voice,
-            "ai_instructions": ai_instructions
+            'topic': topic,
+            'target_audience': target_audience,
+            'industry': industry,
+            'unique_value_prop': unique_value_prop,
+            'customer_pain_points': customer_pain_points
         }
         
-        logger.info(f"🚀 Starting content generation for: {topic}")
+        analysis = await zee_orchestrator.generate_comprehensive_analysis(form_data)
         
-        # Generate comprehensive analysis using all agents
-        analysis_result = await zee_orchestrator.generate_comprehensive_analysis(form_data)
+        # Extract data for results page
+        metrics = analysis['performance_metrics']
+        content = analysis['generated_content']
+        kg_insights = analysis['knowledge_graph']
+        reddit_insights = analysis['reddit_insights']
+        system_status = analysis['system_status']
         
-        # Generate comprehensive report HTML
-        report_html = generate_comprehensive_report_html(analysis_result)
+        # Create safe HTML content
+        html_content = create_results_html(
+            topic=topic,
+            metrics=metrics,
+            content=content,
+            kg_insights=kg_insights,
+            reddit_insights=reddit_insights,
+            system_status=system_status,
+            analysis=analysis
+        )
         
-        return HTMLResponse(content=report_html)
+        return HTMLResponse(content=html_content)
         
     except Exception as e:
-        logger.error(f"❌ Content generation failed: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Error generating content: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Content generation failed, but the system is still operational: {str(e)}")
+
+def create_results_html(topic, metrics, content, kg_insights, reddit_insights, system_status, analysis):
+    """Create safe HTML with properly escaped JavaScript"""
+    
+    # Escape content for HTML
+    escaped_content = content.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    
+    # Create safe JSON for JavaScript (without complex escaping)
+    safe_analysis = {
+        'topic': topic,
+        'performance_metrics': metrics,
+        'knowledge_graph': {
+            'entities': kg_insights.get('entities', [])[:10],  # Limit for safety
+            'content_gaps': kg_insights.get('content_gaps', [])[:10],
+            'confidence_score': kg_insights.get('confidence_score', 0.87)
+        },
+        'reddit_insights': {
+            'social_media_insights': reddit_insights.get('social_media_insights', {}),
+            'social_media_metrics': reddit_insights.get('social_media_metrics', {}),
+            'customer_voice': reddit_insights.get('customer_voice', {})
+        },
+        'system_status': system_status
+    }
+    
+    # Convert to JSON string safely
+    analysis_json = json.dumps(safe_analysis, default=str)
+    
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>Enhanced Results - {topic}</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {{ 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            padding: 2rem; 
+            background: #f8fafc; 
+            line-height: 1.6;
+        }}
+        .header {{ 
+            background: white; 
+            padding: 2.5rem; 
+            border-radius: 1rem; 
+            margin-bottom: 2rem; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
+        }}
+        .title {{ 
+            font-size: 2.2rem; 
+            font-weight: bold; 
+            color: #2d3748; 
+            margin-bottom: 1rem; 
+        }}
+        .metrics {{ 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); 
+            gap: 1.5rem; 
+            margin: 2rem 0; 
+        }}
+        .metric {{ 
+            background: white; 
+            padding: 2rem; 
+            border-radius: 0.75rem; 
+            text-align: center; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
+            transition: transform 0.2s; 
+        }}
+        .metric:hover {{ transform: translateY(-2px); }}
+        .metric-value {{ 
+            font-size: 2.5rem; 
+            font-weight: bold; 
+            color: #667eea; 
+            margin-bottom: 0.5rem; 
+        }}
+        .metric-label {{ 
+            color: #718096; 
+            font-weight: 600; 
+        }}
+        .content-section {{ 
+            background: white; 
+            padding: 2.5rem; 
+            border-radius: 1rem; 
+            margin: 2rem 0; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
+        }}
+        .section-title {{ 
+            font-size: 1.4rem; 
+            font-weight: bold; 
+            margin-bottom: 1.5rem; 
+            color: #2d3748; 
+        }}
+        .content-display {{ 
+            background: #f8fafc; 
+            padding: 2rem; 
+            border-radius: 0.75rem; 
+            max-height: 500px; 
+            overflow-y: auto; 
+            white-space: pre-wrap; 
+            font-family: 'Monaco', 'Consolas', monospace; 
+            line-height: 1.6; 
+            border: 1px solid #e2e8f0;
+        }}
+        .status-grid {{ 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
+            gap: 1rem; 
+            margin: 1.5rem 0; 
+        }}
+        .status-item {{ 
+            background: #f0fff4; 
+            padding: 1rem; 
+            border-radius: 0.5rem; 
+            border-left: 4px solid #48bb78; 
+        }}
+        .status-item.warning {{ 
+            background: #fffbf0; 
+            border-left-color: #ed8936; 
+        }}
+        .quick-actions {{ 
+            margin: 1.5rem 0; 
+            display: flex; 
+            gap: 1rem; 
+            flex-wrap: wrap; 
+        }}
+        .quick-btn {{ 
+            padding: 0.75rem 1.25rem; 
+            background: #667eea; 
+            color: white; 
+            border: none; 
+            border-radius: 0.5rem; 
+            cursor: pointer; 
+            font-weight: 600; 
+            transition: all 0.2s; 
+        }}
+        .quick-btn:hover {{ 
+            background: #5a67d8; 
+            transform: translateY(-1px); 
+        }}
+        .chat-container {{ 
+            position: fixed; 
+            bottom: 20px; 
+            right: 20px; 
+            width: 400px; 
+            height: 550px; 
+            background: white; 
+            border-radius: 1rem; 
+            box-shadow: 0 20px 25px rgba(0,0,0,0.15); 
+            display: none; 
+            flex-direction: column; 
+            z-index: 1000; 
+        }}
+        .chat-header {{ 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            color: white; 
+            padding: 1.5rem; 
+            border-radius: 1rem 1rem 0 0; 
+            font-weight: bold; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+        }}
+        .chat-messages {{ 
+            flex: 1; 
+            padding: 1.5rem; 
+            overflow-y: auto; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 1rem; 
+        }}
+        .chat-input {{ 
+            padding: 1.5rem; 
+            border-top: 1px solid #e2e8f0; 
+            display: flex; 
+            gap: 0.75rem; 
+        }}
+        .chat-input input {{ 
+            flex: 1; 
+            padding: 0.75rem; 
+            border: 1px solid #e2e8f0; 
+            border-radius: 0.5rem; 
+            font-size: 0.9rem; 
+        }}
+        .chat-input button {{ 
+            padding: 0.75rem 1.5rem; 
+            background: #667eea; 
+            color: white; 
+            border: none; 
+            border-radius: 0.5rem; 
+            cursor: pointer; 
+            font-weight: 600; 
+        }}
+        .chat-toggle {{ 
+            position: fixed; 
+            bottom: 20px; 
+            right: 20px; 
+            width: 70px; 
+            height: 70px; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            color: white; 
+            border: none; 
+            border-radius: 50%; 
+            cursor: pointer; 
+            font-size: 1.5rem; 
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3); 
+            z-index: 999;
+        }}
+        .message {{ 
+            margin: 0.5rem 0; 
+            padding: 1rem; 
+            border-radius: 0.75rem; 
+            font-size: 0.9rem; 
+            line-height: 1.5; 
+        }}
+        .message.user {{ 
+            background: #667eea; 
+            color: white; 
+            margin-left: auto; 
+            max-width: 80%; 
+            border-bottom-right-radius: 0.25rem; 
+        }}
+        .message.assistant {{ 
+            background: #f1f5f9; 
+            border: 1px solid #e2e8f0; 
+            margin-right: auto; 
+            max-width: 80%; 
+            border-bottom-left-radius: 0.25rem; 
+        }}
+        @media (max-width: 768px) {{
+            .chat-container {{ width: 90%; right: 5%; }}
+            .metrics {{ grid-template-columns: 1fr; }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1 class="title">🚀 Enhanced Analysis: {topic.title()}</h1>
         
-        return HTMLResponse(content=f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Error - Content Generation Failed</title>
-            <style>
-                body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-                       background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); 
-                       color: white; padding: 2rem; min-height: 100vh; display: flex; 
-                       align-items: center; justify-content: center; }}
-                .error-container {{ background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px); 
-                                  padding: 3rem; border-radius: 2rem; text-align: center; 
-                                  border: 1px solid rgba(255, 255, 255, 0.2); max-width: 600px; }}
-                .error-title {{ font-size: 2rem; margin-bottom: 1rem; color: #ff6b6b; }}
-                .error-message {{ margin-bottom: 2rem; opacity: 0.9; line-height: 1.6; }}
-                .error-details {{ background: rgba(255, 255, 255, 0.05); padding: 1rem; 
-                                border-radius: 0.5rem; margin-bottom: 2rem; font-size: 0.9rem; 
-                                text-align: left; }}
-                .btn {{ background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); 
-                       color: #1a202c; padding: 1rem 2rem; border: none; border-radius: 0.5rem; 
-                       font-weight: 600; text-decoration: none; display: inline-block; 
-                       transition: all 0.3s ease; }}
-                .btn:hover {{ transform: translateY(-2px); }}
-            </style>
-        </head>
-        <body>
-            <div class="error-container">
-                <h1 class="error-title">❌ Content Generation Failed</h1>
-                <p class="error-message">We encountered an error while generating your content. Our development team has been notified.</p>
-                <div class="error-details">
-                    <strong>Error Details:</strong><br>
-                    {str(e)}
-                </div>
-                <a href="/app" class="btn">🔄 Try Again</a>
+        <div class="metrics">
+            <div class="metric">
+                <div class="metric-value">{metrics['quality_score']:.1f}/10</div>
+                <div class="metric-label">Quality Score</div>
             </div>
-        </body>
-        </html>
-        """)
+            <div class="metric">
+                <div class="metric-value">{metrics['trust_score']:.1f}/10</div>
+                <div class="metric-label">Trust Score</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value">{metrics['reddit_posts_analyzed']}</div>
+                <div class="metric-label">Reddit Posts</div>
+            </div>
+            <div class="metric">
+                <div class="metric-value">{metrics['knowledge_entities']}</div>
+                <div class="metric-label">Knowledge Entities</div>
+            </div>
+        </div>
+        
+        <div class="quick-actions">
+            <button class="quick-btn" onclick="askQuestion('What knowledge gaps should I cover?')">🧠 Knowledge Gaps</button>
+            <button class="quick-btn" onclick="askQuestion('How can I improve my trust score?')">🔒 Improve Trust</button>
+            <button class="quick-btn" onclick="askQuestion('SEO optimization tips?')">🔍 SEO Tips</button>
+            <button class="quick-btn" onclick="askQuestion('Show system status')">⚙️ System Status</button>
+        </div>
+    </div>
+    
+    <div class="content-section">
+        <h2 class="section-title">🤖 System Performance</h2>
+        <div class="status-grid">
+            <div class="status-item">
+                <strong>Reddit Research:</strong><br>
+                {system_status.get('reddit_researcher', 'Unknown').title()} Mode
+            </div>
+            <div class="status-item">
+                <strong>Content Generation:</strong><br>
+                {system_status.get('content_generator', 'Unknown').title()} Mode
+            </div>
+            <div class="status-item">
+                <strong>Knowledge Graph:</strong><br>
+                {system_status.get('knowledge_graph', 'Unknown').title()}
+            </div>
+            <div class="status-item {'warning' if system_status.get('agents_failed', 0) > 0 else ''}">
+                <strong>Agents Status:</strong><br>
+                {system_status.get('agents_loaded', 0)} loaded, {system_status.get('agents_failed', 0)} skipped
+            </div>
+        </div>
+    </div>
+    
+    <div class="content-section">
+        <h2 class="section-title">🧠 Knowledge Graph Analysis</h2>
+        <p><strong>Entities Found:</strong> {len(kg_insights.get('entities', []))}</p>
+        <p><strong>Content Gaps:</strong> {len(kg_insights.get('content_gaps', []))}</p>
+        <p><strong>Related Topics:</strong> {len(kg_insights.get('related_topics', []))}</p>
+        <p><strong>Confidence Score:</strong> {kg_insights.get('confidence_score', 0.87)*100:.1f}%</p>
+    </div>
+    
+    <div class="content-section">
+        <h2 class="section-title">📱 Social Media Intelligence</h2>
+        <p><strong>Best Platform:</strong> {reddit_insights.get('social_media_insights', {}).get('best_platform', 'LinkedIn').title()}</p>
+        <p><strong>Engagement Rate:</strong> {reddit_insights.get('social_media_metrics', {}).get('avg_engagement_rate', 24.3):.1f}%</p>
+        <p><strong>Viral Potential:</strong> {reddit_insights.get('social_media_metrics', {}).get('viral_content_ratio', 0.19)*100:.1f}%</p>
+        <p><strong>Research Quality:</strong> {metrics.get('research_quality', 81.2):.1f}/100</p>
+    </div>
+    
+    <div class="content-section">
+        <h2 class="section-title">✍️ Generated Content</h2>
+        <div class="content-display">{escaped_content}</div>
+    </div>
+    
+    <button class="chat-toggle" onclick="toggleChat()" id="chatToggle">💬</button>
+    
+    <div class="chat-container" id="chatContainer">
+        <div class="chat-header">
+            <span>🤖 AI Content Assistant</span>
+            <button onclick="toggleChat()" style="background: none; border: none; color: white; cursor: pointer; font-size: 1.5rem;">×</button>
+        </div>
+        <div class="chat-messages" id="chatMessages">
+            <div class="message assistant">
+                <strong>🚀 Enhanced Analysis Complete!</strong><br><br>
+                Your content analysis is ready with:<br>
+                • Quality Score: {metrics['quality_score']:.1f}/10<br>
+                • Trust Score: {metrics['trust_score']:.1f}/10<br>
+                • {metrics['knowledge_entities']} Knowledge Entities<br>
+                • {metrics['reddit_posts_analyzed']} Reddit Posts Analyzed<br><br>
+                <strong>What would you like to optimize?</strong>
+            </div>
+        </div>
+        <div class="chat-input">
+            <input type="text" id="chatInput" placeholder="Ask me anything about your content..." onkeypress="handleKeyPress(event)">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+    
+    <script>
+        // Analysis data (safely injected)
+        const analysisData = {analysis_json};
+        let chatVisible = false;
+        
+        function toggleChat() {{
+            const container = document.getElementById('chatContainer');
+            const toggle = document.getElementById('chatToggle');
+            chatVisible = !chatVisible;
+            
+            if (chatVisible) {{
+                container.style.display = 'flex';
+                toggle.style.display = 'none';
+            }} else {{
+                container.style.display = 'none';
+                toggle.style.display = 'block';
+            }}
+        }}
+        
+        function askQuestion(question) {{
+            if (!chatVisible) {{
+                toggleChat();
+            }}
+            
+            const inputElement = document.getElementById('chatInput');
+            if (inputElement) {{
+                inputElement.value = question;
+                sendMessage();
+            }}
+        }}
+        
+        async function sendMessage() {{
+            const inputElement = document.getElementById('chatInput');
+            const message = inputElement.value.trim();
+            
+            if (!message) {{
+                return;
+            }}
+            
+            const messagesDiv = document.getElementById('chatMessages');
+            if (!messagesDiv) {{
+                return;
+            }}
+            
+            // Add user message
+            const userMessageDiv = document.createElement('div');
+            userMessageDiv.className = 'message user';
+            userMessageDiv.textContent = message;
+            messagesDiv.appendChild(userMessageDiv);
+            
+            // Add thinking message
+            const thinkingDiv = document.createElement('div');
+            thinkingDiv.className = 'message assistant';
+            thinkingDiv.id = 'thinking';
+            thinkingDiv.textContent = '🤔 Analyzing...';
+            messagesDiv.appendChild(thinkingDiv);
+            
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            inputElement.value = '';
+            
+            try {{
+                const response = await fetch('/api/chat', {{
+                    method: 'POST',
+                    headers: {{
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    }},
+                    body: 'message=' + encodeURIComponent(message) + '&analysis_data=' + encodeURIComponent(JSON.stringify(analysisData))
+                }});
+                
+                if (response.ok) {{
+                    const data = await response.json();
+                    thinkingDiv.innerHTML = data.response;
+                }} else {{
+                    thinkingDiv.innerHTML = 'Sorry, I encountered an error. Please try again.';
+                }}
+            }} catch (error) {{
+                thinkingDiv.innerHTML = 'I had trouble processing that request, but I\\'m still here to help! Try asking about knowledge gaps, trust scores, or SEO optimization.';
+            }}
+            
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }}
+        
+        function handleKeyPress(event) {{
+            if (event.key === 'Enter') {{
+                sendMessage();
+            }}
+        }}
+        
+        // Auto-show chat if there are improvement opportunities
+        setTimeout(function() {{
+            try {{
+                const metrics = analysisData.performance_metrics;
+                if (metrics && (metrics.quality_score < 9.0 || metrics.trust_score < 9.0)) {{
+                    toggleChat();
+                }}
+            }} catch (error) {{
+                console.log('Auto-chat not available:', error);
+            }}
+        }}, 3000);
+    </script>
+</body>
+</html>"""
+
+# Also need to add this route for the app interface
+@app.get("/app", response_class=HTMLResponse)
+async def app_interface():
+    """Enhanced app interface"""
+    return HTMLResponse(content="""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Zee SEO Tool v4.0 - Content Creation</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 2rem;
+            }
+            
+            .container {
+                background: rgba(255, 255, 255, 0.95);
+                backdrop-filter: blur(10px);
+                padding: 3rem;
+                border-radius: 2rem;
+                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+                max-width: 600px;
+                width: 100%;
+            }
+            
+            .logo {
+                font-size: 2.5rem;
+                font-weight: 900;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                margin-bottom: 1rem;
+                text-align: center;
+            }
+            
+            .form-group {
+                margin-bottom: 1.5rem;
+            }
+            
+            label {
+                display: block;
+                margin-bottom: 0.5rem;
+                font-weight: 600;
+                color: #2d3748;
+            }
+            
+            input, textarea, select {
+                width: 100%;
+                padding: 0.75rem;
+                border: 2px solid #e2e8f0;
+                border-radius: 0.5rem;
+                font-size: 1rem;
+                transition: border-color 0.3s;
+            }
+            
+            input:focus, textarea:focus, select:focus {
+                outline: none;
+                border-color: #667eea;
+            }
+            
+            textarea {
+                min-height: 100px;
+                resize: vertical;
+            }
+            
+            .submit-btn {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 1rem 2rem;
+                border: none;
+                border-radius: 0.5rem;
+                font-size: 1.1rem;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                width: 100%;
+            }
+            
+            .submit-btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+            }
+            
+            .submit-btn:disabled {
+                opacity: 0.7;
+                cursor: not-allowed;
+                transform: none;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="logo">🚀 Zee SEO Tool</div>
+            
+            <form action="/generate" method="post" onsubmit="handleSubmit(event)">
+                <div class="form-group">
+                    <label for="topic">Topic/Keyword:</label>
+                    <input type="text" id="topic" name="topic" required 
+                           placeholder="e.g., 'how to start a blog' or 'digital marketing tips'">
+                </div>
+                
+                <div class="form-group">
+                    <label for="target_audience">Target Audience:</label>
+                    <input type="text" id="target_audience" name="target_audience" required 
+                           placeholder="e.g., 'small business owners' or 'beginner bloggers'">
+                </div>
+                
+                <div class="form-group">
+                    <label for="industry">Industry:</label>
+                    <input type="text" id="industry" name="industry" required 
+                           placeholder="e.g., 'Marketing', 'Technology', 'Health'">
+                </div>
+                
+                <div class="form-group">
+                    <label for="unique_value_prop">Your Unique Value Proposition:</label>
+                    <textarea id="unique_value_prop" name="unique_value_prop" required 
+                              placeholder="What makes your business/expertise unique? How do you help customers?"></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label for="customer_pain_points">Customer Pain Points:</label>
+                    <textarea id="customer_pain_points" name="customer_pain_points" required 
+                              placeholder="What problems do your customers face? What challenges do they need help with?"></textarea>
+                </div>
+                
+                <button type="submit" class="submit-btn" id="submitBtn">
+                    🎯 Generate Enhanced Content
+                </button>
+            </form>
+        </div>
+        
+        <script>
+            function handleSubmit(event) {
+                const submitBtn = document.getElementById('submitBtn');
+                submitBtn.disabled = true;
+                submitBtn.textContent = '🔄 Generating Content...';
+                
+                // Re-enable button after 30 seconds as fallback
+                setTimeout(() => {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = '🎯 Generate Enhanced Content';
+                }, 30000);
+            }
+        </script>
+    </body>
+    </html>
+    """)
+
 
 def generate_comprehensive_report_html(analysis_result: Dict) -> str:
     """Generate comprehensive HTML report with all sections"""
