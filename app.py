@@ -44,10 +44,11 @@ class Config:
     REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID", "")
     REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET", "")
     REDDIT_USER_AGENT = os.getenv("REDDIT_USER_AGENT", "ZeeSEOTool:v4.0")
-    KNOWLEDGE_GRAPH_API = os.getenv(
-        "KNOWLEDGE_GRAPH_API",
-        "https://your-railway-app.up.railway.app/api/knowledge-graph"
-    )
+       # now reads the actual HTTP URL of your KG service
+   KNOWLEDGE_GRAPH_API_URL = os.getenv(
+       "KNOWLEDGE_GRAPH_API_URL",
+       "https://myaiapplication-production.up.railway.app/api/knowledge-graph"
+   )
     DEBUG_MODE = os.getenv("DEBUG_MODE", "True").lower() == "true"
     PORT = int(os.getenv("PORT", 8002))
 
@@ -84,7 +85,7 @@ class EnhancedZeeOrchestrator:
         self.content_snapshot           = ContentAnalysisSnapshot()
         
         # Knowledge Graph API integration
-        self.knowledge_graph_api = config.KNOWLEDGE_GRAPH_API
+         self.knowledge_graph_api_url = config.KNOWLEDGE_GRAPH_API_URL
         
         # Conversation history for chat
         self.conversation_history = []
@@ -93,16 +94,16 @@ class EnhancedZeeOrchestrator:
     async def get_knowledge_graph_insights(self, topic: str) -> Dict[str, Any]:
         """Get insights from Railway Knowledge Graph API"""
         try:
-            response = requests.post(
-                self.knowledge_graph_api,
-                json={
-                    "topic": topic,
-                    "depth": 3,
-                    "include_related": True,
-                    "include_gaps": True
-                },
-                timeout=30
-            )
+           response = requests.post(
+              self.knowledge_graph_api_url,
+                 json={
+                     "topic": topic,
+                     "depth": 3,
+                     "include_related": True,
+                     "include_gaps": True
+                 },
+                 timeout=30
+             )
             if response.status_code == 200:
                 return response.json()
             else:
