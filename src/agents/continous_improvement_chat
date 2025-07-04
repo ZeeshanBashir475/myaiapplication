@@ -1,0 +1,503 @@
+import json
+import asyncio
+from typing import Dict, List, Any, Optional
+from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
+
+class ContinuousImprovementChat:
+    """Real-time content improvement chat system"""
+    
+    def __init__(self, anthropic_client=None):
+        self.anthropic_client = anthropic_client
+        self.conversation_history = []
+        self.content_data = {}
+        self.improvement_suggestions = []
+        self.metrics_tracker = {
+            'improvements_applied': 0,
+            'quality_increases': 0,
+            'trust_score_changes': 0,
+            'session_start': datetime.now()
+        }
+        logger.info("✅ Continuous Improvement Chat initialized")
+    
+    def initialize_session(self, analysis_results: Dict[str, Any]):
+        """Initialize chat session with analysis data"""
+        self.content_data = analysis_results
+        self.metrics_tracker['session_start'] = datetime.now()
+        
+        # Generate initial improvement assessment
+        initial_assessment = self._generate_initial_assessment()
+        
+        welcome_message = {
+            'type': 'system',
+            'message': f"""🚀 **Continuous Improvement Session Started**
+            
+**Current Performance:**
+• Quality Score: {analysis_results.get('performance_metrics', {}).get('quality_score', 8.5):.1f}/10
+• Trust Score: {analysis_results.get('performance_metrics', {}).get('trust_score', 8.2):.1f}/10
+• Word Count: {analysis_results.get('performance_metrics', {}).get('content_word_count', 0):,}
+
+**Immediate Opportunities:**
+{chr(10).join(['• ' + opp for opp in initial_assessment[:3]])}
+
+💡 **Ask me anything:** "How to improve quality?", "Increase trust score", "Optimize for SEO", "Add more examples"
+            """,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        self.conversation_history.append(welcome_message)
+        return welcome_message
+    
+    async def process_message(self, user_message: str) -> Dict[str, Any]:
+        """Process user message and provide improvement suggestions"""
+        
+        # Add user message to history
+        user_entry = {
+            'type': 'user',
+            'message': user_message,
+            'timestamp': datetime.now().isoformat()
+        }
+        self.conversation_history.append(user_entry)
+        
+        # Generate response based on message content
+        response = await self._generate_improvement_response(user_message)
+        
+        # Add system response to history
+        system_entry = {
+            'type': 'assistant',
+            'message': response['message'],
+            'timestamp': datetime.now().isoformat(),
+            'improvements': response.get('improvements', []),
+            'metrics_impact': response.get('metrics_impact', {})
+        }
+        self.conversation_history.append(system_entry)
+        
+        return system_entry
+    
+    async def _generate_improvement_response(self, user_message: str) -> Dict[str, Any]:
+        """Generate specific improvement response based on user query"""
+        
+        message_lower = user_message.lower()
+        
+        # Analyze intent
+        if any(word in message_lower for word in ['quality', 'improve', 'better']):
+            return await self._handle_quality_improvement(user_message)
+        elif any(word in message_lower for word in ['trust', 'credibility', 'authority']):
+            return await self._handle_trust_improvement(user_message)
+        elif any(word in message_lower for word in ['seo', 'search', 'ranking']):
+            return await self._handle_seo_improvement(user_message)
+        elif any(word in message_lower for word in ['examples', 'case studies', 'stories']):
+            return await self._handle_content_enhancement(user_message)
+        elif any(word in message_lower for word in ['length', 'longer', 'shorter', 'word count']):
+            return await self._handle_length_optimization(user_message)
+        elif any(word in message_lower for word in ['structure', 'organize', 'headings']):
+            return await self._handle_structure_improvement(user_message)
+        else:
+            return await self._handle_general_query(user_message)
+    
+    async def _handle_quality_improvement(self, user_message: str) -> Dict[str, Any]:
+        """Handle quality improvement requests"""
+        
+        current_quality = self.content_data.get('performance_metrics', {}).get('quality_score', 8.5)
+        pain_points = self.content_data.get('reddit_insights', {}).get('critical_pain_points', {})
+        
+        improvements = [
+            "Add specific customer examples from pain point analysis",
+            "Include step-by-step implementation guides",
+            "Add FAQ section addressing common concerns",
+            "Include before/after scenarios",
+            "Add downloadable templates or checklists"
+        ]
+        
+        estimated_increase = 0.5 + (len(improvements) * 0.1)
+        new_quality_score = min(10.0, current_quality + estimated_increase)
+        
+        response = f"""🔧 **Quality Improvement Plan** (Current: {current_quality:.1f}/10)
+
+**Priority Actions:**
+{chr(10).join(['• ' + imp for imp in improvements])}
+
+**Expected Impact:** +{estimated_increase:.1f} points → {new_quality_score:.1f}/10
+
+**Quick Win:** Add 3-5 real customer quotes from your pain point analysis:
+{chr(10).join(['• "' + quote + '"' for quote in pain_points.get('top_pain_points', {}).keys()][:3])}
+
+**Implementation Time:** 15-30 minutes
+"""
+        
+        self.metrics_tracker['improvements_applied'] += 1
+        self.metrics_tracker['quality_increases'] += estimated_increase
+        
+        return {
+            'message': response,
+            'improvements': improvements,
+            'metrics_impact': {
+                'quality_increase': estimated_increase,
+                'new_quality_score': new_quality_score
+            }
+        }
+    
+    async def _handle_trust_improvement(self, user_message: str) -> Dict[str, Any]:
+        """Handle trust score improvement requests"""
+        
+        current_trust = self.content_data.get('performance_metrics', {}).get('trust_score', 8.2)
+        eeat_data = self.content_data.get('eeat_assessment', {})
+        
+        trust_improvements = [
+            "Add author bio with credentials and expertise",
+            "Include customer testimonials with specific results",
+            "Reference authoritative data sources and studies",
+            "Add contact information and company transparency",
+            "Include industry certifications or awards",
+            "Add social proof and media mentions"
+        ]
+        
+        estimated_increase = 0.8
+        new_trust_score = min(10.0, current_trust + estimated_increase)
+        
+        response = f"""🔒 **Trust Score Enhancement** (Current: {current_trust:.1f}/10)
+
+**High-Impact Actions:**
+{chr(10).join(['• ' + imp for imp in trust_improvements[:4]])}
+
+**E-E-A-T Breakdown:**
+• Experience: {eeat_data.get('component_scores', {}).get('experience', 8.2):.1f}/10
+• Expertise: {eeat_data.get('component_scores', {}).get('expertise', 8.5):.1f}/10
+• Authority: {eeat_data.get('component_scores', {}).get('authoritativeness', 8.0):.1f}/10
+• Trust: {eeat_data.get('component_scores', {}).get('trustworthiness', 8.3):.1f}/10
+
+**Quick Implementation:**
+1. Add author expertise statement (5 min)
+2. Include 2-3 customer success stories (10 min)
+3. Reference industry data/studies (5 min)
+
+**Expected Result:** {new_trust_score:.1f}/10 (+{estimated_increase:.1f})
+"""
+        
+        self.metrics_tracker['trust_score_changes'] += estimated_increase
+        
+        return {
+            'message': response,
+            'improvements': trust_improvements,
+            'metrics_impact': {
+                'trust_increase': estimated_increase,
+                'new_trust_score': new_trust_score
+            }
+        }
+    
+    async def _handle_seo_improvement(self, user_message: str) -> Dict[str, Any]:
+        """Handle SEO optimization requests"""
+        
+        reddit_insights = self.content_data.get('reddit_insights', {})
+        customer_language = reddit_insights.get('customer_voice', {}).get('common_pain_phrases', [])
+        
+        seo_improvements = [
+            "Add FAQ section with customer questions",
+            "Include semantic keywords from customer language",
+            "Optimize headings with question-based structure",
+            "Add internal linking opportunities",
+            "Include related topic clusters",
+            "Optimize meta description with pain points"
+        ]
+        
+        response = f"""🔍 **SEO Optimization Strategy**
+
+**Customer Language Integration:**
+{chr(10).join(['• "' + phrase + '"' for phrase in customer_language[:5]])}
+
+**Optimization Actions:**
+{chr(10).join(['• ' + imp for imp in seo_improvements])}
+
+**Content Structure Improvements:**
+• Add H2: "Common [Topic] Problems" 
+• Add H2: "How to Avoid [Topic] Mistakes"
+• Add H2: "What Customers Say About [Topic]"
+• Add FAQ section with customer questions
+
+**Expected SEO Impact:**
+• 25-40% improvement in organic visibility
+• Better match for customer search intent
+• Increased time on page from FAQ section
+"""
+        
+        return {
+            'message': response,
+            'improvements': seo_improvements,
+            'metrics_impact': {
+                'seo_improvement_percentage': 30,
+                'customer_language_integration': len(customer_language)
+            }
+        }
+    
+    async def _handle_content_enhancement(self, user_message: str) -> Dict[str, Any]:
+        """Handle content enhancement requests"""
+        
+        pain_points = self.content_data.get('reddit_insights', {}).get('critical_pain_points', {})
+        customer_quotes = self.content_data.get('reddit_insights', {}).get('customer_voice', {}).get('authentic_quotes', [])
+        
+        content_enhancements = [
+            "Add real customer success stories",
+            "Include before/after scenarios",
+            "Add specific implementation examples",
+            "Include common mistake warnings",
+            "Add industry case studies",
+            "Include expert tips and insider knowledge"
+        ]
+        
+        response = f"""📝 **Content Enhancement Plan**
+
+**Authentic Customer Examples:**
+{chr(10).join(['• "' + quote[:80] + '..."' for quote in customer_quotes[:3]])}
+
+**Enhancement Opportunities:**
+{chr(10).join(['• ' + enh for enh in content_enhancements])}
+
+**Pain Point Integration:**
+• Address "{list(pain_points.get('top_pain_points', {}).keys())[0] if pain_points.get('top_pain_points') else 'confusion'}" with step-by-step guide
+• Solve "{list(pain_points.get('top_pain_points', {}).keys())[1] if len(pain_points.get('top_pain_points', {})) > 1 else 'overwhelm'}" with clear framework
+• Prevent common mistakes with warning boxes
+
+**Implementation Priority:**
+1. Customer quotes (5 min) ⭐
+2. Before/after examples (10 min) ⭐⭐
+3. Common mistakes section (15 min) ⭐⭐⭐
+"""
+        
+        return {
+            'message': response,
+            'improvements': content_enhancements,
+            'metrics_impact': {
+                'authenticity_boost': True,
+                'engagement_increase': 25
+            }
+        }
+    
+    async def _handle_length_optimization(self, user_message: str) -> Dict[str, Any]:
+        """Handle content length optimization"""
+        
+        current_length = self.content_data.get('performance_metrics', {}).get('content_word_count', 0)
+        content_type = self.content_data.get('performance_metrics', {}).get('content_type', 'blog_post')
+        
+        optimal_ranges = {
+            'blog_post': (1500, 2500),
+            'comprehensive_guide': (3000, 6000),
+            'how_to_article': (1200, 2500),
+            'listicle': (1000, 2000),
+            'comparison_review': (1500, 3000)
+        }
+        
+        optimal_min, optimal_max = optimal_ranges.get(content_type, (1500, 2500))
+        
+        if current_length < optimal_min:
+            suggestion = "expand"
+            target = optimal_min
+            additions = [
+                "Add more detailed examples",
+                "Include additional pain point analysis",
+                "Expand FAQ section",
+                "Add step-by-step instructions",
+                "Include troubleshooting section"
+            ]
+        elif current_length > optimal_max:
+            suggestion = "condense"
+            target = optimal_max
+            additions = [
+                "Create summary sections",
+                "Move detailed info to appendix",
+                "Use bullet points for lists",
+                "Combine similar sections",
+                "Create separate detailed guides"
+            ]
+        else:
+            suggestion = "optimize"
+            target = current_length
+            additions = [
+                "Add visual break elements",
+                "Include call-out boxes",
+                "Add progress indicators",
+                "Include interactive elements"
+            ]
+        
+        response = f"""📏 **Length Optimization** (Current: {current_length:,} words)
+
+**Content Type:** {content_type.replace('_', ' ').title()}
+**Optimal Range:** {optimal_min:,} - {optimal_max:,} words
+**Recommendation:** {suggestion.title()} to ~{target:,} words
+
+**Action Plan:**
+{chr(10).join(['• ' + action for action in additions])}
+
+**Performance Impact:**
+• Better search engine performance
+• Improved user engagement
+• Optimal reading time (5-8 minutes)
+"""
+        
+        return {
+            'message': response,
+            'improvements': additions,
+            'metrics_impact': {
+                'length_optimization': suggestion,
+                'target_length': target
+            }
+        }
+    
+    async def _handle_structure_improvement(self, user_message: str) -> Dict[str, Any]:
+        """Handle content structure improvement"""
+        
+        structure_improvements = [
+            "Add executive summary at the beginning",
+            "Include table of contents for long content",
+            "Use progressive disclosure (basic → advanced)",
+            "Add clear section summaries",
+            "Include quick reference boxes",
+            "Add progress indicators for step-by-step content"
+        ]
+        
+        response = f"""🏗️ **Structure Optimization**
+
+**Recommended Structure:**
+```
+1. Executive Summary (what you'll learn)
+2. Pain Point Analysis (customer problems)
+3. Solution Framework (your approach)
+4. Step-by-Step Guide (implementation)
+5. Common Mistakes (what to avoid)
+6. FAQ (customer questions)
+7. Next Steps (action plan)
+```
+
+**Visual Improvements:**
+{chr(10).join(['• ' + imp for imp in structure_improvements])}
+
+**Readability Enhancements:**
+• Add section summaries every 500 words
+• Use bullet points for lists
+• Include call-out boxes for key insights
+• Add visual breaks with emojis or icons
+
+**Expected Impact:**
+• 40% better user engagement
+• Reduced bounce rate
+• Improved comprehension
+"""
+        
+        return {
+            'message': response,
+            'improvements': structure_improvements,
+            'metrics_impact': {
+                'readability_improvement': 40,
+                'structure_score': 9.0
+            }
+        }
+    
+    async def _handle_general_query(self, user_message: str) -> Dict[str, Any]:
+        """Handle general queries and provide contextual help"""
+        
+        performance_metrics = self.content_data.get('performance_metrics', {})
+        
+        response = f"""🤖 **Content Improvement Assistant**
+
+**Current Performance:**
+• Quality: {performance_metrics.get('quality_score', 8.5):.1f}/10
+• Trust: {performance_metrics.get('trust_score', 8.2):.1f}/10
+• Words: {performance_metrics.get('content_word_count', 0):,}
+
+**What I can help with:**
+• **"Improve quality"** - Content enhancement strategies
+• **"Increase trust"** - Authority and credibility improvements
+• **"SEO optimization"** - Search ranking improvements
+• **"Add examples"** - Customer stories and case studies
+• **"Fix structure"** - Organization and readability
+• **"Optimize length"** - Word count recommendations
+
+**Quick Actions Available:**
+• Add customer testimonials (+0.5 trust)
+• Include FAQ section (+0.3 quality)
+• Add step-by-step guide (+0.4 quality)
+• Include before/after examples (+0.3 trust)
+
+**Session Progress:**
+• Improvements Applied: {self.metrics_tracker['improvements_applied']}
+• Quality Increases: +{self.metrics_tracker['quality_increases']:.1f}
+• Trust Score Changes: +{self.metrics_tracker['trust_score_changes']:.1f}
+
+What specific improvement would you like to focus on?
+"""
+        
+        return {
+            'message': response,
+            'improvements': [],
+            'metrics_impact': {}
+        }
+    
+    def _generate_initial_assessment(self) -> List[str]:
+        """Generate initial improvement opportunities"""
+        
+        opportunities = []
+        performance_metrics = self.content_data.get('performance_metrics', {})
+        
+        quality_score = performance_metrics.get('quality_score', 8.5)
+        trust_score = performance_metrics.get('trust_score', 8.2)
+        word_count = performance_metrics.get('content_word_count', 0)
+        
+        if quality_score < 9.0:
+            opportunities.append("Add more specific customer examples and case studies")
+        
+        if trust_score < 9.0:
+            opportunities.append("Include author credentials and customer testimonials")
+        
+        if word_count < 1500:
+            opportunities.append("Expand content with detailed implementation guide")
+        
+        # Always include pain point integration
+        opportunities.append("Integrate more customer pain points from Reddit analysis")
+        
+        return opportunities
+    
+    def get_session_metrics(self) -> Dict[str, Any]:
+        """Get current session improvement metrics"""
+        
+        session_duration = datetime.now() - self.metrics_tracker['session_start']
+        
+        return {
+            'session_duration_minutes': int(session_duration.total_seconds() / 60),
+            'improvements_applied': self.metrics_tracker['improvements_applied'],
+            'total_quality_increase': round(self.metrics_tracker['quality_increases'], 1),
+            'total_trust_increase': round(self.metrics_tracker['trust_score_changes'], 1),
+            'messages_exchanged': len(self.conversation_history),
+            'current_performance': {
+                'quality_score': self.content_data.get('performance_metrics', {}).get('quality_score', 8.5) + self.metrics_tracker['quality_increases'],
+                'trust_score': self.content_data.get('performance_metrics', {}).get('trust_score', 8.2) + self.metrics_tracker['trust_score_changes']
+            }
+        }
+    
+    def get_conversation_history(self) -> List[Dict[str, Any]]:
+        """Get full conversation history"""
+        return self.conversation_history
+    
+    def export_improvements(self) -> Dict[str, Any]:
+        """Export all improvements suggested during the session"""
+        
+        all_improvements = []
+        metrics_impact = {}
+        
+        for entry in self.conversation_history:
+            if entry['type'] == 'assistant' and 'improvements' in entry:
+                all_improvements.extend(entry['improvements'])
+                if 'metrics_impact' in entry:
+                    for key, value in entry['metrics_impact'].items():
+                        if key not in metrics_impact:
+                            metrics_impact[key] = value
+                        elif isinstance(value, (int, float)):
+                            metrics_impact[key] += value
+        
+        return {
+            'session_summary': self.get_session_metrics(),
+            'all_improvements': list(set(all_improvements)),  # Remove duplicates
+            'total_metrics_impact': metrics_impact,
+            'conversation_history': self.conversation_history,
+            'export_timestamp': datetime.now().isoformat()
+        }
