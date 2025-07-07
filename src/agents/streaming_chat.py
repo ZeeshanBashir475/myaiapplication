@@ -1,10 +1,3 @@
-"""
-StreamingChatAgent - Real Claude-style streaming chat for content improvement
-
-This file replaces the old ContinuousImprovementChat system.
-Put this file at: src/agents/streaming_chat.py
-"""
-
 import json
 import logging
 import asyncio
@@ -443,29 +436,3 @@ Respond in a helpful, conversational way like Claude. Be encouraging and offer s
                 })
                 
                 logger.info(f"Content updated for session {session_id}: {len(updated_content)} characters")
-
-# Backward compatibility class name (in case other files import the old name)
-class ContinuousImprovementChat(StreamingChatAgent):
-    """Backward compatibility wrapper for old import statements"""
-    
-    def __init__(self, llm_client=None):
-        super().__init__(llm_client)
-        logger.warning("Using ContinuousImprovementChat compatibility mode. Update imports to use StreamingChatAgent.")
-    
-    def initialize_session(self, analysis_results):
-        """Compatibility method for old initialization"""
-        session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        return {'session_id': session_id}
-    
-    async def process_message(self, message: str, session_id: str = None):
-        """Compatibility method - redirects to new streaming system"""
-        logger.warning("Old process_message called. This should be handled by the new streaming system.")
-        return {"message": "Please use the new streaming chat interface."}
-    
-    def get_session_metrics(self, session_id: str = None):
-        """Compatibility method"""
-        return {
-            "improvements_applied": 0,
-            "total_quality_increase": 0.0,
-            "total_trust_increase": 0.0
-        }
