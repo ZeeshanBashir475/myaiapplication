@@ -1,9 +1,26 @@
 import json
 import re
+import os
+import time
 from typing import Dict, List, Any, Optional
 from collections import Counter
 from datetime import datetime
 import logging
+
+# Try to import Reddit dependencies
+try:
+    import praw
+    PRAW_AVAILABLE = True
+except ImportError:
+    PRAW_AVAILABLE = False
+    logging.warning("PRAW not installed. Install with: pip install praw")
+
+try:
+    from anthropic import Anthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+    logging.warning("Anthropic not installed. Install with: pip install anthropic")
 
 logger = logging.getLogger(__name__)
 
@@ -12,17 +29,45 @@ class EnhancedRedditResearcher:
     
     def __init__(self):
         self.reddit_client = self._initialize_reddit_client()
+        self.anthropic_client = self._initialize_anthropic()
         logger.info("✅ Enhanced Reddit Researcher initialized")
         
     def _initialize_reddit_client(self):
         """Initialize Reddit client with fallback data generation"""
-        try:
-            # Try to import and initialize real Reddit client
-            from src.utils.reddit_client import RedditClient
-            return RedditClient()
-        except ImportError:
-            logger.warning("Reddit client not available, using fallback data generator")
+        if not PRAW_AVAILABLE:
+            logger.warning("PRAW not available, using fallback data generator")
             return None
+        
+        try:
+            # Create Reddit client directly
+            reddit_client = praw.Reddit(
+                client_id=os.getenv('REDDIT_CLIENT_ID'),
+                client_secret=os.getenv('REDDIT_CLIENT_SECRET'),
+                user_agent=os.getenv('REDDIT_USER_AGENT', 'PainPointBot/1.0')
+            )
+            
+            # Test connection
+            test_subreddit = reddit_client.subreddit('test')
+            next(test_subreddit.hot(limit=1))
+            logger.info("✅ Reddit API connection successful")
+            return reddit_client
+            
+        except Exception as e:
+            logger.warning(f"Reddit client initialization failed: {e}")
+            return None
+    
+    def _initialize_anthropic(self):
+        """Initialize Anthropic client for enhanced pain point extraction"""
+        if not ANTHROPIC_AVAILABLE:
+            return None
+        
+        try:
+            api_key = os.getenv('ANTHROPIC_API_KEY')
+            if api_key:
+                return Anthropic(api_key=api_key)
+        except Exception as e:
+            logger.warning(f"Anthropic client initialization failed: {e}")
+        return None
     
     def research_topic_comprehensive(self, topic: str, subreddits: List[str], 
                                    max_posts_per_subreddit: int = 15) -> Dict[str, Any]:
@@ -60,11 +105,112 @@ class EnhancedRedditResearcher:
         
         if self.reddit_client:
             try:
-                return self.reddit_client.search_subreddit(subreddit, topic, limit)
+                # Use real Reddit API
+                real_posts = self._extract_real_reddit_posts(subreddit, topic, limit)
+                if real_posts:
+                    logger.info(f"✅ Found {len(real_posts)} real posts from r/{subreddit}")
+                    return real_posts
+                else:
+                    logger.info(f"No real posts found in r/{subreddit}, using fallback")
             except Exception as e:
-                logger.warning(f"Reddit API failed, using fallback: {e}")
+                logger.warning(f"Reddit API failed for r/{subreddit}: {e}")
         
-        # Generate realistic Reddit posts for analysis
+        # Generate realistic Reddit posts for analysis (your original fallback)
+        return self._generate_realistic_fallback_posts(subreddit, topic, limit)
+    
+    def _extract_real_reddit_posts(self, subreddit_name: str, topic: str, limit: int) -> List[Dict]:
+        """Extract real posts from Reddit using PRAW"""
+        
+        posts = []
+        
+        try:
+            subreddit = self.reddit_client.subreddit(subreddit_name)
+            
+            # Try multiple search strategies
+            search_methods = [
+                ('search', topic, 'relevance'),
+                ('search', topic, 'new'),
+                ('hot', None, None)
+            ]
+            
+            for method, query, sort in search_methods:
+                try:
+                    if method == 'search' and query:
+                        submissions = subreddit.search(
+                            query, 
+                            sort=sort, 
+                            time_filter='month', 
+                            limit=limit
+                        )
+                    else:
+                        submissions = subreddit.hot(limit=limit // 2)
+                    
+                    for submission in submissions:
+                        if len(posts) >= limit:
+                            break
+                        
+                        # Filter low-quality posts
+                        if (submission.score < 3 or 
+                            len(submission.title) < 15 or
+                            submission.over_18):
+                            continue
+                        
+                        # Get comments
+                        comments = self._extract_comments_from_submission(submission)
+                        
+                        post = {
+                            'title': submission.title,
+                            'content': submission.selftext if submission.is_self else '',
+                            'score': submission.score,
+                            'subreddit': subreddit_name,
+                            'comments': comments,
+                            'url': f"https://reddit.com{submission.permalink}",
+                            'created_utc': submission.created_utc
+                        }
+                        
+                        posts.append(post)
+                    
+                    if posts:  # If we found posts, stop trying other methods
+                        break
+                        
+                except Exception as e:
+                    logger.warning(f"Search method {method} failed: {e}")
+                    continue
+            
+            # Rate limiting
+            time.sleep(1)
+            
+        except Exception as e:
+            logger.error(f"Failed to search r/{subreddit_name}: {e}")
+        
+        return posts
+    
+    def _extract_comments_from_submission(self, submission, max_comments: int = 10) -> List[Dict]:
+        """Extract comments from Reddit submission"""
+        comments = []
+        
+        try:
+            submission.comments.replace_more(limit=0)
+            
+            for comment in submission.comments.list()[:max_comments]:
+                if (hasattr(comment, 'body') and 
+                    len(comment.body) > 20 and 
+                    comment.score > 1):
+                    
+                    comments.append({
+                        'text': comment.body,
+                        'score': comment.score,
+                        'author': str(comment.author) if comment.author else 'deleted'
+                    })
+                    
+        except Exception as e:
+            logger.warning(f"Failed to extract comments: {e}")
+        
+        return comments
+    
+    def _generate_realistic_fallback_posts(self, subreddit: str, topic: str, limit: int) -> List[Dict]:
+        """Generate realistic Reddit posts for analysis (your original method)"""
+        
         posts = []
         
         # Pain point focused post templates
@@ -151,7 +297,11 @@ class EnhancedRedditResearcher:
         for post in posts:
             analyzed_post = post.copy()
             
-            # Core pain point analysis
+            # Enhanced pain point analysis using Claude if available
+            if self.anthropic_client:
+                analyzed_post['ai_pain_analysis'] = self._extract_pain_points_with_claude(post, topic)
+            
+            # Core pain point analysis (your original methods)
             analyzed_post['pain_point_indicators'] = self._identify_pain_points(post)
             analyzed_post['frustration_level'] = self._assess_frustration_level(post)
             analyzed_post['problem_category'] = self._categorize_problem(post, topic)
@@ -167,6 +317,60 @@ class EnhancedRedditResearcher:
             analyzed_posts.append(analyzed_post)
         
         return analyzed_posts
+    
+    def _extract_pain_points_with_claude(self, post: Dict, topic: str) -> Dict[str, Any]:
+        """Extract pain points using Claude API for enhanced analysis"""
+        
+        try:
+            post_text = f"Title: {post.get('title', '')}\nContent: {post.get('content', '')}"
+            
+            # Add top comments for context
+            if post.get('comments'):
+                comment_text = "\n".join([f"Comment: {c['text']}" for c in post['comments'][:3]])
+                post_text += f"\n\nTop Comments:\n{comment_text}"
+            
+            prompt = f"""Analyze this Reddit post about {topic} for pain points and frustrations.
+
+Post content:
+---
+{post_text}
+---
+
+Extract specific pain points from this post. For each pain point:
+1. Identify the specific problem or frustration
+2. Categorize it (confusion, frustration, cost_concern, time_pressure, complexity, poor_support, reliability_issue)
+3. Rate intensity 1-10 (10 = extreme pain/frustration)
+
+Return ONLY a JSON array in this format:
+[
+  {{"text": "specific pain point description", "category": "category_name", "intensity": 7}}
+]
+
+If no clear pain points exist, return: []"""
+
+            response = self.anthropic_client.messages.create(
+                model="claude-3-sonnet-20240229",
+                max_tokens=400,
+                temperature=0.2,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            
+            response_text = response.content[0].text.strip()
+            
+            try:
+                pain_points_data = json.loads(response_text)
+                return {
+                    'claude_pain_points': pain_points_data,
+                    'claude_analysis_success': True,
+                    'total_ai_pain_points': len(pain_points_data)
+                }
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse Claude response: {response_text[:100]}")
+                return {'claude_analysis_success': False, 'error': 'JSON parse failed'}
+                
+        except Exception as e:
+            logger.warning(f"Claude analysis failed: {e}")
+            return {'claude_analysis_success': False, 'error': str(e)}
     
     def _identify_pain_points(self, post: Dict) -> Dict[str, Any]:
         """Identify specific pain points in the post"""
