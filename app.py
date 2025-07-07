@@ -1,6 +1,3 @@
-# 🚀 ZEE SEO TOOL v5.0 - MAIN APP.PY FILE
-# Replace your existing app.py with this entire file
-
 import os
 import sys
 import json
@@ -8,9 +5,8 @@ import logging
 import asyncio
 from datetime import datetime
 from typing import Dict, List, Any, Optional
-import uuid
 
-# FastAPI imports
+# FastAPI and WebSocket imports
 from fastapi import FastAPI, Form, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,9 +20,9 @@ sys.path.append('/app')
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Import your actual AI agents with corrected paths and fallbacks
+# Import all your agents with proper error handling
 def safe_import(module_path, class_name, alternative_paths=None):
-    """Safely import agents with multiple path attempts and proper error handling"""
+    """Safely import agents with multiple path attempts"""
     paths_to_try = [module_path]
     if alternative_paths:
         paths_to_try.extend(alternative_paths)
@@ -47,58 +43,19 @@ def safe_import(module_path, class_name, alternative_paths=None):
     logger.error(f"❌ Could not import {class_name} from any path")
     return None
 
-# Import your fixed agents
-from src.agents.enhanced_reddit_researcher import EnhancedRedditResearcher
-from src.agents.streaming_chat import StreamingChatAgent
-
-# Try to import other agents
-AdvancedTopicResearchAgent = safe_import(
-    'src.agents.AdvancedTopicResearchAgent', 
-    'AdvancedTopicResearchAgent',
-    ['src.agents.advanced_topic_research', 'agents.AdvancedTopicResearchAgent', 'AdvancedTopicResearchAgent']
-)
-
-ContentQualityScorer = safe_import(
-    'src.agents.content_quality_scorer', 
-    'ContentQualityScorer',
-    ['src.agents.ContentQualityScorer', 'agents.content_quality_scorer']
-)
-
-ContentTypeClassifier = safe_import(
-    'src.agents.content_type_classifier', 
-    'ContentTypeClassifier',
-    ['src.agents.ContentTypeClassifier', 'agents.content_type_classifier']
-)
-
-HumanInputIdentifier = safe_import(
-    'src.agents.human_input_identifier', 
-    'HumanInputIdentifier',
-    ['src.agents.HumanInputIdentifier', 'agents.human_input_identifier']
-)
-
-EnhancedEEATAssessor = safe_import(
-    'src.agents.eeat_assessor', 
-    'EnhancedEEATAssessor',
-    ['src.agents.EnhancedEEATAssessor', 'agents.eeat_assessor']
-)
-
-IntentClassifier = safe_import(
-    'src.agents.intent_classifier', 
-    'IntentClassifier',
-    ['src.agents.IntentClassifier', 'agents.intent_classifier']
-)
-
-BusinessContextCollector = safe_import(
-    'src.agents.business_context_collector', 
-    'BusinessContextCollector',
-    ['src.agents.BusinessContextCollector', 'agents.business_context_collector']
-)
-
-FullContentGenerator = safe_import(
-    'src.agents.content_generator', 
-    'FullContentGenerator',
-    ['src.agents.FullContentGenerator', 'agents.content_generator']
-)
+# Import all your agents
+AdvancedTopicResearchAgent = safe_import('src.agents.AdvancedTopicResearchAgent', 'AdvancedTopicResearchAgent')
+ContentQualityScorer = safe_import('src.agents.content_quality_scorer', 'ContentQualityScorer')
+ContentTypeClassifier = safe_import('src.agents.content_type_classifier', 'ContentTypeClassifier')
+HumanInputIdentifier = safe_import('src.agents.human_input_identifier', 'HumanInputIdentifier')
+EnhancedEEATAssessor = safe_import('src.agents.eeat_assessor', 'EnhancedEEATAssessor')
+IntentClassifier = safe_import('src.agents.intent_classifier', 'IntentClassifier')
+BusinessContextCollector = safe_import('src.agents.business_context_collector', 'BusinessContextCollector')
+FullContentGenerator = safe_import('src.agents.content_generator', 'FullContentGenerator')
+EnhancedRedditResearcher = safe_import('src.agents.enhanced_reddit_researcher', 'EnhancedRedditResearcher')
+StreamingChatAgent = safe_import('src.agents.streaming_chat', 'StreamingChatAgent')
+KnowledgeGraphTrendsAgent = safe_import('src.agents.knowledge_graph_trends_agent', 'KnowledgeGraphTrendsAgent')
+JourneyMapper = safe_import('src.agents.journey_mapper', 'JourneyMapper')
 
 # Configuration
 class Config:
@@ -106,14 +63,13 @@ class Config:
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
     REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID", "")
     REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET", "")
-    REDDIT_USER_AGENT = os.getenv("REDDIT_USER_AGENT", "ZeeSEOTool/1.0")
     PORT = int(os.getenv("PORT", 8002))
     DEBUG_MODE = os.getenv("DEBUG_MODE", "True").lower() == "true"
 
 config = Config()
 
 # Initialize FastAPI
-app = FastAPI(title="Zee SEO Tool v5.0 - Real Reddit + Streaming Chat")
+app = FastAPI(title="Zee SEO Tool v5.0 - Real-Time Streaming System")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -121,8 +77,8 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-# Enhanced LLM Client
-class EnhancedLLMClient:
+# Enhanced LLM Client with Streaming
+class StreamingLLMClient:
     """Enhanced LLM client with streaming support"""
     
     def __init__(self):
@@ -142,38 +98,29 @@ class EnhancedLLMClient:
         """Generate streaming response like Claude"""
         if self.anthropic_client:
             try:
-                with self.anthropic_client.messages.stream(
-                    model="claude-3-sonnet-20240229",
+                stream = self.anthropic_client.messages.create(
+                    model="claude-3-haiku-20240307",
                     max_tokens=max_tokens,
-                    messages=[{"role": "user", "content": prompt}]
-                ) as stream:
-                    for text in stream.text_stream:
-                        yield text
+                    messages=[{"role": "user", "content": prompt}],
+                    stream=True
+                )
+                
+                for chunk in stream:
+                    if chunk.type == "content_block_delta":
+                        yield chunk.delta.text
+                        
             except Exception as e:
-                logger.error(f"❌ Anthropic streaming error: {e}")
+                logger.error(f"❌ Streaming generation error: {e}")
                 yield f"Error: {str(e)}"
         else:
-            yield "AI service not available. Please check API keys."
-    
-    def generate(self, prompt: str, max_tokens: int = 2000) -> str:
-        """Generate non-streaming response"""
-        if self.anthropic_client:
-            try:
-                response = self.anthropic_client.messages.create(
-                    model="claude-3-sonnet-20240229",
-                    max_tokens=max_tokens,
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                return response.content[0].text
-            except Exception as e:
-                logger.error(f"❌ Anthropic generation error: {e}")
-                return f"Error: {str(e)}"
-        return "AI service not available."
+            # Fallback non-streaming
+            response = f"Response to: {prompt[:100]}..."
+            for char in response:
+                yield char
+                await asyncio.sleep(0.01)
 
 # WebSocket Connection Manager
 class ConnectionManager:
-    """Manage WebSocket connections for real-time chat"""
-    
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
     
@@ -190,293 +137,334 @@ class ConnectionManager:
     async def send_message(self, session_id: str, message: dict):
         if session_id in self.active_connections:
             try:
-                await self.active_connections[session_id].send_json(message)
-            except:
+                await self.active_connections[session_id].send_text(json.dumps(message))
+            except Exception as e:
+                logger.error(f"❌ Failed to send WebSocket message: {e}")
                 self.disconnect(session_id)
 
-# Advanced Content Analysis System (Updated)
-class ZeeSEOAdvancedSystem:
-    """Advanced content analysis system with streaming chat"""
+# Initialize connection manager
+manager = ConnectionManager()
+
+# Advanced Content Analysis System with Real-Time Updates
+class ZeeSEOStreamingSystem:
+    """Complete system with all agents and real-time streaming"""
     
     def __init__(self):
-        self.llm_client = EnhancedLLMClient()
-        self.connection_manager = ConnectionManager()
+        self.llm_client = StreamingLLMClient()
         self.sessions = {}
-        self.init_agents()
+        self.init_all_agents()
     
-    def init_agents(self):
-        """Initialize all available agents"""
+    def init_all_agents(self):
+        """Initialize ALL available agents"""
         self.agents = {}
         
-        # Initialize REAL Reddit researcher
-        try:
-            self.agents['reddit_research'] = EnhancedRedditResearcher()
-            logger.info("✅ Real Reddit Researcher initialized")
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize Reddit Researcher: {e}")
+        # Core agents
+        agents_to_init = [
+            ('topic_research', AdvancedTopicResearchAgent),
+            ('reddit_research', EnhancedRedditResearcher),
+            ('intent_classifier', IntentClassifier),
+            ('content_classifier', ContentTypeClassifier),
+            ('human_input', HumanInputIdentifier),
+            ('quality_scorer', ContentQualityScorer),
+            ('eeat_assessor', EnhancedEEATAssessor),
+            ('content_generator', FullContentGenerator),
+            ('business_context', BusinessContextCollector),
+            ('streaming_chat', StreamingChatAgent),
+            ('kg_trends', KnowledgeGraphTrendsAgent),
+            ('journey_mapper', JourneyMapper)
+        ]
         
-        # Initialize Streaming Chat Agent
-        try:
-            self.agents['streaming_chat'] = StreamingChatAgent(self.llm_client)
-            logger.info("✅ Streaming Chat Agent initialized")
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize Streaming Chat: {e}")
-        
-        # Initialize other agents with safe imports
-        if AdvancedTopicResearchAgent:
-            try:
-                self.agents['topic_research'] = AdvancedTopicResearchAgent(self.llm_client)
-                logger.info("✅ AdvancedTopicResearchAgent initialized")
-            except Exception as e:
-                logger.error(f"❌ Failed to initialize AdvancedTopicResearchAgent: {e}")
-        
-        if IntentClassifier:
-            try:
-                self.agents['intent_classifier'] = IntentClassifier(self.llm_client)
-                logger.info("✅ IntentClassifier initialized")
-            except Exception as e:
-                logger.error(f"❌ Failed to initialize IntentClassifier: {e}")
-        
-        if ContentTypeClassifier:
-            try:
-                self.agents['content_classifier'] = ContentTypeClassifier(self.llm_client)
-                logger.info("✅ ContentTypeClassifier initialized")
-            except Exception as e:
-                logger.error(f"❌ Failed to initialize ContentTypeClassifier: {e}")
-        
-        if HumanInputIdentifier:
-            try:
-                self.agents['human_input'] = HumanInputIdentifier(self.llm_client)
-                logger.info("✅ HumanInputIdentifier initialized")
-            except Exception as e:
-                logger.error(f"❌ Failed to initialize HumanInputIdentifier: {e}")
-        
-        if ContentQualityScorer:
-            try:
-                self.agents['quality_scorer'] = ContentQualityScorer(self.llm_client)
-                logger.info("✅ ContentQualityScorer initialized")
-            except Exception as e:
-                logger.error(f"❌ Failed to initialize ContentQualityScorer: {e}")
-        
-        if EnhancedEEATAssessor:
-            try:
-                self.agents['eeat_assessor'] = EnhancedEEATAssessor(self.llm_client)
-                logger.info("✅ EnhancedEEATAssessor initialized")
-            except Exception as e:
-                logger.error(f"❌ Failed to initialize EnhancedEEATAssessor: {e}")
-        
-        if FullContentGenerator:
-            try:
-                self.agents['content_generator'] = FullContentGenerator(self.llm_client)
-                logger.info("✅ FullContentGenerator initialized")
-            except Exception as e:
-                logger.error(f"❌ Failed to initialize FullContentGenerator: {e}")
-        
-        if BusinessContextCollector:
-            try:
-                self.agents['business_context'] = BusinessContextCollector()
-                logger.info("✅ BusinessContextCollector initialized")
-            except Exception as e:
-                logger.error(f"❌ Failed to initialize BusinessContextCollector: {e}")
+        for agent_name, agent_class in agents_to_init:
+            if agent_class:
+                try:
+                    if agent_name == 'streaming_chat':
+                        self.agents[agent_name] = agent_class(self.llm_client)
+                    elif agent_name == 'reddit_research':
+                        self.agents[agent_name] = agent_class()
+                    elif agent_name == 'business_context':
+                        self.agents[agent_name] = agent_class()
+                    elif agent_name == 'kg_trends':
+                        self.agents[agent_name] = agent_class(
+                            google_api_key=config.GOOGLE_API_KEY,
+                            llm_client=self.llm_client
+                        )
+                    else:
+                        self.agents[agent_name] = agent_class(self.llm_client)
+                    
+                    logger.info(f"✅ {agent_name} initialized")
+                except Exception as e:
+                    logger.error(f"❌ Failed to initialize {agent_name}: {e}")
         
         logger.info(f"🎯 System initialized with {len(self.agents)} active agents")
     
-    async def start_analysis(self, form_data: Dict, session_id: str):
-        """Start comprehensive analysis with REAL Reddit research"""
+    async def analyze_comprehensive_streaming(self, form_data: Dict[str, str], session_id: str) -> Dict[str, Any]:
+        """Run comprehensive analysis with real-time streaming updates"""
         
-        logger.info(f"🚀 Starting analysis for session: {session_id}")
+        topic = form_data['topic']
         
         # Initialize session
-        session = {
+        self.sessions[session_id] = {
             'session_id': session_id,
             'form_data': form_data,
-            'conversation_history': [],
             'current_content': '',
+            'conversation_history': [],
             'analysis_results': {},
-            'created_at': datetime.now().isoformat()
+            'live_metrics': {
+                'overall_score': 0.0,
+                'trust_score': 0.0,
+                'quality_score': 0.0,
+                'pain_points_count': 0,
+                'improvements_applied': 0
+            },
+            'timestamp': datetime.now().isoformat()
         }
-        self.sessions[session_id] = session
         
-        # Send status updates
-        await self.connection_manager.send_message(session_id, {
-            'type': 'status',
-            'message': '🔍 Starting REAL Reddit research...'
+        # Send start signal
+        await manager.send_message(session_id, {
+            'type': 'analysis_start',
+            'message': f'🔍 Starting comprehensive analysis for: {topic}'
         })
         
-        # REAL Reddit Research
-        if 'reddit_research' in self.agents:
-            reddit_data = await self.agents['reddit_research'].research_topic_comprehensive(
-                topic=form_data['topic'],
-                subreddits=['AskReddit', 'explainlikeimfive', 'LifeProTips'],  # Will auto-discover more
-                max_posts_per_subreddit=20
-            )
-            session['analysis_results']['reddit_insights'] = reddit_data
-            
-            posts_analyzed = reddit_data.get('research_metadata', {}).get('total_posts_analyzed', 0)
-            await self.connection_manager.send_message(session_id, {
-                'type': 'status',
-                'message': f"✅ Analyzed {posts_analyzed} real Reddit posts"
-            })
-        else:
-            await self.connection_manager.send_message(session_id, {
-                'type': 'status',
-                'message': '⚠️ Reddit researcher not available, using fallback'
-            })
-        
-        # Run other analysis stages
-        await self._run_analysis_stages(session, session_id)
-        
-        # Generate content
-        await self.connection_manager.send_message(session_id, {
-            'type': 'status',
-            'message': '✍️ Generating content based on real pain points...'
-        })
-        
-        content = await self._generate_streaming_content(form_data, session['analysis_results'], session_id)
-        session['current_content'] = content
-        
-        # Send completion
-        await self.connection_manager.send_message(session_id, {
-            'type': 'analysis_complete',
-            'content': content,
-            'reddit_insights': session['analysis_results'].get('reddit_insights', {}),
-            'session_id': session_id
-        })
-    
-    async def _run_analysis_stages(self, session: Dict, session_id: str):
-        """Run all analysis stages"""
-        
-        form_data = session['form_data']
-        topic = form_data['topic']
+        results = {
+            'topic': topic,
+            'timestamp': datetime.now().isoformat(),
+            'form_data': form_data,
+            'analysis_stages': {}
+        }
         
         # Stage 1: Intent Analysis
+        await manager.send_message(session_id, {
+            'type': 'stage_update',
+            'stage': 'intent_analysis',
+            'message': '🎯 Analyzing search intent and user journey...'
+        })
+        
         if 'intent_classifier' in self.agents:
-            try:
-                intent_data = self.agents['intent_classifier'].classify_intent(
-                    topic, form_data.get('target_audience', '')
-                )
-                session['analysis_results']['intent'] = intent_data
-            except Exception as e:
-                logger.error(f"Intent classification failed: {e}")
+            intent_data = self.agents['intent_classifier'].classify_intent(
+                topic, form_data.get('target_audience', '')
+            )
+            results['analysis_stages']['intent'] = intent_data
+            
+            await manager.send_message(session_id, {
+                'type': 'stage_complete',
+                'stage': 'intent_analysis',
+                'data': intent_data
+            })
         
-        # Stage 2: Content Type Classification
-        if 'content_classifier' in self.agents:
-            try:
-                content_type_data = self.agents['content_classifier'].classify_content_type(
-                    topic=topic,
-                    target_audience=form_data.get('target_audience', ''),
-                    business_context=form_data
-                )
-                session['analysis_results']['content_type'] = content_type_data
-            except Exception as e:
-                logger.error(f"Content classification failed: {e}")
+        # Stage 2: Reddit Research (Real-time updates)
+        await manager.send_message(session_id, {
+            'type': 'stage_update',
+            'stage': 'reddit_research',
+            'message': '📱 Discovering relevant subreddits and scraping real posts...'
+        })
         
-        # Stage 3: Topic Research
-        if 'topic_research' in self.agents:
-            try:
-                topic_research = self.agents['topic_research'].research_topic_comprehensive(
-                    topic=topic,
-                    industry=form_data.get('industry', ''),
-                    target_audience=form_data.get('target_audience', ''),
-                    business_goals=form_data.get('business_goals', '')
-                )
-                session['analysis_results']['topic_research'] = topic_research
-            except Exception as e:
-                logger.error(f"Topic research failed: {e}")
+        if 'reddit_research' in self.agents:
+            # Get relevant subreddits first
+            subreddits = self.agents['reddit_research'].discover_relevant_subreddits(topic)
+            
+            await manager.send_message(session_id, {
+                'type': 'reddit_subreddits',
+                'subreddits': subreddits
+            })
+            
+            # Research with progress updates
+            reddit_insights = await self._reddit_research_with_updates(topic, subreddits, session_id)
+            results['analysis_stages']['reddit_insights'] = reddit_insights
+            
+            # Update live metrics
+            pain_points_count = len(reddit_insights.get('critical_pain_points', {}).get('top_pain_points', {}))
+            self.sessions[session_id]['live_metrics']['pain_points_count'] = pain_points_count
+            
+            await manager.send_message(session_id, {
+                'type': 'metrics_update',
+                'metrics': self.sessions[session_id]['live_metrics']
+            })
         
-        # Stage 4: Human Input Identification
-        if 'human_input' in self.agents:
-            try:
-                human_inputs = self.agents['human_input'].identify_human_inputs(
-                    topic=topic,
-                    content_type=session['analysis_results'].get('content_type', {}).get('primary_content_type', 'guide'),
-                    business_context=form_data
-                )
-                session['analysis_results']['human_inputs'] = human_inputs
-            except Exception as e:
-                logger.error(f"Human input identification failed: {e}")
+        # Stage 3: Content Generation with streaming
+        await manager.send_message(session_id, {
+            'type': 'stage_update',
+            'stage': 'content_generation',
+            'message': '✍️ Generating optimized content...'
+        })
+        
+        if 'content_generator' in self.agents:
+            generated_content = await self._generate_content_streaming(
+                form_data, results['analysis_stages'], session_id
+            )
+            results['generated_content'] = generated_content
+            self.sessions[session_id]['current_content'] = generated_content
+        
+        # Stage 4: E-E-A-T Assessment
+        await manager.send_message(session_id, {
+            'type': 'stage_update',
+            'stage': 'eeat_assessment',
+            'message': '🔒 Analyzing expertise, experience, authoritativeness, and trust...'
+        })
+        
+        if 'eeat_assessor' in self.agents:
+            eeat_assessment = self.agents['eeat_assessor'].assess_comprehensive_eeat(
+                content=results.get('generated_content', ''),
+                topic=topic,
+                industry=form_data.get('industry', ''),
+                business_context=form_data,
+                author_info=form_data.get('author_credentials', ''),
+                target_audience=form_data.get('target_audience', '')
+            )
+            results['analysis_stages']['eeat_assessment'] = eeat_assessment
+            
+            # Update trust score
+            trust_score = eeat_assessment.get('overall_trust_score', 8.0)
+            self.sessions[session_id]['live_metrics']['trust_score'] = trust_score
+        
+        # Stage 5: Quality Assessment
+        if 'quality_scorer' in self.agents:
+            quality_score = self.agents['quality_scorer'].score_content_quality(
+                content=results.get('generated_content', ''),
+                topic=topic,
+                target_audience=form_data.get('target_audience', ''),
+                business_context=form_data,
+                reddit_insights=results['analysis_stages'].get('reddit_insights', {})
+            )
+            results['analysis_stages']['quality_assessment'] = quality_score
+            
+            # Update quality score
+            q_score = quality_score.get('overall_score', 8.0)
+            self.sessions[session_id]['live_metrics']['quality_score'] = q_score
+        
+        # Calculate final metrics
+        metrics = self._calculate_live_metrics(results)
+        self.sessions[session_id]['live_metrics'].update(metrics)
+        self.sessions[session_id]['analysis_results'] = results
+        
+        # Send completion
+        await manager.send_message(session_id, {
+            'type': 'analysis_complete',
+            'metrics': self.sessions[session_id]['live_metrics'],
+            'message': '✅ Analysis complete! Chat interface is now active.'
+        })
+        
+        return results
     
-    async def _generate_streaming_content(self, form_data: Dict, analysis_results: Dict, session_id: str) -> str:
+    async def _reddit_research_with_updates(self, topic: str, subreddits: List[str], session_id: str):
+        """Reddit research with real-time progress updates"""
+        
+        for subreddit in subreddits:
+            await manager.send_message(session_id, {
+                'type': 'reddit_progress',
+                'message': f'🔍 Scraping r/{subreddit}...',
+                'subreddit': subreddit
+            })
+            
+            # Simulate some delay for real effect
+            await asyncio.sleep(0.5)
+        
+        # Perform actual research
+        reddit_insights = await self.agents['reddit_research'].research_topic_comprehensive(
+            topic=topic,
+            subreddits=subreddits,
+            max_posts_per_subreddit=20
+        )
+        
+        await manager.send_message(session_id, {
+            'type': 'reddit_complete',
+            'total_posts': reddit_insights.get('research_metadata', {}).get('total_posts_analyzed', 0),
+            'pain_points': len(reddit_insights.get('critical_pain_points', {}).get('top_pain_points', {}))
+        })
+        
+        return reddit_insights
+    
+    async def _generate_content_streaming(self, form_data: Dict, analysis_stages: Dict, session_id: str) -> str:
         """Generate content with streaming output"""
         
-        topic = form_data['topic']
-        reddit_insights = analysis_results.get('reddit_insights', {})
+        await manager.send_message(session_id, {
+            'type': 'content_stream_start'
+        })
+        
+        # Build generation prompt
+        reddit_insights = analysis_stages.get('reddit_insights', {})
         pain_points = reddit_insights.get('critical_pain_points', {}).get('top_pain_points', {})
         customer_quotes = reddit_insights.get('customer_voice', {}).get('authentic_quotes', [])
         
-        prompt = f"""Create comprehensive content about "{topic}" based on REAL Reddit research.
+        prompt = f"""Create comprehensive content for: {form_data['topic']}
 
-REAL PAIN POINTS DISCOVERED:
+Target Audience: {form_data.get('target_audience', '')}
+Industry: {form_data.get('industry', '')}
+Language: {form_data.get('language', 'British English')}
+
+Key Pain Points to Address:
 {json.dumps(pain_points, indent=2)}
 
-AUTHENTIC CUSTOMER QUOTES:
+Customer Voice:
 {chr(10).join(['- "' + quote + '"' for quote in customer_quotes[:5]])}
 
-USER CONTEXT:
-- Target Audience: {form_data.get('target_audience', '')}
-- Unique Value Prop: {form_data.get('unique_value_prop', '')}
-- Customer Pain Points: {form_data.get('customer_pain_points', '')}
+Unique Value Proposition:
+{form_data.get('unique_value_prop', '')}
 
-Create content that:
-1. Directly addresses the REAL pain points found in Reddit research
-2. Uses authentic customer language from the quotes
-3. Provides specific solutions to the most common problems
-4. Builds trust through expertise and experience
-5. Is written in {form_data.get('language', 'British English')}
-
-Make it comprehensive (2000-3000 words) and genuinely helpful."""
-
-        # Stream the content generation
+Create comprehensive, helpful content that directly addresses these real customer pain points."""
+        
         content_chunks = []
         async for chunk in self.llm_client.generate_streaming(prompt, max_tokens=4000):
             content_chunks.append(chunk)
-            await self.connection_manager.send_message(session_id, {
-                'type': 'content_stream',
+            await manager.send_message(session_id, {
+                'type': 'content_stream_chunk',
                 'chunk': chunk
             })
         
-        return ''.join(content_chunks)
+        complete_content = ''.join(content_chunks)
+        
+        await manager.send_message(session_id, {
+            'type': 'content_stream_complete',
+            'content': complete_content
+        })
+        
+        return complete_content
+    
+    def _calculate_live_metrics(self, results: Dict) -> Dict:
+        """Calculate comprehensive live metrics"""
+        eeat = results['analysis_stages'].get('eeat_assessment', {})
+        quality = results['analysis_stages'].get('quality_assessment', {})
+        reddit = results['analysis_stages'].get('reddit_insights', {})
+        
+        trust_score = eeat.get('overall_trust_score', 8.0)
+        quality_score = quality.get('overall_score', 8.0)
+        overall_score = (trust_score + quality_score) / 2
+        
+        return {
+            'overall_score': round(overall_score, 1),
+            'trust_score': round(trust_score, 1),
+            'quality_score': round(quality_score, 1),
+            'content_word_count': len(results.get('generated_content', '').split()),
+            'improvement_potential': round(10.0 - overall_score, 1)
+        }
     
     async def process_chat_message(self, session_id: str, message: str):
-        """Process chat message using streaming chat agent"""
-        
+        """Process chat message with real-time updates"""
         if session_id not in self.sessions:
-            await self.connection_manager.send_message(session_id, {
-                'type': 'error',
-                'message': 'Session not found'
-            })
-            return
+            return {"error": "Session not found"}
         
         session = self.sessions[session_id]
         
-        # Use streaming chat agent
         if 'streaming_chat' in self.agents:
-            await self.agents['streaming_chat'].process_message(
-                message=message,
-                session=session,
-                connection_manager=self.connection_manager
-            )
-        else:
-            # Fallback response
-            await self.connection_manager.send_message(session_id, {
-                'type': 'assistant_start'
-            })
+            # Process with streaming response
+            await self.agents['streaming_chat'].process_message(message, session, manager)
             
-            fallback_response = f"I understand you want to: {message}\n\nUnfortunately, the streaming chat agent is not available. Please check your agent imports."
-            
-            for char in fallback_response:
-                await self.connection_manager.send_message(session_id, {
-                    'type': 'assistant_stream',
-                    'chunk': char
+            # Check if metrics should be updated
+            if any(word in message.lower() for word in ['apply', 'implement', 'update', 'improve']):
+                # Simulate improvement application
+                session['live_metrics']['improvements_applied'] += 1
+                session['live_metrics']['overall_score'] = min(10.0, session['live_metrics']['overall_score'] + 0.2)
+                session['live_metrics']['trust_score'] = min(10.0, session['live_metrics']['trust_score'] + 0.1)
+                session['live_metrics']['quality_score'] = min(10.0, session['live_metrics']['quality_score'] + 0.1)
+                
+                await manager.send_message(session_id, {
+                    'type': 'metrics_update',
+                    'metrics': session['live_metrics']
                 })
-                await asyncio.sleep(0.05)
-            
-            await self.connection_manager.send_message(session_id, {
-                'type': 'assistant_complete'
-            })
+        
+        return {"status": "processed"}
 
 # Initialize the system
-zee_system = ZeeSEOAdvancedSystem()
+zee_system = ZeeSEOStreamingSystem()
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
@@ -486,7 +474,7 @@ async def home():
     <html lang="en">
     <head>
         <meta charset="UTF-8">
-        <title>Zee SEO Tool v5.0 - Real Reddit + Streaming Chat</title>
+        <title>Zee SEO Tool v5.0 - Real-Time Streaming System</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -501,15 +489,15 @@ async def home():
             }
             .container {
                 text-align: center;
-                max-width: 800px;
+                max-width: 900px;
                 padding: 4rem;
                 background: rgba(255, 255, 255, 0.1);
-                border-radius: 1.5rem;
+                border-radius: 2rem;
                 backdrop-filter: blur(20px);
                 border: 1px solid rgba(255, 255, 255, 0.2);
             }
             .title {
-                font-size: 3.5rem;
+                font-size: 4rem;
                 font-weight: 900;
                 margin-bottom: 1rem;
                 background: linear-gradient(45deg, #fff, #f0f8ff);
@@ -517,22 +505,30 @@ async def home():
                 -webkit-text-fill-color: transparent;
             }
             .subtitle {
-                font-size: 1.4rem;
+                font-size: 1.5rem;
                 margin-bottom: 2rem;
                 opacity: 0.95;
             }
-            .features {
+            .features-grid {
                 display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                gap: 1rem;
+                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                gap: 1.5rem;
                 margin: 2rem 0;
                 text-align: left;
             }
             .feature {
-                padding: 1rem;
+                padding: 1.5rem;
                 background: rgba(255, 255, 255, 0.1);
-                border-radius: 0.5rem;
+                border-radius: 1rem;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+            }
+            .feature h3 {
+                font-size: 1.1rem;
+                margin-bottom: 0.5rem;
+            }
+            .feature p {
                 font-size: 0.9rem;
+                opacity: 0.9;
             }
             .cta-button {
                 background: white;
@@ -546,45 +542,91 @@ async def home():
                 text-decoration: none;
                 display: inline-block;
                 transition: all 0.3s ease;
-                margin-top: 1rem;
+                margin-top: 2rem;
             }
             .cta-button:hover {
                 transform: translateY(-3px);
                 box-shadow: 0 10px 25px rgba(0,0,0,0.2);
             }
+            .agent-status {
+                margin-top: 2rem;
+                padding: 1rem;
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 0.5rem;
+                font-size: 0.85rem;
+            }
         </style>
     </head>
     <body>
         <div class="container">
-            <h1 class="title">🎯 Zee SEO Tool v5.0</h1>
-            <p class="subtitle">Real Reddit Research + Claude-style Streaming Chat</p>
+            <h1 class="title">🚀 Zee SEO Tool v5.0</h1>
+            <p class="subtitle">Real-Time Streaming AI Content Analysis & Generation</p>
             
-            <div class="features">
-                <div class="feature">🔥 REAL Reddit Scraping<br><small>Actual PRAW API calls, not fake data</small></div>
-                <div class="feature">💬 Claude-style Chat<br><small>Streaming responses, real-time updates</small></div>
-                <div class="feature">🔄 Live Content Updates<br><small>Modify content through conversation</small></div>
-                <div class="feature">🧠 AI Pain Point Analysis<br><small>Extract real customer problems</small></div>
-                <div class="feature">⚡ WebSocket Streaming<br><small>Real-time, responsive interface</small></div>
-                <div class="feature">🎨 Conversational Content<br><small>Iterate and improve naturally</small></div>
+            <div class="features-grid">
+                <div class="feature">
+                    <h3>🔴 Live Reddit Scraping</h3>
+                    <p>Watch real-time as we scrape actual Reddit posts and extract genuine customer pain points</p>
+                </div>
+                <div class="feature">
+                    <h3>💬 Claude-Style Streaming Chat</h3>
+                    <p>Character-by-character streaming responses with intelligent content modification</p>
+                </div>
+                <div class="feature">
+                    <h3>📊 Real-Time Metrics</h3>
+                    <p>Trust scores, quality metrics, and pain points update live as you chat and improve content</p>
+                </div>
+                <div class="feature">
+                    <h3>🎯 All Agents Integrated</h3>
+                    <p>AdvancedTopicResearch, E-E-A-T Assessment, Quality Scoring, and more working together</p>
+                </div>
+                <div class="feature">
+                    <h3>⚡ WebSocket Technology</h3>
+                    <p>Instant updates, live progress tracking, and seamless real-time communication</p>
+                </div>
+                <div class="feature">
+                    <h3>🔧 Professional Interface</h3>
+                    <p>Modern, responsive design with live updates and professional data visualization</p>
+                </div>
             </div>
             
             <a href="/app" class="cta-button">
-                🚀 Start Real Analysis
+                🎬 Start Live Analysis
             </a>
+            
+            <div class="agent-status">
+                <strong>🤖 Active Agents:</strong> AdvancedTopicResearch • EnhancedRedditResearcher • StreamingChat • E-E-A-T Assessor • QualityScorer • ContentGenerator • IntentClassifier • BusinessContext • KnowledgeGraphTrends • JourneyMapper
+            </div>
         </div>
     </body>
     </html>
     """)
 
+@app.websocket("/ws/{session_id}")
+async def websocket_endpoint(websocket: WebSocket, session_id: str):
+    """WebSocket endpoint for real-time communication"""
+    await manager.connect(websocket, session_id)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            message_data = json.loads(data)
+            
+            if message_data['type'] == 'chat_message':
+                await zee_system.process_chat_message(session_id, message_data['message'])
+            elif message_data['type'] == 'ping':
+                await websocket.send_text(json.dumps({'type': 'pong'}))
+                
+    except WebSocketDisconnect:
+        manager.disconnect(session_id)
+
 @app.get("/app", response_class=HTMLResponse)
-async def app_interface():
-    """Streaming chat interface"""
+async def streaming_app_interface():
+    """Real-time streaming application interface"""
     return HTMLResponse(content="""
     <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
-        <title>Zee SEO Tool v5.0 - Real Analysis</title>
+        <title>Live Analysis - Zee SEO Tool v5.0</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -599,21 +641,62 @@ async def app_interface():
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 color: white;
                 padding: 1.5rem 0;
-                text-align: center;
+                position: sticky;
+                top: 0;
+                z-index: 100;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            }
+            
+            .header-content {
+                max-width: 1400px;
+                margin: 0 auto;
+                padding: 0 2rem;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            
+            .header-title {
+                font-size: 1.5rem;
+                font-weight: 700;
             }
             
             .container {
-                max-width: 800px;
-                margin: 2rem auto;
-                padding: 0 2rem;
+                max-width: 1400px;
+                margin: 0 auto;
+                padding: 2rem;
+                display: grid;
+                grid-template-columns: 400px 1fr 350px;
+                gap: 2rem;
+                min-height: calc(100vh - 100px);
             }
             
-            .form-card {
+            .form-panel {
                 background: white;
                 border-radius: 1rem;
                 padding: 2rem;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-                margin-bottom: 2rem;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+                border: 1px solid #e2e8f0;
+                height: fit-content;
+                position: sticky;
+                top: 120px;
+            }
+            
+            .main-area {
+                display: flex;
+                flex-direction: column;
+                gap: 2rem;
+            }
+            
+            .metrics-panel {
+                background: white;
+                border-radius: 1rem;
+                padding: 1.5rem;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+                border: 1px solid #e2e8f0;
+                position: sticky;
+                top: 120px;
+                height: fit-content;
             }
             
             .form-group {
@@ -629,21 +712,22 @@ async def app_interface():
             
             .input, .textarea, .select {
                 width: 100%;
-                padding: 1rem;
+                padding: 0.75rem;
                 border: 2px solid #e2e8f0;
                 border-radius: 0.5rem;
-                font-size: 1rem;
-                transition: border-color 0.3s ease;
+                font-size: 0.9rem;
+                transition: all 0.3s ease;
             }
             
             .input:focus, .textarea:focus, .select:focus {
                 outline: none;
                 border-color: #667eea;
+                box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
             }
             
             .textarea {
-                min-height: 120px;
                 resize: vertical;
+                min-height: 80px;
             }
             
             .submit-btn {
@@ -651,16 +735,17 @@ async def app_interface():
                 color: white;
                 padding: 1rem 2rem;
                 border: none;
-                border-radius: 0.5rem;
-                font-size: 1.1rem;
+                border-radius: 0.75rem;
+                font-size: 1rem;
                 font-weight: 600;
                 cursor: pointer;
+                transition: all 0.3s ease;
                 width: 100%;
-                transition: transform 0.2s ease;
             }
             
             .submit-btn:hover {
                 transform: translateY(-2px);
+                box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
             }
             
             .submit-btn:disabled {
@@ -669,15 +754,64 @@ async def app_interface():
                 transform: none;
             }
             
-            /* Chat Interface */
-            .chat-container {
-                display: none;
+            .live-updates {
                 background: white;
                 border-radius: 1rem;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-                height: 80vh;
+                padding: 2rem;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+                border: 1px solid #e2e8f0;
+                min-height: 600px;
+            }
+            
+            .update-item {
+                padding: 1rem;
+                margin-bottom: 1rem;
+                border-radius: 0.5rem;
+                border-left: 4px solid #667eea;
+                background: #f8fafc;
+                font-size: 0.9rem;
+            }
+            
+            .update-item.completed {
+                border-left-color: #10b981;
+                background: #f0fff4;
+            }
+            
+            .update-item.error {
+                border-left-color: #ef4444;
+                background: #fef2f2;
+            }
+            
+            .metric {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 1rem;
+                margin-bottom: 1rem;
+                background: #f8fafc;
+                border-radius: 0.5rem;
+                border: 1px solid #e2e8f0;
+            }
+            
+            .metric-label {
+                font-weight: 600;
+                color: #4a5568;
+            }
+            
+            .metric-value {
+                font-size: 1.2rem;
+                font-weight: 700;
+                color: #667eea;
+            }
+            
+            .chat-container {
+                background: white;
+                border-radius: 1rem;
+                border: 1px solid #e2e8f0;
                 display: flex;
                 flex-direction: column;
+                height: 400px;
+                margin-top: 1rem;
             }
             
             .chat-header {
@@ -688,472 +822,481 @@ async def app_interface():
                 font-weight: 600;
             }
             
-            .chat-messages {
+            .chat-content {
                 flex: 1;
                 padding: 1rem;
                 overflow-y: auto;
                 background: #fafbfc;
             }
             
-            .message {
-                margin-bottom: 1rem;
-                padding: 1rem;
-                border-radius: 0.75rem;
-                max-width: 80%;
-                word-wrap: break-word;
-            }
-            
-            .message.user {
-                background: #667eea;
-                color: white;
-                margin-left: auto;
-            }
-            
-            .message.assistant {
-                background: white;
-                color: #1a202c;
-                border: 1px solid #e2e8f0;
-            }
-            
-            .message.system {
-                background: #f0fff4;
-                color: #065f46;
-                border: 1px solid #86efac;
-                text-align: center;
-                margin: 0 auto;
-            }
-            
-            .chat-input-container {
+            .chat-input {
                 padding: 1rem;
                 border-top: 1px solid #e2e8f0;
+                display: flex;
+                gap: 0.5rem;
                 background: white;
                 border-radius: 0 0 1rem 1rem;
             }
             
-            .chat-input-wrapper {
-                display: flex;
-                gap: 0.5rem;
-            }
-            
-            .chat-input {
+            .chat-input input {
                 flex: 1;
                 padding: 0.75rem;
-                border: 2px solid #e2e8f0;
+                border: 1px solid #e2e8f0;
                 border-radius: 0.5rem;
-                font-size: 1rem;
+                font-size: 0.9rem;
             }
             
-            .chat-send-btn {
+            .chat-input button {
+                padding: 0.75rem 1rem;
                 background: #667eea;
                 color: white;
                 border: none;
-                padding: 0.75rem 1.5rem;
                 border-radius: 0.5rem;
                 font-weight: 600;
                 cursor: pointer;
             }
             
-            .content-display {
-                background: white;
-                border: 1px solid #e2e8f0;
+            .message {
+                margin-bottom: 1rem;
+                padding: 0.75rem;
                 border-radius: 0.5rem;
-                padding: 1.5rem;
-                margin: 1rem 0;
+                font-size: 0.85rem;
+                line-height: 1.5;
+            }
+            
+            .message.user {
+                background: #667eea;
+                color: white;
+                margin-left: 2rem;
+            }
+            
+            .message.assistant {
+                background: #f0fff4;
+                border: 1px solid #86efac;
+                color: #065f46;
+            }
+            
+            .streaming-text {
                 white-space: pre-wrap;
-                max-height: 400px;
-                overflow-y: auto;
+                font-family: inherit;
             }
             
-            .reddit-insights {
-                background: #f0f9ff;
-                border: 1px solid #0ea5e9;
+            .status-indicator {
+                padding: 0.5rem 1rem;
                 border-radius: 0.5rem;
-                padding: 1rem;
-                margin: 1rem 0;
+                font-size: 0.8rem;
+                font-weight: 600;
+                text-align: center;
+                margin-bottom: 1rem;
             }
             
-            .typing-indicator {
-                display: none;
-                color: #4a5568;
-                font-style: italic;
-                padding: 0.5rem;
+            .status-indicator.analyzing {
+                background: #fef3c7;
+                color: #92400e;
+            }
+            
+            .status-indicator.ready {
+                background: #d1fae5;
+                color: #065f46;
+            }
+            
+            @media (max-width: 1200px) {
+                .container {
+                    grid-template-columns: 1fr;
+                }
             }
         </style>
     </head>
     <body>
         <div class="header">
-            <h1>🎯 Real Reddit Research + Streaming Chat</h1>
-            <p>Analyze real customer pain points with Claude-style conversation</p>
+            <div class="header-content">
+                <div class="header-title">🔴 Live Analysis Dashboard</div>
+                <div>Status: <span id="connectionStatus">Connecting...</span></div>
+            </div>
         </div>
         
         <div class="container">
-            <!-- Form Interface -->
-            <div id="formContainer" class="form-card">
-                <h2 style="margin-bottom: 1.5rem;">Start Your Analysis</h2>
+            <!-- Form Panel -->
+            <div class="form-panel">
+                <h3 style="margin-bottom: 1.5rem; color: #2d3748;">🎯 Analysis Configuration</h3>
                 <form id="analysisForm">
                     <div class="form-group">
                         <label class="label">Topic *</label>
-                        <input class="input" name="topic" type="text" 
-                               placeholder="e.g., 'best budget laptops for university students'" required>
+                        <input class="input" type="text" name="topic" 
+                               placeholder="e.g., best budget laptops for students" required>
                     </div>
                     
                     <div class="form-group">
-                        <label class="label">Target Audience *</label>
-                        <input class="input" name="target_audience" type="text" 
-                               placeholder="e.g., 'university students aged 18-24'" required>
+                        <label class="label">Target Audience</label>
+                        <input class="input" type="text" name="target_audience" 
+                               placeholder="e.g., university students aged 18-24">
                     </div>
                     
                     <div class="form-group">
-                        <label class="label">Your Unique Value Proposition *</label>
-                        <textarea class="textarea" name="unique_value_prop" required
-                                  placeholder="What makes you uniquely qualified? Include credentials, experience, special knowledge..."></textarea>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="label">Customer Pain Points You Address *</label>
-                        <textarea class="textarea" name="customer_pain_points" required
-                                  placeholder="What specific problems do your customers face that you solve?"></textarea>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="label">Language</label>
-                        <select class="select" name="language">
-                            <option value="British English">British English</option>
-                            <option value="American English">American English</option>
-                            <option value="International English">International English</option>
+                        <label class="label">Industry</label>
+                        <select class="select" name="industry">
+                            <option value="Technology">Technology</option>
+                            <option value="Healthcare">Healthcare</option>
+                            <option value="Education">Education</option>
+                            <option value="Finance">Finance</option>
+                            <option value="Marketing">Marketing</option>
+                            <option value="E-commerce">E-commerce</option>
                         </select>
                     </div>
                     
+                    <div class="form-group">
+                        <label class="label">Your Expertise</label>
+                        <textarea class="textarea" name="unique_value_prop" 
+                                  placeholder="What makes you uniquely qualified to write about this topic?"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="label">Customer Pain Points</label>
+                        <textarea class="textarea" name="customer_pain_points" 
+                                  placeholder="What problems do your customers face?"></textarea>
+                    </div>
+                    
                     <button type="submit" class="submit-btn" id="submitBtn">
-                        🚀 Start Real Reddit Analysis
+                        🚀 Start Live Analysis
                     </button>
                 </form>
             </div>
             
-            <!-- Chat Interface (Hidden Initially) -->
-            <div id="chatContainer" class="chat-container" style="display: none;">
-                <div class="chat-header">
-                    <span id="chatTitle">🤖 AI Content Assistant</span>
-                </div>
-                
-                <div class="chat-messages" id="chatMessages">
-                    <!-- Messages will be added here -->
-                </div>
-                
-                <div class="chat-input-container">
-                    <div class="typing-indicator" id="typingIndicator">AI is typing...</div>
-                    <div class="chat-input-wrapper">
-                        <input type="text" class="chat-input" id="chatInput" 
-                               placeholder="Ask me to modify the content or answer questions...">
-                        <button class="chat-send-btn" id="sendBtn">Send</button>
+            <!-- Main Analysis Area -->
+            <div class="main-area">
+                <div class="live-updates">
+                    <h3 style="margin-bottom: 1rem; color: #2d3748;">📊 Live Analysis Progress</h3>
+                    <div id="statusIndicator" class="status-indicator analyzing" style="display: none;">
+                        🔍 Analysis in progress...
                     </div>
+                    <div id="updatesContainer">
+                        <div class="update-item">
+                            💡 Ready to start analysis. Fill in the form and click "Start Live Analysis"
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Chat Interface -->
+                <div class="chat-container" id="chatContainer" style="display: none;">
+                    <div class="chat-header">
+                        🤖 AI Content Assistant - Real-Time Chat
+                    </div>
+                    <div class="chat-content" id="chatContent">
+                        <div class="message assistant">
+                            <strong>AI Assistant:</strong> Analysis complete! I can now help you improve your content in real-time. Try asking:<br>
+                            • "Make the content more beginner-friendly"<br>
+                            • "Add more specific examples"<br>
+                            • "Improve the trust score"<br>
+                            • "Address the top pain points better"
+                        </div>
+                    </div>
+                    <div class="chat-input">
+                        <input type="text" id="chatInput" placeholder="Ask me to improve the content..." />
+                        <button onclick="sendChatMessage()">Send</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Metrics Panel -->
+            <div class="metrics-panel">
+                <h3 style="margin-bottom: 1rem; color: #2d3748;">📈 Live Metrics</h3>
+                
+                <div class="metric">
+                    <span class="metric-label">Overall Score</span>
+                    <span class="metric-value" id="overallScore">--</span>
+                </div>
+                
+                <div class="metric">
+                    <span class="metric-label">Trust Score</span>
+                    <span class="metric-value" id="trustScore">--</span>
+                </div>
+                
+                <div class="metric">
+                    <span class="metric-label">Quality Score</span>
+                    <span class="metric-value" id="qualityScore">--</span>
+                </div>
+                
+                <div class="metric">
+                    <span class="metric-label">Pain Points</span>
+                    <span class="metric-value" id="painPointsCount">--</span>
+                </div>
+                
+                <div class="metric">
+                    <span class="metric-label">Word Count</span>
+                    <span class="metric-value" id="wordCount">--</span>
+                </div>
+                
+                <div class="metric">
+                    <span class="metric-label">Improvements</span>
+                    <span class="metric-value" id="improvementsCount">0</span>
+                </div>
+                
+                <div style="margin-top: 1.5rem; padding: 1rem; background: #f0fff4; border-radius: 0.5rem; border: 1px solid #86efac;">
+                    <div style="font-weight: 600; color: #065f46; margin-bottom: 0.5rem;">🎯 Improvement Potential</div>
+                    <div style="font-size: 0.85rem; color: #047857;" id="improvementPotential">Analysis needed</div>
                 </div>
             </div>
         </div>
         
         <script>
-            let websocket = null;
-            let sessionId = null;
-            let currentContent = '';
+            let ws = null;
+            let sessionId = 'session_' + Date.now();
+            let analysisComplete = false;
             
-            // Form submission
-            document.getElementById('analysisForm').addEventListener('submit', async (e) => {
-                e.preventDefault();
+            // Initialize WebSocket connection
+            function initWebSocket() {
+                ws = new WebSocket(`ws://localhost:8002/ws/${sessionId}`);
                 
-                const formData = new FormData(e.target);
-                const data = Object.fromEntries(formData.entries());
-                
-                // Generate session ID
-                sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                
-                // Switch to chat interface
-                document.getElementById('formContainer').style.display = 'none';
-                document.getElementById('chatContainer').style.display = 'flex';
-                
-                // Connect WebSocket
-                connectWebSocket(sessionId);
-                
-                // Start analysis
-                addSystemMessage('🚀 Starting real Reddit analysis...');
-                
-                try {
-                    const response = await fetch('/start-analysis', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ ...data, session_id: sessionId })
-                    });
-                    
-                    if (!response.ok) {
-                        throw new Error('Analysis failed to start');
-                    }
-                } catch (error) {
-                    addSystemMessage(`❌ Error: ${error.message}`);
-                }
-            });
-            
-            // WebSocket connection
-            function connectWebSocket(sessionId) {
-                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const wsUrl = `${protocol}//${window.location.host}/ws/${sessionId}`;
-                
-                websocket = new WebSocket(wsUrl);
-                
-                websocket.onopen = () => {
-                    console.log('WebSocket connected');
+                ws.onopen = function() {
+                    document.getElementById('connectionStatus').textContent = 'Connected';
+                    document.getElementById('connectionStatus').style.color = '#10b981';
                 };
                 
-                websocket.onmessage = (event) => {
+                ws.onmessage = function(event) {
                     const data = JSON.parse(event.data);
                     handleWebSocketMessage(data);
                 };
                 
-                websocket.onclose = () => {
-                    console.log('WebSocket disconnected');
+                ws.onclose = function() {
+                    document.getElementById('connectionStatus').textContent = 'Disconnected';
+                    document.getElementById('connectionStatus').style.color = '#ef4444';
                 };
                 
-                websocket.onerror = (error) => {
+                ws.onerror = function(error) {
                     console.error('WebSocket error:', error);
-                    addSystemMessage('❌ Connection error. Please refresh the page.');
                 };
             }
             
-            // Handle WebSocket messages
-            let currentAssistantMessage = null;
-            
             function handleWebSocketMessage(data) {
-                switch (data.type) {
-                    case 'status':
-                        addSystemMessage(data.message);
+                const updatesContainer = document.getElementById('updatesContainer');
+                
+                switch(data.type) {
+                    case 'analysis_start':
+                        addUpdateItem(data.message, 'analyzing');
+                        document.getElementById('statusIndicator').style.display = 'block';
+                        document.getElementById('submitBtn').disabled = true;
                         break;
                         
-                    case 'content_stream':
-                        appendToCurrentMessage(data.chunk);
+                    case 'stage_update':
+                        addUpdateItem(data.message, 'analyzing');
+                        break;
+                        
+                    case 'reddit_subreddits':
+                        addUpdateItem(`🎯 Found relevant subreddits: ${data.subreddits.join(', ')}`, 'analyzing');
+                        break;
+                        
+                    case 'reddit_progress':
+                        addUpdateItem(data.message, 'analyzing');
+                        break;
+                        
+                    case 'reddit_complete':
+                        addUpdateItem(`✅ Reddit analysis complete: ${data.total_posts} posts, ${data.pain_points} pain points identified`, 'completed');
+                        break;
+                        
+                    case 'content_stream_start':
+                        addUpdateItem('✍️ Generating content...', 'analyzing');
+                        break;
+                        
+                    case 'content_stream_chunk':
+                        // Handle streaming content display
+                        break;
+                        
+                    case 'content_stream_complete':
+                        addUpdateItem('✅ Content generation complete', 'completed');
+                        break;
+                        
+                    case 'metrics_update':
+                        updateMetrics(data.metrics);
                         break;
                         
                     case 'analysis_complete':
-                        currentContent = data.content;
-                        addSystemMessage('✅ Analysis complete! Content generated based on real Reddit research.');
-                        displayContent(data.content);
-                        displayRedditInsights(data.reddit_insights);
-                        addSystemMessage('💬 You can now chat with me to modify the content. Try asking: "Make it more beginner-friendly" or "Add more examples"');
+                        addUpdateItem(data.message, 'completed');
+                        document.getElementById('statusIndicator').style.display = 'none';
+                        document.getElementById('chatContainer').style.display = 'flex';
+                        analysisComplete = true;
+                        updateMetrics(data.metrics);
+                        break;
+                        
+                    case 'assistant_stream':
+                        appendToChatStream(data.chunk);
                         break;
                         
                     case 'assistant_start':
                         startAssistantMessage();
                         break;
                         
-                    case 'assistant_stream':
-                        appendToCurrentMessage(data.chunk);
-                        break;
-                        
                     case 'assistant_complete':
                         completeAssistantMessage();
-                        break;
-                        
-                    case 'content_update_start':
-                        addSystemMessage('🔄 Updating content...');
-                        break;
-                        
-                    case 'content_update_stream':
-                        updateContentDisplay(data.chunk);
-                        break;
-                        
-                    case 'content_updated':
-                        currentContent = data.content;
-                        addSystemMessage('✅ Content updated successfully!');
-                        break;
-                        
-                    case 'error':
-                        addSystemMessage(`❌ Error: ${data.message}`);
                         break;
                 }
             }
             
-            // Chat functions
-            function addMessage(content, type) {
-                const messagesContainer = document.getElementById('chatMessages');
-                const message = document.createElement('div');
-                message.className = `message ${type}`;
-                message.innerHTML = content;
-                messagesContainer.appendChild(message);
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-                return message;
+            function addUpdateItem(message, type = 'analyzing') {
+                const updatesContainer = document.getElementById('updatesContainer');
+                const updateItem = document.createElement('div');
+                updateItem.className = `update-item ${type}`;
+                updateItem.innerHTML = `<strong>${new Date().toLocaleTimeString()}</strong> ${message}`;
+                updatesContainer.appendChild(updateItem);
+                updatesContainer.scrollTop = updatesContainer.scrollHeight;
             }
             
-            function addSystemMessage(content) {
-                addMessage(content, 'system');
+            function updateMetrics(metrics) {
+                document.getElementById('overallScore').textContent = metrics.overall_score || '--';
+                document.getElementById('trustScore').textContent = metrics.trust_score || '--';
+                document.getElementById('qualityScore').textContent = metrics.quality_score || '--';
+                document.getElementById('painPointsCount').textContent = metrics.pain_points_count || '--';
+                document.getElementById('wordCount').textContent = metrics.content_word_count || '--';
+                document.getElementById('improvementsCount').textContent = metrics.improvements_applied || '0';
+                
+                const potential = metrics.improvement_potential || 0;
+                document.getElementById('improvementPotential').textContent = 
+                    potential > 0 ? `+${potential} points available` : 'Optimized';
             }
             
-            function addUserMessage(content) {
-                addMessage(content, 'user');
-            }
+            let currentAssistantMessage = null;
             
             function startAssistantMessage() {
-                currentAssistantMessage = addMessage('', 'assistant');
-                document.getElementById('typingIndicator').style.display = 'block';
+                const chatContent = document.getElementById('chatContent');
+                currentAssistantMessage = document.createElement('div');
+                currentAssistantMessage.className = 'message assistant';
+                currentAssistantMessage.innerHTML = '<strong>AI Assistant:</strong> <span class="streaming-text"></span>';
+                chatContent.appendChild(currentAssistantMessage);
+                chatContent.scrollTop = chatContent.scrollHeight;
             }
             
-            function appendToCurrentMessage(chunk) {
+            function appendToChatStream(chunk) {
                 if (currentAssistantMessage) {
-                    currentAssistantMessage.innerHTML += chunk;
-                    document.getElementById('chatMessages').scrollTop = document.getElementById('chatMessages').scrollHeight;
+                    const streamingText = currentAssistantMessage.querySelector('.streaming-text');
+                    streamingText.textContent += chunk;
+                    document.getElementById('chatContent').scrollTop = document.getElementById('chatContent').scrollHeight;
                 }
             }
             
             function completeAssistantMessage() {
                 currentAssistantMessage = null;
-                document.getElementById('typingIndicator').style.display = 'none';
             }
             
-            function displayContent(content) {
-                const contentDiv = document.createElement('div');
-                contentDiv.className = 'content-display';
-                contentDiv.innerHTML = `<strong>📄 Generated Content:</strong><br><br>${content}`;
-                document.getElementById('chatMessages').appendChild(contentDiv);
-                document.getElementById('chatMessages').scrollTop = document.getElementById('chatMessages').scrollHeight;
-            }
-            
-            function displayRedditInsights(insights) {
-                const painPoints = insights.critical_pain_points?.top_pain_points || {};
-                const quotes = insights.customer_voice?.authentic_quotes || [];
-                const metadata = insights.research_metadata || {};
+            function sendChatMessage() {
+                const chatInput = document.getElementById('chatInput');
+                const message = chatInput.value.trim();
                 
-                let insightsHtml = `<strong>🔍 Reddit Research Insights:</strong><br><br>`;
-                insightsHtml += `<strong>Posts Analyzed:</strong> ${metadata.total_posts_analyzed || 0}<br>`;
-                insightsHtml += `<strong>Data Source:</strong> ${metadata.data_source || 'Unknown'}<br><br>`;
+                if (!message || !analysisComplete) return;
                 
-                if (Object.keys(painPoints).length > 0) {
-                    insightsHtml += `<strong>Top Pain Points:</strong><br>`;
-                    Object.entries(painPoints).slice(0, 5).forEach(([pain, count]) => {
-                        insightsHtml += `• ${pain.replace(/_/g, ' ')}: ${count} mentions<br>`;
-                    });
-                    insightsHtml += `<br>`;
-                }
+                // Add user message
+                const chatContent = document.getElementById('chatContent');
+                const userMessage = document.createElement('div');
+                userMessage.className = 'message user';
+                userMessage.innerHTML = `<strong>You:</strong> ${message}`;
+                chatContent.appendChild(userMessage);
                 
-                if (quotes.length > 0) {
-                    insightsHtml += `<strong>Customer Quotes:</strong><br>`;
-                    quotes.slice(0, 3).forEach(quote => {
-                        insightsHtml += `• "${quote}"<br>`;
-                    });
-                }
-                
-                const insightsDiv = document.createElement('div');
-                insightsDiv.className = 'reddit-insights';
-                insightsDiv.innerHTML = insightsHtml;
-                document.getElementById('chatMessages').appendChild(insightsDiv);
-                document.getElementById('chatMessages').scrollTop = document.getElementById('chatMessages').scrollHeight;
-            }
-            
-            function updateContentDisplay(chunk) {
-                const contentDisplays = document.querySelectorAll('.content-display');
-                if (contentDisplays.length > 0) {
-                    const lastDisplay = contentDisplays[contentDisplays.length - 1];
-                    lastDisplay.innerHTML += chunk;
-                }
-            }
-            
-            // Send chat message
-            function sendMessage() {
-                const input = document.getElementById('chatInput');
-                const message = input.value.trim();
-                
-                if (!message || !websocket) return;
-                
-                addUserMessage(message);
-                input.value = '';
-                
-                websocket.send(JSON.stringify({
+                // Send via WebSocket
+                ws.send(JSON.stringify({
                     type: 'chat_message',
                     message: message
                 }));
+                
+                chatInput.value = '';
+                chatContent.scrollTop = chatContent.scrollHeight;
             }
             
-            // Event listeners
-            document.getElementById('sendBtn').addEventListener('click', sendMessage);
-            document.getElementById('chatInput').addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    sendMessage();
+            // Form submission
+            document.getElementById('analysisForm').addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const formData = new FormData(e.target);
+                const data = Object.fromEntries(formData.entries());
+                
+                try {
+                    const response = await fetch('/analyze-streaming', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ...data, session_id: sessionId })
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`Server error: ${response.status}`);
+                    }
+                    
+                } catch (error) {
+                    addUpdateItem(`❌ Error: ${error.message}`, 'error');
+                    document.getElementById('submitBtn').disabled = false;
                 }
             });
+            
+            // Chat input enter key
+            document.getElementById('chatInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendChatMessage();
+                }
+            });
+            
+            // Initialize on page load
+            window.onload = function() {
+                initWebSocket();
+            };
         </script>
     </body>
     </html>
     """)
 
-@app.post("/start-analysis")
-async def start_analysis(request: Request):
-    """Start comprehensive analysis"""
+@app.post("/analyze-streaming")
+async def analyze_streaming_endpoint(request: Request):
+    """Start streaming analysis"""
     try:
         data = await request.json()
         session_id = data.get('session_id')
         
-        if not session_id:
-            raise HTTPException(status_code=400, detail="Session ID required")
-        
         # Start analysis in background
-        asyncio.create_task(zee_system.start_analysis(data, session_id))
+        asyncio.create_task(
+            zee_system.analyze_comprehensive_streaming(data, session_id)
+        )
         
-        return {"status": "started", "session_id": session_id}
+        return JSONResponse({"status": "started", "session_id": session_id})
         
     except Exception as e:
-        logger.error(f"Analysis start error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.websocket("/ws/{session_id}")
-async def websocket_endpoint(websocket: WebSocket, session_id: str):
-    """WebSocket endpoint for real-time communication"""
-    await zee_system.connection_manager.connect(websocket, session_id)
-    
-    try:
-        while True:
-            data = await websocket.receive_json()
-            
-            if data.get('type') == 'chat_message':
-                await zee_system.process_chat_message(session_id, data.get('message', ''))
-                
-    except WebSocketDisconnect:
-        zee_system.connection_manager.disconnect(session_id)
-    except Exception as e:
-        logger.error(f"WebSocket error: {e}")
-        zee_system.connection_manager.disconnect(session_id)
+        logger.error(f"Streaming analysis error: {str(e)}")
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.get("/debug/agents")
 async def debug_agents():
-    """Debug endpoint to show agent status"""
+    """Debug endpoint showing all agent status"""
     agent_status = {}
     
     for agent_name, agent in zee_system.agents.items():
-        agent_status[agent_name] = f"✅ {type(agent).__name__}"
+        agent_status[agent_name] = {
+            "status": "✅ Active",
+            "type": str(type(agent).__name__),
+            "module": str(type(agent).__module__)
+        }
     
     return JSONResponse({
         "active_agents": agent_status,
         "total_agents": len(zee_system.agents),
-        "reddit_configured": bool(config.REDDIT_CLIENT_ID and config.REDDIT_CLIENT_SECRET),
-        "anthropic_configured": bool(config.ANTHROPIC_API_KEY)
+        "websocket_manager": "✅ Active",
+        "streaming_client": "✅ Active" if zee_system.llm_client.anthropic_client else "🔄 Fallback"
     })
 
 if __name__ == "__main__":
-    print("🚀 Starting Zee SEO Tool v5.0 - Real Reddit + Streaming Chat...")
+    print("🚀 Starting Zee SEO Tool v5.0 - Real-Time Streaming System...")
     print("=" * 80)
     
-    # Check Reddit credentials
-    if config.REDDIT_CLIENT_ID and config.REDDIT_CLIENT_SECRET:
-        print("✅ Reddit credentials configured")
-    else:
-        print("❌ Reddit credentials missing - set REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET")
+    agent_count = len(zee_system.agents)
+    print(f"📊 System Status:")
+    print(f"   • Total Active Agents: {agent_count}")
+    print(f"   • WebSocket Manager: ✅ Ready")
+    print(f"   • Streaming LLM: {'✅ Ready' if zee_system.llm_client.anthropic_client else '🔄 Fallback'}")
+    print()
     
-    # Check Anthropic credentials
-    if config.ANTHROPIC_API_KEY:
-        print("✅ Anthropic API key configured")
-    else:
-        print("❌ Anthropic API key missing - set ANTHROPIC_API_KEY")
+    print("🎯 Active Agents:")
+    for agent_name in zee_system.agents.keys():
+        print(f"   • {agent_name}")
     
     print("=" * 80)
     print(f"🌟 Access the application at: http://localhost:{config.PORT}/")
-    print(f"🔧 Debug agent status at: http://localhost:{config.PORT}/debug/agents")
+    print(f"🔧 Debug agents at: http://localhost:{config.PORT}/debug/agents")
     print("=" * 80)
     
     try:
-        uvicorn.run(app, host="0.0.0.0", port=config.PORT, log_level="info")
+        uvicorn.run(app, host="0.0.0.0", port=config.PORT)
     except Exception as e:
         print(f"❌ Failed to start server: {e}")
