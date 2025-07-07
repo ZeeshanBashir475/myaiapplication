@@ -34,7 +34,7 @@ def import_agent(module_path, class_name, fallback_class=None):
         logger.error(f"❌ Error importing {class_name}: {e}")
         return fallback_class
 
-# Fallback implementations
+# Fallback implementations (keeping existing ones for safety)
 class FallbackRedditResearcher:
     """Fallback Reddit researcher when main class unavailable"""
     def research_topic_comprehensive(self, topic: str, subreddits: List[str], max_posts_per_subreddit: int = 15):
@@ -140,56 +140,67 @@ class FallbackEEATAssessor:
             ]
         }
 
-class FallbackContinuousImprovementChat:
-    """Fallback continuous improvement chat"""
-    def __init__(self, client=None):
-        self.client = client
-        self.sessions = {}
+# Import the new ContinuousImprovementChat (create this file first)
+try:
+    from src.agents.continuous_improvement_chat import ContinuousImprovementChat
+    logger.info("✅ Successfully imported ContinuousImprovementChat")
+except ImportError:
+    logger.warning("⚠️ ContinuousImprovementChat not found, using basic fallback")
     
-    def initialize_session(self, analysis_results):
-        return {
-            'analysis': analysis_results,
-            'improvements_applied': 0,
-            'quality_increase': 0.0,
-            'trust_increase': 0.0
-        }
-    
-    async def process_message(self, message: str):
-        responses = {
-            'quality': "To improve quality, consider adding more specific examples, customer testimonials, and detailed step-by-step instructions.",
-            'trust': "To increase trust score, add author credentials, cite authoritative sources, and include real customer reviews.",
-            'examples': "Add concrete examples like case studies, before/after scenarios, and real customer success stories.",
-            'default': "I can help you improve content quality, trust score, add examples, or enhance structure. What specific area would you like to focus on?"
-        }
+    class FallbackContinuousImprovementChat:
+        """Basic fallback continuous improvement chat"""
+        def __init__(self, client=None):
+            self.client = client
+            self.sessions = {}
         
-        message_lower = message.lower()
-        if 'quality' in message_lower:
-            response = responses['quality']
-        elif 'trust' in message_lower:
-            response = responses['trust']
-        elif 'example' in message_lower:
-            response = responses['examples']
-        else:
-            response = responses['default']
+        def set_agents(self, **kwargs):
+            pass
         
-        return {
-            'message': response,
-            'metrics_impact': {'quality_increase': 0.1, 'trust_increase': 0.1}
-        }
+        def initialize_session(self, analysis_results):
+            return {
+                'analysis': analysis_results,
+                'improvements_applied': 0,
+                'quality_increase': 0.0,
+                'trust_increase': 0.0
+            }
+        
+        async def process_message(self, message: str, session_id: str = None):
+            responses = {
+                'quality': "To improve quality, consider adding more specific examples, customer testimonials, and detailed step-by-step instructions.",
+                'trust': "To increase trust score, add author credentials, cite authoritative sources, and include real customer reviews.",
+                'examples': "Add concrete examples like case studies, before/after scenarios, and real customer success stories.",
+                'default': "I can help you improve content quality, trust score, add examples, or enhance structure. What specific area would you like to focus on?"
+            }
+            
+            message_lower = message.lower()
+            if 'quality' in message_lower:
+                response = responses['quality']
+            elif 'trust' in message_lower:
+                response = responses['trust']
+            elif 'example' in message_lower:
+                response = responses['examples']
+            else:
+                response = responses['default']
+            
+            return {
+                'message': response,
+                'metrics_impact': {'quality_increase': 0.1, 'trust_increase': 0.1}
+            }
+        
+        def get_session_metrics(self, session_id: str = None):
+            return {
+                'improvements_applied': 0,
+                'total_quality_increase': 0.0,
+                'total_trust_increase': 0.0
+            }
     
-    def get_session_metrics(self):
-        return {
-            'improvements_applied': 0,
-            'total_quality_increase': 0.0,
-            'total_trust_increase': 0.0
-        }
+    ContinuousImprovementChat = FallbackContinuousImprovementChat
 
-# Import agents with fallbacks
+# Import other agents with fallbacks
 EnhancedRedditResearcher = import_agent('src.agents.reddit_researcher', 'EnhancedRedditResearcher', FallbackRedditResearcher)
 FullContentGenerator = import_agent('src.agents.content_generator', 'FullContentGenerator', FallbackContentGenerator)
 ContentTypeClassifier = import_agent('src.agents.content_type_classifier', 'ContentTypeClassifier', FallbackContentTypeClassifier)
 EnhancedEEATAssessor = import_agent('src.agents.eeat_assessor', 'EnhancedEEATAssessor', FallbackEEATAssessor)
-ContinuousImprovementChat = import_agent('src.agents.continuous_improvement_chat', 'ContinuousImprovementChat', FallbackContinuousImprovementChat)
 
 # Configuration
 class Config:
@@ -251,7 +262,7 @@ class LLMClient:
 
 # Initialize Core System
 class ZeeSEOSystem:
-    """Main system orchestrator"""
+    """Main system orchestrator with integrated chat agent"""
     
     def __init__(self):
         self.llm_client = LLMClient()
@@ -285,10 +296,18 @@ class ZeeSEOSystem:
             logger.error(f"❌ E-E-A-T Assessor failed: {e}")
             self.eeat_assessor = FallbackEEATAssessor()
         
-        # Initialize chat system
+        # Initialize the advanced chat system
         try:
             self.improvement_chat = ContinuousImprovementChat(self.llm_client.client)
-            logger.info("✅ Continuous Improvement Chat loaded")
+            
+            # Connect all agents to the chat system for integrated improvements
+            self.improvement_chat.set_agents(
+                eeat_assessor=self.eeat_assessor,
+                content_generator=self.content_generator,
+                reddit_researcher=self.reddit_researcher
+            )
+            
+            logger.info("✅ Advanced Continuous Improvement Chat loaded and connected")
         except Exception as e:
             logger.error(f"❌ Continuous Improvement Chat failed: {e}")
             self.improvement_chat = FallbackContinuousImprovementChat(self.llm_client.client)
@@ -296,7 +315,7 @@ class ZeeSEOSystem:
         # Session storage
         self.active_sessions = {}
         
-        logger.info("🚀 Zee SEO System initialized")
+        logger.info("🚀 Zee SEO System initialized with integrated chat agent")
     
     async def generate_analysis(self, form_data: Dict[str, str]) -> Dict[str, Any]:
         """Generate comprehensive pain point analysis"""
@@ -377,7 +396,8 @@ class ZeeSEOSystem:
             "system_info": {
                 "reddit_researcher": "active" if not isinstance(self.reddit_researcher, FallbackRedditResearcher) else "fallback",
                 "content_generator": "active" if not isinstance(self.content_generator, FallbackContentGenerator) else "fallback",
-                "eeat_assessor": "active" if not isinstance(self.eeat_assessor, FallbackEEATAssessor) else "fallback"
+                "eeat_assessor": "active" if not isinstance(self.eeat_assessor, FallbackEEATAssessor) else "fallback",
+                "improvement_chat": "advanced" if hasattr(self.improvement_chat, 'set_agents') else "fallback"
             }
         }
         
@@ -549,7 +569,7 @@ Success with {topic} requires understanding real customer pain points and provid
 # Initialize system
 zee_system = ZeeSEOSystem()
 
-# Routes
+# Routes (keeping existing ones and updating chat endpoints)
 @app.get("/", response_class=HTMLResponse)
 async def home():
     """Clean homepage - direct to app"""
@@ -626,8 +646,8 @@ async def home():
                 <div class="feature">📊 Reddit Pain Point Research</div>
                 <div class="feature">🧠 Customer Psychology Analysis</div>
                 <div class="feature">✍️ Content Generation</div>
-                <div class="feature">💬 Continuous Improvement Chat</div>
-                <div class="feature">🔒 Trust Score Assessment</div>
+                <div class="feature">💬 Advanced Improvement Chat</div>
+                <div class="feature">🔒 E-E-A-T Trust Assessment</div>
             </div>
             
             <a href="/app" class="cta-button">
@@ -641,6 +661,7 @@ async def home():
 @app.get("/app", response_class=HTMLResponse)
 async def app_interface():
     """Main application interface"""
+    # Keep existing form interface - no changes needed
     return HTMLResponse(content="""
     <!DOCTYPE html>
     <html lang="en">
@@ -916,9 +937,12 @@ async def generate_content(
         # Generate analysis
         analysis_results = await zee_system.generate_analysis(form_data)
         
-        # Initialize continuous improvement chat
-        session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        zee_system.active_sessions[session_id] = zee_system.improvement_chat.initialize_session(analysis_results)
+        # Initialize continuous improvement chat with the advanced agent
+        session_data = zee_system.improvement_chat.initialize_session(analysis_results)
+        session_id = session_data.get('session_id', f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        
+        # Store session
+        zee_system.active_sessions[session_id] = session_data
         
         # Generate results page
         html_content = generate_results_page(analysis_results, session_id)
@@ -937,12 +961,13 @@ async def generate_content(
 
 @app.post("/chat/{session_id}")
 async def chat_endpoint(session_id: str, message: str = Form(...)):
-    """Handle continuous improvement chat"""
+    """Handle advanced continuous improvement chat"""
     try:
         if session_id not in zee_system.active_sessions:
             return JSONResponse({"error": "Session not found"}, status_code=404)
         
-        response = await zee_system.improvement_chat.process_message(message)
+        # Use the advanced chat agent
+        response = await zee_system.improvement_chat.process_message(message, session_id)
         return JSONResponse(response)
         
     except Exception as e:
@@ -951,12 +976,12 @@ async def chat_endpoint(session_id: str, message: str = Form(...)):
 
 @app.get("/metrics/{session_id}")
 async def get_session_metrics(session_id: str):
-    """Get session improvement metrics"""
+    """Get session improvement metrics from advanced chat agent"""
     try:
         if session_id not in zee_system.active_sessions:
             return JSONResponse({"error": "Session not found"}, status_code=404)
         
-        metrics = zee_system.improvement_chat.get_session_metrics()
+        metrics = zee_system.improvement_chat.get_session_metrics(session_id)
         return JSONResponse(metrics)
         
     except Exception as e:
@@ -964,7 +989,7 @@ async def get_session_metrics(session_id: str):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 def generate_results_page(analysis_results: Dict[str, Any], session_id: str) -> str:
-    """Generate results page with continuous improvement chat"""
+    """Generate enhanced results page with advanced chat"""
     
     topic = analysis_results['topic']
     performance_metrics = analysis_results['performance_metrics']
@@ -1022,6 +1047,7 @@ def generate_results_page(analysis_results: Dict[str, Any], session_id: str) -> 
                 border-radius: 0.5rem;
                 text-decoration: none;
                 font-weight: 600;
+                margin-left: 0.5rem;
             }}
             
             .main-container {{
@@ -1123,6 +1149,87 @@ def generate_results_page(analysis_results: Dict[str, Any], session_id: str) -> 
                 font-size: 0.9rem;
             }}
             
+            .chat-container {{
+                position: fixed;
+                bottom: 2rem;
+                right: 2rem;
+                width: 450px;
+                height: 600px;
+                background: white;
+                border-radius: 0.75rem;
+                box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+                border: 1px solid #e2e8f0;
+                z-index: 1000;
+            }}
+            
+            .chat-header {{
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 1rem;
+                font-weight: 600;
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+            }}
+            
+            .chat-content {{
+                flex: 1;
+                padding: 1rem;
+                overflow-y: auto;
+                font-size: 0.85rem;
+            }}
+            
+            .chat-input {{
+                padding: 1rem;
+                border-top: 1px solid #e2e8f0;
+                display: flex;
+                gap: 0.5rem;
+            }}
+            
+            .chat-input input {{
+                flex: 1;
+                padding: 0.75rem;
+                border: 1px solid #e2e8f0;
+                border-radius: 0.5rem;
+                font-size: 0.85rem;
+            }}
+            
+            .chat-input button {{
+                padding: 0.75rem 1rem;
+                background: #667eea;
+                color: white;
+                border: none;
+                border-radius: 0.5rem;
+                font-weight: 600;
+                cursor: pointer;
+            }}
+            
+            .message {{
+                margin-bottom: 1rem;
+                padding: 0.75rem;
+                border-radius: 0.5rem;
+                font-size: 0.85rem;
+            }}
+            
+            .message.system {{
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+            }}
+            
+            .message.user {{
+                background: #667eea;
+                color: white;
+                margin-left: 2rem;
+            }}
+            
+            .message.assistant {{
+                background: #f0fff4;
+                border: 1px solid #68d391;
+            }}
+            
             .metrics-tracker {{
                 background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
                 color: white;
@@ -1132,9 +1239,24 @@ def generate_results_page(analysis_results: Dict[str, Any], session_id: str) -> 
                 text-align: center;
             }}
             
+            .system-status {{
+                font-size: 0.8rem;
+                color: #4a5568;
+                margin-top: 0.5rem;
+            }}
+            
             @media (max-width: 1024px) {{
                 .main-container {{
                     grid-template-columns: 1fr;
+                }}
+                
+                .chat-container {{
+                    position: relative;
+                    bottom: auto;
+                    right: auto;
+                    width: 100%;
+                    height: 400px;
+                    margin-top: 2rem;
                 }}
             }}
         </style>
@@ -1208,14 +1330,123 @@ def generate_results_page(analysis_results: Dict[str, Any], session_id: str) -> 
                     </div>
                 </div>
                 
-                <div class="metrics-tracker">
-                    <div style="font-weight: 600; margin-bottom: 0.5rem;">System Status</div>
-                    <div>Reddit Research: {analysis_results['system_info']['reddit_researcher'].title()}</div>
-                    <div>Content Generator: {analysis_results['system_info']['content_generator'].title()}</div>
-                    <div>E-E-A-T Assessor: {analysis_results['system_info']['eeat_assessor'].title()}</div>
+                <div class="metrics-tracker" id="metricsTracker">
+                    <div style="font-weight: 600; margin-bottom: 0.5rem;">Improvement Progress</div>
+                    <div>Improvements Applied: <span id="improvementsCount">0</span></div>
+                    <div>Quality Increase: +<span id="qualityIncrease">0.0</span></div>
+                    <div>Trust Increase: +<span id="trustIncrease">0.0</span></div>
+                    
+                    <div class="system-status">
+                        <strong>System Status:</strong><br>
+                        Reddit Research: {analysis_results['system_info']['reddit_researcher'].title()}<br>
+                        Content Generator: {analysis_results['system_info']['content_generator'].title()}<br>
+                        E-E-A-T Assessor: {analysis_results['system_info']['eeat_assessor'].title()}<br>
+                        Improvement Chat: {analysis_results['system_info']['improvement_chat'].title()}
+                    </div>
                 </div>
             </div>
         </div>
+        
+        <div class="chat-container">
+            <div class="chat-header">
+                <span>🤖</span>
+                Advanced Improvement Assistant
+            </div>
+            <div class="chat-content" id="chatContent">
+                <div class="message system">
+                    <strong>🚀 Welcome to Advanced Improvement Chat!</strong><br><br>
+                    Current Scores:<br>
+                    • Quality: {performance_metrics.get('quality_score', 8.5):.1f}/10<br>
+                    • Trust: {performance_metrics.get('trust_score', 8.2):.1f}/10<br><br>
+                    
+                    <strong>Try asking:</strong><br>
+                    • "How to improve quality?"<br>
+                    • "Boost trust score"<br>
+                    • "Show E-E-A-T analysis"<br>
+                    • "Give me examples"<br>
+                    • "Apply improvements"
+                </div>
+            </div>
+            <div class="chat-input">
+                <input type="text" id="chatInput" placeholder="Ask for improvements..." />
+                <button onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+        
+        <script>
+            const sessionId = '{session_id}';
+            
+            async function sendMessage() {{
+                const input = document.getElementById('chatInput');
+                const content = document.getElementById('chatContent');
+                const message = input.value.trim();
+                
+                if (!message) return;
+                
+                // Add user message
+                const userMsg = document.createElement('div');
+                userMsg.className = 'message user';
+                userMsg.innerHTML = `<strong>You:</strong> ${{message}}`;
+                content.appendChild(userMsg);
+                
+                input.value = '';
+                content.scrollTop = content.scrollHeight;
+                
+                try {{
+                    // Send to advanced chat endpoint
+                    const response = await fetch(`/chat/${{sessionId}}`, {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/x-www-form-urlencoded' }},
+                        body: `message=${{encodeURIComponent(message)}}`
+                    }});
+                    
+                    const result = await response.json();
+                    
+                    // Add AI response
+                    const aiMsg = document.createElement('div');
+                    aiMsg.className = 'message assistant';
+                    aiMsg.innerHTML = `<strong>AI Assistant:</strong><br>${{result.message.replace(/\\n/g, '<br>')}}`;
+                    content.appendChild(aiMsg);
+                    
+                    content.scrollTop = content.scrollHeight;
+                    
+                    // Update metrics if improvements were applied
+                    if (result.metrics_impact && result.metrics_impact.improvement_applied) {{
+                        updateMetrics();
+                    }}
+                    
+                }} catch (error) {{
+                    console.error('Chat error:', error);
+                    const errorMsg = document.createElement('div');
+                    errorMsg.className = 'message system';
+                    errorMsg.innerHTML = '<strong>Error:</strong> Failed to get response. Please try again.';
+                    content.appendChild(errorMsg);
+                }}
+            }}
+            
+            async function updateMetrics() {{
+                try {{
+                    const response = await fetch(`/metrics/${{sessionId}}`);
+                    const metrics = await response.json();
+                    
+                    document.getElementById('improvementsCount').textContent = metrics.improvements_applied || 0;
+                    document.getElementById('qualityIncrease').textContent = (metrics.total_quality_increase || 0).toFixed(1);
+                    document.getElementById('trustIncrease').textContent = (metrics.total_trust_increase || 0).toFixed(1);
+                    
+                }} catch (error) {{
+                    console.error('Metrics error:', error);
+                }}
+            }}
+            
+            document.getElementById('chatInput').addEventListener('keypress', function(e) {{
+                if (e.key === 'Enter') {{
+                    sendMessage();
+                }}
+            }});
+            
+            // Update metrics every 30 seconds
+            setInterval(updateMetrics, 30000);
+        </script>
     </body>
     </html>
     """
@@ -1225,8 +1456,8 @@ if __name__ == "__main__":
     print("=" * 60)
     print("✅ Reddit Pain Point Research: Ready")
     print("✅ Content Generation: Ready") 
-    print("✅ Continuous Improvement Chat: Ready")
-    print("✅ Trust Score Assessment: Ready")
+    print("✅ Advanced Improvement Chat: Ready")
+    print("✅ E-E-A-T Trust Assessment: Ready")
     print("=" * 60)
     print(f"🌟 Access: http://localhost:{config.PORT}/")
     print("=" * 60)
