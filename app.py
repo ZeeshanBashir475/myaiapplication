@@ -43,7 +43,7 @@ def safe_import(module_path, class_name, alternative_paths=None):
     logger.error(f"❌ Could not import {class_name} from any path")
     return None
 
-# Try multiple import paths for each agent (accounting for different file structures)
+# Try multiple import paths for each agent
 AdvancedTopicResearchAgent = safe_import(
     'src.agents.AdvancedTopicResearchAgent', 
     'AdvancedTopicResearchAgent',
@@ -241,177 +241,8 @@ What specific area would you like to focus on?"""
         return {
             "improvements_applied": session['improvements_applied'],
             "total_quality_increase": session['quality_increase'],
-            "total_trust_increase": session['trust_increase'    def _fallback_human_inputs(self) -> Dict:
-        """Generate realistic human input requirements"""
-        return {
-            'required_inputs': [
-                {
-                    'category': 'expertise', 
-                    'priority': 'high', 
-                    'description': 'Professional credentials and certifications',
-                    'impact': 'Builds authority and trust with readers'
-                },
-                {
-                    'category': 'experience', 
-                    'priority': 'high', 
-                    'description': 'Real-world examples and case studies',
-                    'impact': 'Demonstrates practical knowledge'
-                },
-                {
-                    'category': 'testimonials', 
-                    'priority': 'medium', 
-                    'description': 'Customer success stories and reviews',
-                    'impact': 'Provides social proof and credibility'
-                },
-                {
-                    'category': 'unique_insights', 
-                    'priority': 'medium', 
-                    'description': 'Industry-specific knowledge and tips',
-                    'impact': 'Differentiates from generic content'
-                }
-            ],
-            'ai_can_handle': [
-                'research and data gathering',
-                'content structure and formatting', 
-                'basic writing and editing',
-                'pain point analysis',
-                'SEO optimization'
-            ],
-            'collaboration_points': [
-                'Review and validate technical accuracy',
-                'Add personal experiences and anecdotes',
-                'Customize for specific business context',
-                'Final quality review and approval'
-            ]
+            "total_trust_increase": session['trust_increase']
         }
-    
-    def _fallback_content(self, topic: str, form_data: Dict) -> str:
-        """Generate comprehensive fallback content"""
-        language = form_data.get('language', 'British English')
-        unique_value_prop = form_data.get('unique_value_prop', '')
-        customer_pain_points = form_data.get('customer_pain_points', '')
-        
-        # Adjust language style based on selection
-        if language == 'British English':
-            style_words = {
-                'realize': 'realise',
-                'color': 'colour',
-                'center': 'centre',
-                'organize': 'organise'
-            }
-        else:
-            style_words = {}
-        
-        content = f"""# The Complete {topic.title()} Guide: Solving Real Customer Problems
-
-## Executive Summary
-
-This comprehensive guide addresses the most common challenges people face with {topic}, based on extensive analysis of real customer discussions and proven solutions. Unlike generic advice, this content focuses on solving actual problems customers experience daily.
-
-## What You'll Learn
-
-• How to avoid the 5 most common {topic} mistakes
-• Step-by-step solutions to customer pain points  
-• Real customer experiences and lessons learned
-• Expert guidance from {form_data.get('experience_years', 'experienced')} professionals
-• Practical implementation strategies that work
-
-## Understanding the Real Challenges
-
-Based on our analysis of customer discussions, the biggest challenges with {topic} include:
-
-### 1. Information Overwhelm
-Most people struggle with {topic} because there's simply too much conflicting information available. Customers frequently express feeling "completely overwhelmed by all the options" and "don't know where to start."
-
-### 2. Cost Concerns and Budget Constraints  
-Budget considerations are a major factor, with many customers worried about "making expensive mistakes" or "wasting money on the wrong solution." This is particularly challenging for those with limited resources.
-
-### 3. Complexity and Technical Barriers
-The technical aspects of {topic} often create barriers for beginners. Common concerns include "technical specs are confusing" and "need simple recommendations, not jargon."
-
-### 4. Trust and Credibility Issues
-Customers struggle to find reliable sources, often mentioning "don't know who to trust" and "too much conflicting advice online." This makes decision-making particularly difficult.
-
-## Your Expert Solution
-
-{unique_value_prop if unique_value_prop else f"As experienced professionals in the {topic} field, we provide clear, practical guidance based on real-world experience and proven results."}
-
-### How We Address Customer Pain Points
-
-{customer_pain_points if customer_pain_points else f"We understand the challenges customers face with {topic} and provide systematic solutions to each common problem."}
-
-## Step-by-Step Implementation Guide
-
-### Phase 1: Understanding Your Needs (Week 1)
-- Assess your specific requirements for {topic}
-- Identify budget constraints and priorities
-- Research basic terminology and concepts
-- Create a decision-making framework
-
-### Phase 2: Research and Evaluation (Week 2-3)  
-- Compare available options systematically
-- Read verified customer reviews and testimonials
-- Consult with industry professionals
-- Create a shortlist of viable solutions
-
-### Phase 3: Implementation and Testing (Week 4+)
-- Start with a pilot approach or small-scale implementation
-- Monitor results and gather feedback
-- Make adjustments based on real performance data
-- Scale up successful strategies
-
-## Common Mistakes to Avoid
-
-Based on customer feedback and industry experience:
-
-1. **Rushing the Decision Process** - Take time to properly evaluate options
-2. **Ignoring Budget Constraints** - Set realistic financial boundaries upfront  
-3. **Overlooking Long-term Implications** - Consider future needs and scalability
-4. **Relying on Single Sources** - Gather multiple perspectives before deciding
-5. **Skipping Professional Guidance** - Consult experts when dealing with complex decisions
-
-## Real Customer Experiences
-
-*"I wish I'd found this guide before making my {topic} decision. Would have saved me both time and money."* - Verified Customer
-
-*"Finally, practical advice that actually works in the real world, not just theory."* - Industry Professional
-
-*"The step-by-step approach made {topic} much less overwhelming than I expected."* - Recent User
-
-## Quality Assurance and Trust Factors
-
-This content is based on:
-- Analysis of real customer discussions and pain points
-- {form_data.get('experience_years', 'Professional')} industry experience
-- Verified customer success stories and case studies
-- Continuous updates based on market changes and feedback
-
-## Getting Professional Help
-
-While this guide provides comprehensive information, some situations may benefit from professional consultation, particularly when:
-- Budget considerations are substantial
-- Technical requirements are complex  
-- Business-critical decisions are involved
-- Regulatory compliance is required
-
-## Conclusion
-
-Success with {topic} requires understanding real customer pain points and providing authentic, helpful solutions. By following this systematic approach and avoiding common pitfalls, you can make informed decisions that deliver lasting results.
-
-Remember: the best {topic} solution is one that matches your specific needs, budget, and circumstances. Take time to properly evaluate your options, and don't hesitate to seek professional guidance when needed.
-
----
-
-*This content was generated using AI-powered analysis of real customer discussions and pain points. Last updated: {datetime.now().strftime('%B %Y')}*
-
-**About the Author**
-{form_data.get('author_credentials', 'Professional with extensive experience in the field')}
-
-**Need Additional Help?**
-For personalised guidance on your specific {topic} needs, consider consulting with qualified professionals who can provide tailored recommendations based on your unique situation.
-"""
-        
-        return content
 
 class FallbackKnowledgeGraphTrendsAgent:
     """Fallback Knowledge Graph agent"""
@@ -464,6 +295,9 @@ if not KnowledgeGraphTrendsAgent:
 
 if not ContinuousImprovementTracker:
     ContinuousImprovementTracker = FallbackContinuousImprovementTracker
+
+# Configuration
+class Config:
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
     REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID", "")
@@ -1075,6 +909,167 @@ class ZeeSEOAdvancedSystem:
                 'confidence_level': 'moderate'
             }
         }
+    
+    def _fallback_human_inputs(self) -> Dict:
+        """Generate realistic human input requirements"""
+        return {
+            'required_inputs': [
+                {
+                    'category': 'expertise', 
+                    'priority': 'high', 
+                    'description': 'Professional credentials and certifications',
+                    'impact': 'Builds authority and trust with readers'
+                },
+                {
+                    'category': 'experience', 
+                    'priority': 'high', 
+                    'description': 'Real-world examples and case studies',
+                    'impact': 'Demonstrates practical knowledge'
+                },
+                {
+                    'category': 'testimonials', 
+                    'priority': 'medium', 
+                    'description': 'Customer success stories and reviews',
+                    'impact': 'Provides social proof and credibility'
+                },
+                {
+                    'category': 'unique_insights', 
+                    'priority': 'medium', 
+                    'description': 'Industry-specific knowledge and tips',
+                    'impact': 'Differentiates from generic content'
+                }
+            ],
+            'ai_can_handle': [
+                'research and data gathering',
+                'content structure and formatting', 
+                'basic writing and editing',
+                'pain point analysis',
+                'SEO optimization'
+            ],
+            'collaboration_points': [
+                'Review and validate technical accuracy',
+                'Add personal experiences and anecdotes',
+                'Customize for specific business context',
+                'Final quality review and approval'
+            ]
+        }
+    
+    def _fallback_content(self, topic: str, form_data: Dict) -> str:
+        """Generate comprehensive fallback content"""
+        language = form_data.get('language', 'British English')
+        unique_value_prop = form_data.get('unique_value_prop', '')
+        customer_pain_points = form_data.get('customer_pain_points', '')
+        
+        content = f"""# The Complete {topic.title()} Guide: Solving Real Customer Problems
+
+## Executive Summary
+
+This comprehensive guide addresses the most common challenges people face with {topic}, based on extensive analysis of real customer discussions and proven solutions. Unlike generic advice, this content focuses on solving actual problems customers experience daily.
+
+## What You'll Learn
+
+• How to avoid the 5 most common {topic} mistakes
+• Step-by-step solutions to customer pain points  
+• Real customer experiences and lessons learned
+• Expert guidance from {form_data.get('experience_years', 'experienced')} professionals
+• Practical implementation strategies that work
+
+## Understanding the Real Challenges
+
+Based on our analysis of customer discussions, the biggest challenges with {topic} include:
+
+### 1. Information Overwhelm
+Most people struggle with {topic} because there's simply too much conflicting information available. Customers frequently express feeling "completely overwhelmed by all the options" and "don't know where to start."
+
+### 2. Cost Concerns and Budget Constraints  
+Budget considerations are a major factor, with many customers worried about "making expensive mistakes" or "wasting money on the wrong solution." This is particularly challenging for those with limited resources.
+
+### 3. Complexity and Technical Barriers
+The technical aspects of {topic} often create barriers for beginners. Common concerns include "technical specs are confusing" and "need simple recommendations, not jargon."
+
+### 4. Trust and Credibility Issues
+Customers struggle to find reliable sources, often mentioning "don't know who to trust" and "too much conflicting advice online." This makes decision-making particularly difficult.
+
+## Your Expert Solution
+
+{unique_value_prop if unique_value_prop else f"As experienced professionals in the {topic} field, we provide clear, practical guidance based on real-world experience and proven results."}
+
+### How We Address Customer Pain Points
+
+{customer_pain_points if customer_pain_points else f"We understand the challenges customers face with {topic} and provide systematic solutions to each common problem."}
+
+## Step-by-Step Implementation Guide
+
+### Phase 1: Understanding Your Needs (Week 1)
+- Assess your specific requirements for {topic}
+- Identify budget constraints and priorities
+- Research basic terminology and concepts
+- Create a decision-making framework
+
+### Phase 2: Research and Evaluation (Week 2-3)  
+- Compare available options systematically
+- Read verified customer reviews and testimonials
+- Consult with industry professionals
+- Create a shortlist of viable solutions
+
+### Phase 3: Implementation and Testing (Week 4+)
+- Start with a pilot approach or small-scale implementation
+- Monitor results and gather feedback
+- Make adjustments based on real performance data
+- Scale up successful strategies
+
+## Common Mistakes to Avoid
+
+Based on customer feedback and industry experience:
+
+1. **Rushing the Decision Process** - Take time to properly evaluate options
+2. **Ignoring Budget Constraints** - Set realistic financial boundaries upfront  
+3. **Overlooking Long-term Implications** - Consider future needs and scalability
+4. **Relying on Single Sources** - Gather multiple perspectives before deciding
+5. **Skipping Professional Guidance** - Consult experts when dealing with complex decisions
+
+## Real Customer Experiences
+
+*"I wish I'd found this guide before making my {topic} decision. Would have saved me both time and money."* - Verified Customer
+
+*"Finally, practical advice that actually works in the real world, not just theory."* - Industry Professional
+
+*"The step-by-step approach made {topic} much less overwhelming than I expected."* - Recent User
+
+## Quality Assurance and Trust Factors
+
+This content is based on:
+- Analysis of real customer discussions and pain points
+- {form_data.get('experience_years', 'Professional')} industry experience
+- Verified customer success stories and case studies
+- Continuous updates based on market changes and feedback
+
+## Getting Professional Help
+
+While this guide provides comprehensive information, some situations may benefit from professional consultation, particularly when:
+- Budget considerations are substantial
+- Technical requirements are complex  
+- Business-critical decisions are involved
+- Regulatory compliance is required
+
+## Conclusion
+
+Success with {topic} requires understanding real customer pain points and providing authentic, helpful solutions. By following this systematic approach and avoiding common pitfalls, you can make informed decisions that deliver lasting results.
+
+Remember: the best {topic} solution is one that matches your specific needs, budget, and circumstances. Take time to properly evaluate your options, and don't hesitate to seek professional guidance when needed.
+
+---
+
+*This content was generated using AI-powered analysis of real customer discussions and pain points. Last updated: {datetime.now().strftime('%B %Y')}*
+
+**About the Author**
+{form_data.get('author_credentials', 'Professional with extensive experience in the field')}
+
+**Need Additional Help?**
+For personalised guidance on your specific {topic} needs, consider consulting with qualified professionals who can provide tailored recommendations based on your unique situation.
+"""
+        
+        return content
     
     def _fallback_eeat(self) -> Dict:
         """Generate more realistic E-E-A-T scores with some variation"""
@@ -2230,12 +2225,6 @@ def generate_enhanced_results_page(analysis_results: Dict[str, Any], session_id:
                         <h2 class="card-title">Detailed Analysis Results</h2>
                     </div>
                     
-                    <div class="tabs">
-                        <div class="tab active" onclick="showTab('content')">Generated Content</div>
-                        <div class="tab" onclick="showTab('research')">Research Data</div>
-                        <div class="tab" onclick="showTab('eeat')">E-E-A-T Analysis</div>
-                        <div class="tab" onclick="showTab('opportunities')">Opportunities</div>
-                    </div>
                     
                     <div class="tab-content active" id="content">
                         <div class="content-preview">{escaped_content}</div>
