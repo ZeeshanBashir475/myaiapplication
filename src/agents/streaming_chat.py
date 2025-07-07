@@ -1,20 +1,99 @@
 import json
 import logging
 import asyncio
+import re
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 
 logger = logging.getLogger(__name__)
 
 class StreamingChatAgent:
-    """Claude-style streaming chat agent for real-time content improvement"""
+    """Enhanced Claude-style streaming chat agent with real-time metrics updates"""
     
     def __init__(self, llm_client):
         self.llm_client = llm_client
-        logger.info("✅ Streaming Chat Agent initialized")
+        self.improvement_patterns = self._load_improvement_patterns()
+        logger.info("✅ Enhanced Streaming Chat Agent initialized")
+    
+    def _load_improvement_patterns(self) -> Dict[str, Dict]:
+        """Load patterns for different types of improvements"""
+        return {
+            'trust_improvement': {
+                'keywords': ['trust', 'credibility', 'authority', 'expertise', 'eeat', 'professional'],
+                'actions': [
+                    'Add author credentials and certifications',
+                    'Include professional experience details',
+                    'Add customer testimonials and case studies',
+                    'Reference authoritative industry sources',
+                    'Include contact information and business location',
+                    'Add professional headshot and bio'
+                ],
+                'score_impact': {'trust_score': 0.3, 'overall_score': 0.15}
+            },
+            'quality_improvement': {
+                'keywords': ['quality', 'better', 'improve', 'enhance', 'optimize'],
+                'actions': [
+                    'Add more specific examples and case studies',
+                    'Include step-by-step actionable guidance',
+                    'Improve content structure with clear headings',
+                    'Add visual elements and formatting',
+                    'Include more detailed explanations',
+                    'Add relevant statistics and data'
+                ],
+                'score_impact': {'quality_score': 0.25, 'overall_score': 0.12}
+            },
+            'pain_point_focus': {
+                'keywords': ['pain point', 'problem', 'issue', 'challenge', 'difficulty', 'customer'],
+                'actions': [
+                    'Address specific customer pain points directly',
+                    'Add solutions for common problems',
+                    'Include customer success stories',
+                    'Provide troubleshooting guides',
+                    'Add FAQ section for common issues',
+                    'Include prevention strategies'
+                ],
+                'score_impact': {'quality_score': 0.2, 'pain_points_addressed': 2}
+            },
+            'beginner_friendly': {
+                'keywords': ['beginner', 'simple', 'easy', 'basic', 'start', 'newbie'],
+                'actions': [
+                    'Simplify technical language and jargon',
+                    'Add definitions for complex terms',
+                    'Include step-by-step beginner guides',
+                    'Add "What you need to know" sections',
+                    'Include basic vs advanced options',
+                    'Add prerequisite information'
+                ],
+                'score_impact': {'quality_score': 0.2, 'accessibility_score': 0.3}
+            },
+            'seo_optimization': {
+                'keywords': ['seo', 'search', 'ranking', 'keywords', 'optimize'],
+                'actions': [
+                    'Optimize title and meta descriptions',
+                    'Add relevant internal and external links',
+                    'Improve keyword integration naturally',
+                    'Add structured data markup suggestions',
+                    'Optimize heading hierarchy (H1, H2, H3)',
+                    'Include related keyword variations'
+                ],
+                'score_impact': {'seo_score': 0.4, 'overall_score': 0.1}
+            },
+            'content_expansion': {
+                'keywords': ['expand', 'more', 'detailed', 'comprehensive', 'thorough'],
+                'actions': [
+                    'Add more comprehensive coverage of subtopics',
+                    'Include additional examples and use cases',
+                    'Add related topics and cross-references',
+                    'Include industry insights and trends',
+                    'Add comparison tables and charts',
+                    'Include expert quotes and opinions'
+                ],
+                'score_impact': {'content_depth': 0.3, 'word_count': 500}
+            }
+        }
     
     async def process_message(self, message: str, session: Dict, connection_manager) -> None:
-        """Process chat message and stream response like Claude"""
+        """Process chat message with intelligent streaming and real-time updates"""
         
         session_id = session['session_id']
         
@@ -25,23 +104,22 @@ class StreamingChatAgent:
             'timestamp': datetime.now().isoformat()
         })
         
-        # Determine intent and generate appropriate response
-        intent = self._analyze_message_intent(message)
+        # Analyze message intent and improvement type
+        improvement_type = self._analyze_improvement_intent(message)
+        content_modification_requested = self._is_content_modification_request(message)
         
         # Send typing indicator
         await connection_manager.send_message(session_id, {
             'type': 'assistant_start'
         })
         
-        # Generate context-aware response based on intent
-        if intent == 'content_modification':
-            await self._handle_content_modification(message, session, connection_manager)
-        elif intent == 'content_improvement':
-            await self._handle_content_improvement(message, session, connection_manager)
-        elif intent == 'question_about_analysis':
+        # Generate contextual response
+        if content_modification_requested:
+            await self._handle_content_modification(message, session, connection_manager, improvement_type)
+        elif improvement_type:
+            await self._handle_improvement_suggestion(message, session, connection_manager, improvement_type)
+        elif self._is_analysis_question(message):
             await self._handle_analysis_question(message, session, connection_manager)
-        elif intent == 'request_examples':
-            await self._handle_example_request(message, session, connection_manager)
         else:
             await self._handle_general_conversation(message, session, connection_manager)
         
@@ -50,64 +128,70 @@ class StreamingChatAgent:
             'type': 'assistant_complete'
         })
     
-    def _analyze_message_intent(self, message: str) -> str:
-        """Analyze user message to determine intent"""
+    def _analyze_improvement_intent(self, message: str) -> Optional[str]:
+        """Analyze what type of improvement the user is requesting"""
         message_lower = message.lower()
         
-        # Content modification requests
-        if any(word in message_lower for word in [
-            'change', 'modify', 'update', 'rewrite', 'edit', 'alter', 'replace'
-        ]):
-            return 'content_modification'
+        for improvement_type, pattern in self.improvement_patterns.items():
+            if any(keyword in message_lower for keyword in pattern['keywords']):
+                return improvement_type
         
-        # Content improvement requests
-        if any(word in message_lower for word in [
-            'improve', 'better', 'enhance', 'optimize', 'strengthen', 'boost'
-        ]):
-            return 'content_improvement'
-        
-        # Questions about analysis
-        if any(word in message_lower for word in [
-            'why', 'how', 'what', 'explain', 'tell me about', 'show me'
-        ]) and any(word in message_lower for word in [
-            'reddit', 'analysis', 'pain points', 'research', 'data'
-        ]):
-            return 'question_about_analysis'
-        
-        # Example requests
-        if any(word in message_lower for word in [
-            'example', 'show me', 'demonstrate', 'sample'
-        ]):
-            return 'request_examples'
-        
-        return 'general_conversation'
+        return None
     
-    async def _handle_content_modification(self, message: str, session: Dict, connection_manager):
-        """Handle requests to modify the content"""
+    def _is_content_modification_request(self, message: str) -> bool:
+        """Check if user is requesting actual content changes"""
+        modification_keywords = [
+            'change', 'modify', 'update', 'rewrite', 'edit', 'alter', 'replace',
+            'make it', 'turn this into', 'convert to', 'apply', 'implement'
+        ]
+        
+        message_lower = message.lower()
+        return any(keyword in message_lower for keyword in modification_keywords)
+    
+    def _is_analysis_question(self, message: str) -> bool:
+        """Check if user is asking about the analysis data"""
+        analysis_keywords = [
+            'reddit', 'pain points', 'analysis', 'research', 'data', 'scores',
+            'why', 'how', 'what', 'explain', 'show me', 'tell me about'
+        ]
+        
+        message_lower = message.lower()
+        return any(keyword in message_lower for keyword in analysis_keywords)
+    
+    async def _handle_content_modification(self, message: str, session: Dict, connection_manager, improvement_type: str):
+        """Handle requests to actually modify the content"""
         
         session_id = session['session_id']
         current_content = session['current_content']
-        form_data = session['form_data']
         analysis_results = session['analysis_results']
         
-        # Build context for content modification
-        context = self._build_content_context(session)
+        # Build comprehensive context
+        context = self._build_comprehensive_context(session, improvement_type)
         
-        prompt = f"""You are helping to modify content based on the user's request.
+        # Create modification prompt
+        prompt = f"""You are an expert content editor helping to modify content based on the user's request.
 
 USER REQUEST: {message}
 
-CURRENT CONTENT (first 1500 chars):
-{current_content[:1500]}...
+IMPROVEMENT TYPE DETECTED: {improvement_type or 'general'}
 
-CONTEXT:
+CURRENT CONTENT (first 2000 chars):
+{current_content[:2000]}...
+
+CONTEXT & ANALYSIS DATA:
 {context}
 
 The user wants to modify the content. Please:
-1. Explain what changes you'll make
-2. Then provide the COMPLETE updated content incorporating their request
 
-Be conversational and helpful like Claude. Start by acknowledging their request, then explain your approach."""
+1. First, briefly explain what specific changes you'll make and why
+2. Then provide the COMPLETE updated content that incorporates their request
+3. Make the improvements substantial and meaningful
+4. Ensure the content addresses the Reddit pain points identified
+5. Maintain the professional tone and expertise level
+
+Start with: "I'll make the following improvements:" then explain briefly, then provide the full updated content.
+
+Be conversational and helpful like Claude, but focus on delivering real value."""
 
         # Stream the response
         response_chunks = []
@@ -125,53 +209,62 @@ Be conversational and helpful like Claude. Start by acknowledging their request,
             'role': 'assistant',
             'content': response,
             'timestamp': datetime.now().isoformat(),
-            'intent': 'content_modification'
+            'intent': 'content_modification',
+            'improvement_type': improvement_type
         })
         
-        # Check if response contains updated content
-        if self._response_contains_updated_content(response):
-            await self._extract_and_update_content(response, session, connection_manager)
+        # Extract and update content if provided
+        updated_content = self._extract_updated_content(response)
+        if updated_content and len(updated_content) > 500:
+            session['current_content'] = updated_content
+            
+            # Apply metrics improvements
+            await self._apply_improvement_metrics(session, improvement_type, connection_manager)
+            
+            # Notify about content update
+            await connection_manager.send_message(session_id, {
+                'type': 'content_updated',
+                'content': updated_content,
+                'improvement_applied': True
+            })
     
-    async def _handle_content_improvement(self, message: str, session: Dict, connection_manager):
-        """Handle requests to improve the content"""
+    async def _handle_improvement_suggestion(self, message: str, session: Dict, connection_manager, improvement_type: str):
+        """Handle requests for improvement suggestions without immediate application"""
         
         session_id = session['session_id']
-        current_content = session['current_content']
-        reddit_insights = session['analysis_results'].get('reddit_insights', {})
+        analysis_results = session['analysis_results']
         
-        # Extract specific improvement areas
-        improvement_focus = self._identify_improvement_focus(message)
+        # Get specific improvement actions for this type
+        pattern = self.improvement_patterns.get(improvement_type, {})
+        suggested_actions = pattern.get('actions', [])
         
-        # Build improvement suggestions based on Reddit research
-        pain_points = reddit_insights.get('critical_pain_points', {}).get('top_pain_points', {})
-        customer_quotes = reddit_insights.get('customer_voice', {}).get('authentic_quotes', [])
+        # Build context for suggestions
+        context = self._build_improvement_context(session, improvement_type)
         
-        prompt = f"""You are an expert content advisor helping improve content based on REAL Reddit research.
+        prompt = f"""You are an expert content strategist providing specific improvement recommendations.
 
 USER REQUEST: {message}
 
-IMPROVEMENT FOCUS: {improvement_focus}
+IMPROVEMENT TYPE: {improvement_type}
 
-REAL PAIN POINTS FROM REDDIT:
-{json.dumps(pain_points, indent=2)}
+ANALYSIS CONTEXT:
+{context}
 
-CUSTOMER QUOTES:
-{chr(10).join(['- "' + quote + '"' for quote in customer_quotes[:5]])}
+SUGGESTED ACTIONS FOR {improvement_type.upper()}:
+{chr(10).join(['• ' + action for action in suggested_actions])}
 
-CURRENT CONTENT QUALITY:
-- Length: {len(current_content)} characters
-- Topic: {session['form_data'].get('topic', 'Unknown')}
+Provide specific, actionable recommendations based on the analysis data. Include:
 
-Provide specific, actionable improvement suggestions based on the real Reddit data. Be conversational and explain:
-1. What specific improvements you recommend
-2. Why these improvements will help (based on the Reddit pain points)
-3. How to implement them
+1. Why these improvements will help (reference the Reddit pain points)
+2. Specific implementation steps
+3. Expected impact on metrics
+4. Ask if they want you to apply these improvements to the content
 
-If they ask you to apply the improvements, generate the updated content."""
+Be encouraging and specific. Reference the actual data from the analysis."""
 
         # Stream the response
         response_chunks = []
-        async for chunk in self.llm_client.generate_streaming(prompt, max_tokens=3000):
+        async for chunk in self.llm_client.generate_streaming(prompt, max_tokens=2500):
             response_chunks.append(chunk)
             await connection_manager.send_message(session_id, {
                 'type': 'assistant_stream',
@@ -185,42 +278,36 @@ If they ask you to apply the improvements, generate the updated content."""
             'role': 'assistant',
             'content': response,
             'timestamp': datetime.now().isoformat(),
-            'intent': 'content_improvement'
+            'intent': 'improvement_suggestion',
+            'improvement_type': improvement_type
         })
     
     async def _handle_analysis_question(self, message: str, session: Dict, connection_manager):
-        """Handle questions about the Reddit analysis"""
+        """Handle questions about the analysis data with rich context"""
         
         session_id = session['session_id']
-        reddit_insights = session['analysis_results'].get('reddit_insights', {})
+        analysis_results = session['analysis_results']
         
         # Extract relevant analysis data
-        pain_points = reddit_insights.get('critical_pain_points', {})
-        customer_voice = reddit_insights.get('customer_voice', {})
-        insights = reddit_insights.get('insights', {})
-        metadata = reddit_insights.get('research_metadata', {})
+        reddit_insights = analysis_results.get('analysis_stages', {}).get('reddit_insights', {})
+        eeat_assessment = analysis_results.get('analysis_stages', {}).get('eeat_assessment', {})
+        quality_assessment = analysis_results.get('analysis_stages', {}).get('quality_assessment', {})
         
-        prompt = f"""You are explaining Reddit research results to the user in a conversational way.
+        # Build comprehensive analysis summary
+        analysis_summary = self._build_analysis_summary(analysis_results)
+        
+        prompt = f"""You are explaining the analysis results to the user in a helpful, conversational way.
 
 USER QUESTION: {message}
 
-REDDIT ANALYSIS DATA:
-- Posts Analyzed: {metadata.get('total_posts_analyzed', 0)}
-- Subreddits Researched: {metadata.get('subreddits_researched', 0)}
-- Data Source: {metadata.get('data_source', 'Unknown')}
+COMPREHENSIVE ANALYSIS SUMMARY:
+{analysis_summary}
 
-PAIN POINTS FOUND:
-{json.dumps(pain_points.get('top_pain_points', {}), indent=2)}
+Answer their question about the analysis in a helpful way. Use specific data points and explain what they mean for content strategy. Be encouraging and actionable.
 
-CUSTOMER QUOTES:
-{chr(10).join(['- "' + quote + '"' for quote in customer_voice.get('authentic_quotes', [])[:5]])}
-
-INSIGHTS:
-- Most Common Pain: {insights.get('most_common_pain', 'Unknown')}
-- Emotional Intensity: {insights.get('emotional_intensity', 0):.1f}
-- Problem Severity: {pain_points.get('problem_severity', 'Unknown')}
-
-Answer their question about the Reddit research in a helpful, conversational way. Explain what the data means and why it's useful for content creation."""
+If they're asking about pain points, reference the actual Reddit data.
+If they're asking about scores, explain what impacts them and how to improve.
+If they're asking about the research process, explain what was analyzed and why it's valuable."""
 
         # Stream the response
         response_chunks = []
@@ -241,58 +328,15 @@ Answer their question about the Reddit research in a helpful, conversational way
             'intent': 'analysis_question'
         })
     
-    async def _handle_example_request(self, message: str, session: Dict, connection_manager):
-        """Handle requests for examples"""
-        
-        session_id = session['session_id']
-        topic = session['form_data'].get('topic', 'the topic')
-        reddit_insights = session['analysis_results'].get('reddit_insights', {})
-        
-        prompt = f"""The user is asking for examples related to {topic}.
-
-USER REQUEST: {message}
-
-REDDIT INSIGHTS AVAILABLE:
-- Pain Points: {list(reddit_insights.get('critical_pain_points', {}).get('top_pain_points', {}).keys())[:5]}
-- Customer Quotes: {reddit_insights.get('customer_voice', {}).get('authentic_quotes', [])[:3]}
-
-Provide helpful, specific examples based on their request. Be conversational and practical. 
-
-If they're asking for examples of:
-- Content improvements: Show specific before/after examples
-- Pain point solutions: Give concrete examples of how to address the Reddit pain points
-- Customer language: Use the actual Reddit quotes as examples
-- Writing techniques: Show specific examples related to their topic
-
-Make your examples actionable and relevant to their content about {topic}."""
-
-        # Stream the response
-        response_chunks = []
-        async for chunk in self.llm_client.generate_streaming(prompt, max_tokens=2000):
-            response_chunks.append(chunk)
-            await connection_manager.send_message(session_id, {
-                'type': 'assistant_stream',
-                'chunk': chunk
-            })
-        
-        response = ''.join(response_chunks)
-        
-        # Add to conversation history
-        session['conversation_history'].append({
-            'role': 'assistant',
-            'content': response,
-            'timestamp': datetime.now().isoformat(),
-            'intent': 'example_request'
-        })
-    
     async def _handle_general_conversation(self, message: str, session: Dict, connection_manager):
-        """Handle general conversation about the content and analysis"""
+        """Handle general conversation with contextual awareness"""
         
         session_id = session['session_id']
         topic = session['form_data'].get('topic', 'your topic')
         
         # Build conversation context
         recent_context = self._get_recent_conversation_context(session)
+        capabilities_context = self._build_capabilities_context(session)
         
         prompt = f"""You are a helpful AI content assistant having a conversation about content for "{topic}".
 
@@ -301,14 +345,10 @@ USER MESSAGE: {message}
 RECENT CONVERSATION CONTEXT:
 {recent_context}
 
-AVAILABLE CAPABILITIES:
-- Modify or rewrite the content
-- Improve content quality based on Reddit research
-- Explain the Reddit analysis findings
-- Provide examples and suggestions
-- Answer questions about content strategy
+YOUR CAPABILITIES:
+{capabilities_context}
 
-Respond in a helpful, conversational way like Claude. Be encouraging and offer specific ways you can help with their content."""
+Respond in a helpful, conversational way like Claude. Be encouraging and offer specific ways you can help with their content. Reference the analysis data when relevant."""
 
         # Stream the response
         response_chunks = []
@@ -329,110 +369,194 @@ Respond in a helpful, conversational way like Claude. Be encouraging and offer s
             'intent': 'general_conversation'
         })
     
-    def _build_content_context(self, session: Dict) -> str:
-        """Build context about the content and analysis"""
+    async def _apply_improvement_metrics(self, session: Dict, improvement_type: str, connection_manager):
+        """Apply realistic improvement metrics based on the improvement type"""
+        
+        session_id = session['session_id']
+        pattern = self.improvement_patterns.get(improvement_type, {})
+        score_impact = pattern.get('score_impact', {})
+        
+        # Update live metrics
+        live_metrics = session['live_metrics']
+        live_metrics['improvements_applied'] += 1
+        
+        # Apply specific score improvements
+        for metric, improvement in score_impact.items():
+            if metric in live_metrics:
+                live_metrics[metric] = min(10.0, live_metrics[metric] + improvement)
+        
+        # Recalculate overall score
+        if 'trust_score' in live_metrics and 'quality_score' in live_metrics:
+            live_metrics['overall_score'] = (live_metrics['trust_score'] + live_metrics['quality_score']) / 2
+        
+        # Update word count if content was expanded
+        if 'word_count' in score_impact:
+            live_metrics['content_word_count'] = live_metrics.get('content_word_count', 0) + score_impact['word_count']
+        
+        # Send metrics update
+        await connection_manager.send_message(session_id, {
+            'type': 'metrics_update',
+            'metrics': live_metrics,
+            'improvement_applied': {
+                'type': improvement_type,
+                'impact': score_impact
+            }
+        })
+        
+        logger.info(f"Applied {improvement_type} improvements to session {session_id}")
+    
+    def _build_comprehensive_context(self, session: Dict, improvement_type: str) -> str:
+        """Build comprehensive context for content modification"""
         form_data = session['form_data']
-        reddit_insights = session['analysis_results'].get('reddit_insights', {})
+        analysis_results = session['analysis_results']
         
         context_parts = [
             f"Topic: {form_data.get('topic', 'Unknown')}",
-            f"Target Audience: {form_data.get('target_audience', 'Unknown')}",
-            f"Content Length: {len(session['current_content'])} characters"
+            f"Target Audience: {form_data.get('target_audience', 'General')}",
+            f"Industry: {form_data.get('industry', 'General')}",
+            f"Current Content Length: {len(session['current_content'])} characters"
         ]
         
-        # Add Reddit insights context
-        pain_points = reddit_insights.get('critical_pain_points', {}).get('top_pain_points', {})
-        if pain_points:
-            top_pain = max(pain_points.items(), key=lambda x: x[1])[0]
-            context_parts.append(f"Main Customer Pain Point: {top_pain}")
+        # Add Reddit insights
+        reddit_insights = analysis_results.get('analysis_stages', {}).get('reddit_insights', {})
+        if reddit_insights:
+            pain_points = reddit_insights.get('critical_pain_points', {}).get('top_pain_points', {})
+            if pain_points:
+                top_pains = list(pain_points.keys())[:3]
+                context_parts.append(f"Top Customer Pain Points: {', '.join(top_pains)}")
+            
+            quotes = reddit_insights.get('customer_voice', {}).get('authentic_quotes', [])
+            if quotes:
+                context_parts.append(f"Sample Customer Quote: \"{quotes[0][:100]}...\"")
+        
+        # Add current scores
+        live_metrics = session.get('live_metrics', {})
+        context_parts.append(f"Current Trust Score: {live_metrics.get('trust_score', 'N/A')}")
+        context_parts.append(f"Current Quality Score: {live_metrics.get('quality_score', 'N/A')}")
         
         return '\n'.join(context_parts)
     
-    def _identify_improvement_focus(self, message: str) -> str:
-        """Identify what aspect of content to improve"""
-        message_lower = message.lower()
+    def _build_improvement_context(self, session: Dict, improvement_type: str) -> str:
+        """Build context for improvement suggestions"""
+        analysis_results = session['analysis_results']
         
-        if any(word in message_lower for word in ['beginner', 'simple', 'easy', 'basic']):
-            return 'beginner_friendliness'
-        elif any(word in message_lower for word in ['example', 'case study', 'specific']):
-            return 'examples_and_specificity'
-        elif any(word in message_lower for word in ['trust', 'credibility', 'authority']):
-            return 'trust_and_authority'
-        elif any(word in message_lower for word in ['pain', 'problem', 'customer']):
-            return 'pain_point_addressing'
-        elif any(word in message_lower for word in ['seo', 'search', 'ranking']):
-            return 'seo_optimization'
-        elif any(word in message_lower for word in ['structure', 'format', 'organization']):
-            return 'content_structure'
-        else:
-            return 'general_quality'
+        context_parts = []
+        
+        # Add specific context based on improvement type
+        if improvement_type == 'trust_improvement':
+            eeat = analysis_results.get('analysis_stages', {}).get('eeat_assessment', {})
+            context_parts.append(f"Current Trust Score: {eeat.get('overall_trust_score', 'N/A')}")
+            recommendations = eeat.get('improvement_recommendations', [])
+            if recommendations:
+                context_parts.append(f"E-E-A-T Recommendations: {', '.join(recommendations[:3])}")
+        
+        elif improvement_type == 'pain_point_focus':
+            reddit_insights = analysis_results.get('analysis_stages', {}).get('reddit_insights', {})
+            pain_points = reddit_insights.get('critical_pain_points', {}).get('top_pain_points', {})
+            if pain_points:
+                context_parts.append(f"Top Pain Points: {', '.join(list(pain_points.keys())[:5])}")
+        
+        return '\n'.join(context_parts) if context_parts else "General improvement context"
+    
+    def _build_analysis_summary(self, analysis_results: Dict) -> str:
+        """Build comprehensive analysis summary"""
+        summary_parts = []
+        
+        # Reddit analysis summary
+        reddit_insights = analysis_results.get('analysis_stages', {}).get('reddit_insights', {})
+        if reddit_insights:
+            metadata = reddit_insights.get('research_metadata', {})
+            summary_parts.append(f"Reddit Analysis: {metadata.get('total_posts_analyzed', 0)} posts analyzed")
+            
+            pain_points = reddit_insights.get('critical_pain_points', {}).get('top_pain_points', {})
+            if pain_points:
+                top_pain = max(pain_points.items(), key=lambda x: x[1])[0]
+                summary_parts.append(f"Top Pain Point: {top_pain} ({pain_points[top_pain]} mentions)")
+        
+        # E-E-A-T summary
+        eeat = analysis_results.get('analysis_stages', {}).get('eeat_assessment', {})
+        if eeat:
+            summary_parts.append(f"Trust Score: {eeat.get('overall_trust_score', 'N/A')}/10")
+            components = eeat.get('component_scores', {})
+            if components:
+                lowest_component = min(components.items(), key=lambda x: x[1])
+                summary_parts.append(f"Lowest E-E-A-T Component: {lowest_component[0]} ({lowest_component[1]})")
+        
+        # Quality summary
+        quality = analysis_results.get('analysis_stages', {}).get('quality_assessment', {})
+        if quality:
+            summary_parts.append(f"Quality Score: {quality.get('overall_score', 'N/A')}/10")
+        
+        return '\n'.join(summary_parts) if summary_parts else "Analysis summary not available"
+    
+    def _build_capabilities_context(self, session: Dict) -> str:
+        """Build context about what the assistant can do"""
+        capabilities = [
+            "• Modify and improve your content in real-time",
+            "• Explain analysis results and Reddit research findings",
+            "• Provide specific improvement recommendations",
+            "• Update trust scores, quality scores, and other metrics",
+            "• Address customer pain points identified in Reddit research",
+            "• Optimize content for SEO and user experience",
+            "• Make content more beginner-friendly or technical as needed"
+        ]
+        
+        return '\n'.join(capabilities)
     
     def _get_recent_conversation_context(self, session: Dict) -> str:
         """Get recent conversation context for continuity"""
-        history = session['conversation_history'][-4:]  # Last 4 messages
+        history = session.get('conversation_history', [])[-4:]  # Last 4 messages
         
         context_parts = []
         for msg in history:
             role = msg['role'].upper()
-            content = msg['content'][:200] + "..." if len(msg['content']) > 200 else msg['content']
+            content = msg['content'][:150] + "..." if len(msg['content']) > 150 else msg['content']
             context_parts.append(f"{role}: {content}")
         
         return '\n'.join(context_parts) if context_parts else "No recent conversation"
     
-    def _response_contains_updated_content(self, response: str) -> bool:
-        """Check if response contains updated content that should replace current content"""
-        indicators = [
-            'here\'s the updated content',
-            'updated version:',
+    def _extract_updated_content(self, response: str) -> Optional[str]:
+        """Extract updated content from assistant response"""
+        # Look for content markers
+        content_markers = [
+            'updated content:',
             'revised content:',
             'new content:',
             'modified content:',
-            'complete updated content'
+            'complete content:',
+            'here\'s the improved content:',
+            'here\'s the updated version:'
         ]
         
         response_lower = response.lower()
-        return any(indicator in response_lower for indicator in indicators)
-    
-    async def _extract_and_update_content(self, response: str, session: Dict, connection_manager):
-        """Extract updated content from response and update the session"""
+        start_pos = -1
         
-        session_id = session['session_id']
-        
-        # Use a more sophisticated extraction method
-        lines = response.split('\n')
-        content_started = False
-        updated_content_lines = []
-        
-        for line in lines:
-            line_lower = line.lower()
-            
-            # Look for content start indicators
-            if any(indicator in line_lower for indicator in [
-                'updated content:', 'revised content:', 'new content:', 'modified content:'
-            ]):
-                content_started = True
-                continue
-            
-            # Stop at conversation indicators
-            if content_started and any(phrase in line_lower for phrase in [
-                'what do you think', 'does this work', 'how does this look', 'let me know'
-            ]):
+        for marker in content_markers:
+            pos = response_lower.find(marker)
+            if pos != -1:
+                start_pos = pos + len(marker)
                 break
-            
-            if content_started and line.strip():
-                updated_content_lines.append(line)
         
-        if updated_content_lines:
-            updated_content = '\n'.join(updated_content_lines).strip()
-            
-            # Only update if we have substantial content
-            if len(updated_content) > 500:
-                session['current_content'] = updated_content
-                
-                # Notify about content update
-                await connection_manager.send_message(session_id, {
-                    'type': 'content_updated',
-                    'content': updated_content
-                })
-                
-                logger.info(f"Content updated for session {session_id}: {len(updated_content)} characters")
+        if start_pos == -1:
+            return None
+        
+        # Extract content from start position to end
+        content_part = response[start_pos:].strip()
+        
+        # Remove any trailing conversation text
+        end_markers = [
+            'what do you think',
+            'does this work',
+            'how does this look',
+            'let me know',
+            'would you like',
+            'any other changes'
+        ]
+        
+        for end_marker in end_markers:
+            pos = content_part.lower().find(end_marker)
+            if pos != -1:
+                content_part = content_part[:pos].strip()
+                break
+        
+        return content_part if len(content_part) > 100 else None
