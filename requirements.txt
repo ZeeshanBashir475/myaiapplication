@@ -1,39 +1,57 @@
-# Core FastAPI dependencies
+# Core FastAPI and web framework dependencies
 fastapi==0.104.1
-uvicorn==0.24.0
+uvicorn[standard]==0.24.0
+websockets==12.0
+python-multipart==0.0.6
+
+# AI and LLM dependencies
+anthropic==0.8.1
+openai==1.3.7
 
 # Reddit API
 praw==7.7.1
 
-# HTTP requests and utilities
+# Google APIs
+google-api-python-client==2.110.0
+google-auth==2.25.2
+google-auth-oauthlib==1.1.0
+google-auth-httplib2==0.1.1
+
+# Data processing and analysis
+pandas==2.1.4
+numpy==1.25.2
 requests==2.31.0
-urllib3==2.0.4
+beautifulsoup4==4.12.2
+lxml==4.9.3
 
-# Python standard library extensions
-python-multipart==0.0.6
+# Text processing and NLP
+nltk==3.8.1
+textblob==0.17.1
+spacy==3.7.2
 
-# Data processing (optional but useful)
-python-dateutil==2.8.2
+# JSON and data handling
+ujson==5.8.0
+pydantic==2.5.0
 
-# Anthropic/OpenAI (if using)
-anthropic==0.3.11
-
-# Environment and configuration (optional)
-python-dotenv==1.0.0
-
-# JSON handling (built-in but good to specify version)
-# json is built-in to Python
-
-# Regular expressions (built-in but sometimes helps to specify)
-# re is built-in to Python
-
-# Typing extensions for better type hints
-typing-extensions==4.8.0
-
-# Optional: Better error handling
+# HTTP and web scraping
 httpx==0.25.2
+aiohttp==3.9.1
 
-pytrends>=4.9.2
-requests>=2.31.0
-google-api-python-client>=2.108.0
-python-dateutil>=2.8.2
+# Database (if needed)
+sqlalchemy==2.0.23
+alembic==1.13.1
+
+# Utilities
+python-dotenv==1.0.0
+python-dateutil==2.8.2
+pytz==2023.3
+
+# Development and testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+black==23.11.0
+flake8==6.1.0
+
+# Optional: for enhanced features
+redis==5.0.1
+celery==5.3.4
