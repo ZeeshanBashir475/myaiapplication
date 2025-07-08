@@ -1,0 +1,101 @@
+# In your existing app.py, ADD this ConnectionManager class 
+# RIGHT AFTER your imports and BEFORE your ZeeSEOAdvancedSystem class
+
+# WebSocket Connection Manager - ADD THIS CLASS
+class ConnectionManager:
+    """WebSocket connection manager for real-time communication"""
+    
+    def __init__(self):
+        self.active_connections: Dict[str, WebSocket] = {}
+        self.session_data: Dict[str, Dict] = {}
+        logger.info("🔗 ConnectionManager initialized")
+    
+    async def connect(self, websocket: WebSocket, session_id: str):
+        """Accept WebSocket connection and store it"""
+        try:
+            await websocket.accept()
+            self.active_connections[session_id] = websocket
+            self.session_data[session_id] = {
+                'connected_at': datetime.now().isoformat(),
+                'message_count': 0,
+                'last_activity': datetime.now().isoformat()
+            }
+            logger.info(f"✅ WebSocket connected: {session_id}")
+            
+            # Send immediate connection confirmation
+            await self.send_message(session_id, {
+                'type': 'connection_established',
+                'session_id': session_id,
+                'timestamp': datetime.now().isoformat(),
+                'message': 'WebSocket connection successful!'
+            })
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to connect WebSocket {session_id}: {e}")
+            raise
+    
+    def disconnect(self, session_id: str):
+        """Remove WebSocket connection"""
+        if session_id in self.active_connections:
+            del self.active_connections[session_id]
+        if session_id in self.session_data:
+            del self.session_data[session_id]
+        logger.info(f"❌ WebSocket disconnected: {session_id}")
+    
+    async def send_message(self, session_id: str, message: dict):
+        """Send message to specific WebSocket connection"""
+        if session_id in self.active_connections:
+            try:
+                await self.active_connections[session_id].send_text(json.dumps(message))
+                
+                # Update session data
+                if session_id in self.session_data:
+                    self.session_data[session_id]['message_count'] += 1
+                    self.session_data[session_id]['last_activity'] = datetime.now().isoformat()
+                
+                return True
+            except Exception as e:
+                logger.error(f"❌ Failed to send message to {session_id}: {e}")
+                self.disconnect(session_id)
+                return False
+        else:
+            logger.warning(f"⚠️ Attempted to send message to disconnected session: {session_id}")
+            return False
+    
+    async def broadcast(self, message: dict):
+        """Send message to all connected WebSocket clients"""
+        disconnected_sessions = []
+        
+        for session_id in self.active_connections.keys():
+            success = await self.send_message(session_id, message)
+            if not success:
+                disconnected_sessions.append(session_id)
+        
+        # Clean up disconnected sessions
+        for session_id in disconnected_sessions:
+            self.disconnect(session_id)
+        
+        return len(self.active_connections) - len(disconnected_sessions)
+    
+    def get_connection_count(self) -> int:
+        """Get number of active connections"""
+        return len(self.active_connections)
+    
+    def get_session_info(self, session_id: str) -> Dict:
+        """Get information about a specific session"""
+        return self.session_data.get(session_id, {})
+    
+    def get_all_sessions(self) -> Dict:
+        """Get information about all active sessions"""
+        return {
+            'total_connections': self.get_connection_count(),
+            'sessions': self.session_data,
+            'connection_ids': list(self.active_connections.keys())
+        }
+    
+    def is_connected(self, session_id: str) -> bool:
+        """Check if a session is connected"""
+        return session_id in self.active_connections
+
+# Initialize the ConnectionManager - ADD THIS RIGHT AFTER THE CLASS
+manager = ConnectionManager()
