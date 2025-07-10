@@ -272,6 +272,7 @@ class ProfessionalContentSystem:
             'form_data': form_data,
             'current_content': '',
             'analysis_results': {},
+            'conversation_history': [],
             'timestamp': datetime.now().isoformat()
         }
         
@@ -291,6 +292,9 @@ class ProfessionalContentSystem:
             # Run Reddit research if available
             reddit_insights = await self._run_reddit_research(form_data, session_id)
             
+            # Small delay to ensure messages are processed
+            await asyncio.sleep(0.5)
+            
             # Stage 2: Content generation
             await manager.send_message(session_id, {
                 'type': 'stage_update',
@@ -300,6 +304,9 @@ class ProfessionalContentSystem:
             # Generate content
             content = await self._generate_content(form_data, reddit_insights, session_id)
             
+            # Small delay to ensure content is generated
+            await asyncio.sleep(0.5)
+            
             # Stage 3: Quality assessment
             await manager.send_message(session_id, {
                 'type': 'stage_update',
@@ -308,6 +315,12 @@ class ProfessionalContentSystem:
             
             # Assess quality
             quality_score = await self._assess_content_quality(content, form_data, session_id)
+            
+            # Stage 4: Final optimization
+            await manager.send_message(session_id, {
+                'type': 'stage_update',
+                'message': '🎯 Finalizing content and preparing chat interface...'
+            })
             
             # Final results
             results = {
@@ -320,6 +333,7 @@ class ProfessionalContentSystem:
             
             # Store in session
             self.sessions[session_id]['results'] = results
+            self.sessions[session_id]['current_content'] = content
             
             # Send completion
             await manager.send_message(session_id, {
@@ -336,6 +350,111 @@ class ProfessionalContentSystem:
                 'message': f'Generation error: {str(e)}'
             })
             return {'error': str(e)}
+    
+    async def process_chat_message(self, session_id: str, message: str):
+        """Process chat message for content improvements"""
+        if session_id not in self.sessions:
+            await manager.send_message(session_id, {
+                'type': 'error',
+                'message': 'Session not found. Please regenerate content.'
+            })
+            return
+        
+        session = self.sessions[session_id]
+        
+        # Add user message to conversation history
+        session.setdefault('conversation_history', []).append({
+            'role': 'user',
+            'content': message,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+        # Send typing indicator
+        await manager.send_message(session_id, {
+            'type': 'assistant_start'
+        })
+        
+        # Generate improvement response
+        await self._handle_improvement_request(session, message)
+    
+    async def _handle_improvement_request(self, session: Dict, message: str):
+        """Handle content improvement requests"""
+        session_id = session['session_id']
+        current_content = session.get('current_content', '')
+        form_data = session.get('form_data', {})
+        
+        # Analyze improvement intent
+        improvement_type = self._analyze_improvement_intent(message)
+        
+        # Build context for AI
+        context = f"""
+Current Content Topic: {form_data.get('topic', 'Unknown')}
+Target Audience: {form_data.get('target_audience', 'General')}
+Content Type: {form_data.get('content_type', 'article')}
+Language: {form_data.get('language', 'English')}
+
+Current Content:
+{current_content[:2000]}...
+
+User Request: {message}
+Improvement Type: {improvement_type}
+
+Provide specific, actionable recommendations to improve the content. If they're asking to modify content, provide the updated sections. Be conversational and helpful.
+"""
+        
+        # Generate streaming response
+        try:
+            response_chunks = []
+            async for chunk in self.llm_client.generate_streaming(context, max_tokens=2000):
+                response_chunks.append(chunk)
+                await manager.send_message(session_id, {
+                    'type': 'assistant_stream',
+                    'chunk': chunk
+                })
+            
+            response = ''.join(response_chunks)
+            
+            # Add response to conversation history
+            session['conversation_history'].append({
+                'role': 'assistant',
+                'content': response,
+                'timestamp': datetime.now().isoformat(),
+                'improvement_type': improvement_type
+            })
+            
+            # Send completion signal
+            await manager.send_message(session_id, {
+                'type': 'assistant_complete'
+            })
+            
+        except Exception as e:
+            logger.error(f"Chat improvement error: {e}")
+            await manager.send_message(session_id, {
+                'type': 'assistant_stream',
+                'chunk': f"I apologize, but I encountered an error while processing your request: {str(e)}"
+            })
+            await manager.send_message(session_id, {
+                'type': 'assistant_complete'
+            })
+    
+    def _analyze_improvement_intent(self, message: str) -> str:
+        """Analyze what type of improvement the user wants"""
+        message_lower = message.lower()
+        
+        if any(word in message_lower for word in ['trust', 'credibility', 'authority', 'trustworthy']):
+            return 'trust_improvement'
+        elif any(word in message_lower for word in ['quality', 'better', 'improve']):
+            return 'quality_improvement'
+        elif any(word in message_lower for word in ['beginner', 'simple', 'easy', 'explain']):
+            return 'beginner_friendly'
+        elif any(word in message_lower for word in ['pain point', 'problem', 'customer']):
+            return 'pain_point_focus'
+        elif any(word in message_lower for word in ['seo', 'keywords', 'search']):
+            return 'seo_optimization'
+        elif any(word in message_lower for word in ['example', 'examples', 'practical']):
+            return 'add_examples'
+        else:
+            return 'general_improvement'
     
     async def _run_reddit_research(self, form_data: Dict, session_id: str) -> Dict:
         """Run Reddit research if available"""
@@ -1018,6 +1137,136 @@ async def generate_page():
                 margin: 0 auto 1rem; 
             }
             
+            /* AI Chat Interface Styles */
+            .chat-container { 
+                background: white; 
+                border-radius: 1rem; 
+                border: 1px solid #e2e8f0; 
+                margin-top: 2rem;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); 
+            }
+            
+            .chat-header { 
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                color: white; 
+                padding: 1rem; 
+                border-radius: 1rem 1rem 0 0; 
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            
+            .chat-header h3 {
+                margin: 0;
+                font-size: 1.1rem;
+                font-weight: 600;
+            }
+            
+            .chat-toggle {
+                background: none;
+                border: none;
+                color: white;
+                font-size: 1.5rem;
+                cursor: pointer;
+                padding: 0;
+                width: 30px;
+                height: 30px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            
+            .chat-toggle:hover {
+                background: rgba(255, 255, 255, 0.1);
+            }
+            
+            .chat-content { 
+                height: 300px;
+                overflow-y: auto; 
+                padding: 1rem; 
+                background: #fafbfc; 
+            }
+            
+            .chat-input-container { 
+                padding: 1rem; 
+                border-top: 1px solid #e2e8f0; 
+                display: flex; 
+                gap: 0.5rem; 
+                background: white; 
+                border-radius: 0 0 1rem 1rem; 
+            }
+            
+            .chat-input-container input { 
+                flex: 1; 
+                padding: 0.8rem; 
+                border: 1px solid #e2e8f0; 
+                border-radius: 0.5rem; 
+                font-size: 0.9rem; 
+            }
+            
+            .chat-input-container input:focus {
+                outline: none;
+                border-color: #667eea;
+                box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            }
+            
+            .chat-input-container button { 
+                padding: 0.8rem 1.5rem; 
+                background: #667eea; 
+                color: white; 
+                border: none; 
+                border-radius: 0.5rem; 
+                font-weight: 600; 
+                cursor: pointer; 
+                transition: all 0.3s ease;
+            }
+            
+            .chat-input-container button:hover {
+                background: #5a6fd8;
+            }
+            
+            .chat-input-container button:disabled {
+                opacity: 0.6;
+                cursor: not-allowed;
+            }
+            
+            .message { 
+                margin-bottom: 1rem; 
+                padding: 1rem; 
+                border-radius: 0.8rem; 
+                font-size: 0.9rem; 
+                line-height: 1.6; 
+            }
+            
+            .message.user { 
+                background: #667eea; 
+                color: white; 
+                margin-left: 2rem; 
+                margin-right: 0;
+            }
+            
+            .message.assistant { 
+                background: #f0fff4; 
+                border: 1px solid #86efac; 
+                color: #065f46; 
+                margin-right: 2rem;
+                margin-left: 0;
+            }
+            
+            .streaming-text { 
+                white-space: pre-wrap; 
+                font-family: inherit; 
+            }
+            
+            .chat-minimized .chat-content {
+                display: none;
+            }
+            
+            .chat-minimized .chat-input-container {
+                display: none;
+            }
+            
             @keyframes spin { 
                 0% { transform: rotate(0deg); } 
                 100% { transform: rotate(360deg); } 
@@ -1082,6 +1331,30 @@ async def generate_page():
                     <button class="action-btn secondary" onclick="regenerateContent()">🔄 Regenerate</button>
                 </div>
             </div>
+            
+            <!-- AI Chat Interface -->
+            <div class="chat-container" id="chatContainer" style="display: none;">
+                <div class="chat-header">
+                    <h3>🤖 AI Content Assistant - Improve Your Content</h3>
+                    <button class="chat-toggle" onclick="toggleChat()">−</button>
+                </div>
+                <div class="chat-content" id="chatContent">
+                    <div class="message assistant">
+                        <strong>AI Assistant:</strong> Content generated successfully! I can help you improve it further. Try asking:
+                        <br><br>
+                        • "Make this more trustworthy and authoritative"<br>
+                        • "Add more practical examples"<br>
+                        • "Make this more beginner-friendly"<br>
+                        • "Optimize for search engines"<br>
+                        • "Address customer pain points better"<br>
+                        • "Improve the quality and engagement"
+                    </div>
+                </div>
+                <div class="chat-input-container">
+                    <input type="text" id="chatInput" placeholder="How would you like to improve the content?" />
+                    <button id="sendChatBtn" onclick="sendChatMessage()">Send</button>
+                </div>
+            </div>
         </div>
         
         <script>
@@ -1089,6 +1362,8 @@ async def generate_page():
             let sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             let generatedContent = '';
             let formData = null;
+            let generationComplete = false;
+            let currentAssistantMessage = null;
             
             // Initialize on page load
             window.addEventListener('load', function() {
@@ -1190,7 +1465,21 @@ async def generate_page():
                         
                     case 'generation_complete':
                         addProgressItem('✅ Content generation completed!', 'completed');
+                        generationComplete = true;
                         displayContent(data.results);
+                        showChatInterface();
+                        break;
+                        
+                    case 'assistant_start':
+                        startAssistantMessage();
+                        break;
+                        
+                    case 'assistant_stream':
+                        appendToChatStream(data.chunk);
+                        break;
+                        
+                    case 'assistant_complete':
+                        completeAssistantMessage();
                         break;
                         
                     case 'error':
@@ -1230,6 +1519,18 @@ async def generate_page():
                 document.getElementById('contentDisplay').scrollIntoView({ behavior: 'smooth' });
             }
             
+            function showChatInterface() {
+                document.getElementById('chatContainer').style.display = 'block';
+                
+                // Scroll to chat
+                setTimeout(() => {
+                    document.getElementById('chatContainer').scrollIntoView({ 
+                        behavior: 'smooth', 
+                        block: 'start' 
+                    });
+                }, 500);
+            }
+            
             function formatContent(content) {
                 // Convert markdown-style content to HTML
                 return content
@@ -1247,6 +1548,99 @@ async def generate_page():
                     .replace(/<p><ul>/g, '<ul>')
                     .replace(/<\\/ul><\\/p>/g, '</ul>');
             }
+            
+            // Chat Functions
+            function toggleChat() {
+                const chatContainer = document.getElementById('chatContainer');
+                const toggleBtn = document.querySelector('.chat-toggle');
+                
+                if (chatContainer.classList.contains('chat-minimized')) {
+                    chatContainer.classList.remove('chat-minimized');
+                    toggleBtn.textContent = '−';
+                } else {
+                    chatContainer.classList.add('chat-minimized');
+                    toggleBtn.textContent = '+';
+                }
+            }
+            
+            function sendChatMessage() {
+                const chatInput = document.getElementById('chatInput');
+                const sendBtn = document.getElementById('sendChatBtn');
+                const message = chatInput.value.trim();
+                
+                if (!message || !generationComplete || !ws || ws.readyState !== WebSocket.OPEN) {
+                    return;
+                }
+                
+                // Disable input while processing
+                chatInput.disabled = true;
+                sendBtn.disabled = true;
+                sendBtn.textContent = 'Sending...';
+                
+                // Add user message to chat
+                const chatContent = document.getElementById('chatContent');
+                const userMessage = document.createElement('div');
+                userMessage.className = 'message user';
+                userMessage.innerHTML = `<strong>You:</strong> ${message}`;
+                chatContent.appendChild(userMessage);
+                
+                // Send message via WebSocket
+                try {
+                    ws.send(JSON.stringify({
+                        type: 'chat_message',
+                        message: message
+                    }));
+                } catch (error) {
+                    console.error('Failed to send chat message:', error);
+                }
+                
+                // Clear input and scroll
+                chatInput.value = '';
+                chatContent.scrollTop = chatContent.scrollHeight;
+                
+                // Re-enable input
+                setTimeout(() => {
+                    chatInput.disabled = false;
+                    sendBtn.disabled = false;
+                    sendBtn.textContent = 'Send';
+                    chatInput.focus();
+                }, 1000);
+            }
+            
+            function startAssistantMessage() {
+                const chatContent = document.getElementById('chatContent');
+                currentAssistantMessage = document.createElement('div');
+                currentAssistantMessage.className = 'message assistant';
+                currentAssistantMessage.innerHTML = '<strong>AI Assistant:</strong> <span class="streaming-text"></span>';
+                chatContent.appendChild(currentAssistantMessage);
+                chatContent.scrollTop = chatContent.scrollHeight;
+            }
+            
+            function appendToChatStream(chunk) {
+                if (currentAssistantMessage) {
+                    const streamingText = currentAssistantMessage.querySelector('.streaming-text');
+                    streamingText.textContent += chunk;
+                    document.getElementById('chatContent').scrollTop = document.getElementById('chatContent').scrollHeight;
+                }
+            }
+            
+            function completeAssistantMessage() {
+                currentAssistantMessage = null;
+            }
+            
+            // Event Listeners
+            document.addEventListener('DOMContentLoaded', function() {
+                // Chat input enter key
+                const chatInput = document.getElementById('chatInput');
+                if (chatInput) {
+                    chatInput.addEventListener('keypress', function(e) {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            sendChatMessage();
+                        }
+                    });
+                }
+            });
             
             function copyContent() {
                 const content = document.getElementById('generatedContent').innerText;
@@ -1313,6 +1707,12 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                     form_data = message_data['data']
                     asyncio.create_task(
                         content_system.generate_content_streaming(form_data, session_id)
+                    )
+                elif message_data['type'] == 'chat_message':
+                    # Handle chat message for improvements
+                    chat_message = message_data['message']
+                    asyncio.create_task(
+                        content_system.process_chat_message(session_id, chat_message)
                     )
                 elif message_data['type'] == 'ping':
                     # Health check
