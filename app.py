@@ -286,14 +286,24 @@ class AdvancedAgentLoader:
             'success_rate': len(self.loaded_agents) / (len(self.loaded_agents) + len(self.failed_imports)) if (len(self.loaded_agents) + len(self.failed_imports)) > 0 else 0
         }
 
-# Configuration
+# Updated Configuration for Railway
 class Config:
     ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
     REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID", "")
     REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET", "")
+    
+    # Railway provides PORT environment variable
     PORT = int(os.getenv("PORT", 8002))
-    DEBUG_MODE = os.getenv("DEBUG_MODE", "True").lower() == "true"
+    
+    # Railway-specific settings
+    HOST = os.getenv("HOST", "0.0.0.0")
+    
+    # Enable debug mode only in development
+    DEBUG_MODE = os.getenv("RAILWAY_ENVIRONMENT") != "production"
+    
+    # Environment detection
+    ENVIRONMENT = os.getenv("RAILWAY_ENVIRONMENT", "development")
 
 config = Config()
 
@@ -1037,7 +1047,15 @@ This guide provides practical, actionable advice for {topic} based on real custo
 
 # Initialize FastAPI
 app = FastAPI(title="Zee SEO Tool v5.0 - Complete Professional System")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# Updated CORS middleware for Railway
+app.add_middleware(
+    CORSMiddleware, 
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"], 
+    allow_headers=["*"]
+)
 
 # Initialize components
 manager = ConnectionManager()
@@ -1070,7 +1088,7 @@ async def home():
 
 @app.get("/app", response_class=HTMLResponse) 
 async def professional_app_interface():
-    """Complete professional application interface"""
+    """Complete professional application interface with fixed WebSocket URL"""
     return HTMLResponse(content="""
     <!DOCTYPE html>
     <html lang="en">
@@ -1279,12 +1297,19 @@ async def professional_app_interface():
             let analysisComplete = false;
             let currentAssistantMessage = null;
             
-            // Initialize WebSocket connection
+            // Initialize WebSocket connection with dynamic URL
             function initWebSocket() {
                 try {
-                    ws = new WebSocket(`ws://localhost:8002/ws/${sessionId}`);
+                    // Dynamically determine WebSocket URL based on current location
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const host = window.location.host; // This will use the Railway domain
+                    const wsUrl = `${protocol}//${host}/ws/${sessionId}`;
+                    
+                    console.log('Connecting to WebSocket:', wsUrl);
+                    ws = new WebSocket(wsUrl);
                     
                     ws.onopen = function() {
+                        console.log('WebSocket connected successfully');
                         document.getElementById('connectionStatus').textContent = 'Connected';
                         document.getElementById('connectionStatus').className = 'status-indicator status-connected';
                     };
@@ -1298,17 +1323,27 @@ async def professional_app_interface():
                         }
                     };
                     
-                    ws.onclose = function() {
+                    ws.onclose = function(event) {
+                        console.log('WebSocket closed:', event.code, event.reason);
                         document.getElementById('connectionStatus').textContent = 'Disconnected';
                         document.getElementById('connectionStatus').className = 'status-indicator status-disconnected';
+                        
+                        // Attempt to reconnect after 3 seconds
+                        setTimeout(() => {
+                            if (!analysisComplete) {
+                                console.log('Attempting to reconnect...');
+                                initWebSocket();
+                            }
+                        }, 3000);
                     };
                     
                     ws.onerror = function(error) {
                         console.error('WebSocket error:', error);
-                        addUpdate('❌ WebSocket connection error', 'error');
+                        addUpdate('❌ WebSocket connection error - attempting to reconnect...', 'error');
                     };
                 } catch (error) {
                     console.error('Failed to initialize WebSocket:', error);
+                    addUpdate('❌ Failed to initialize WebSocket connection', 'error');
                 }
             }
             
@@ -1373,6 +1408,10 @@ async def professional_app_interface():
                         
                     case 'assistant_complete':
                         completeAssistantMessage();
+                        break;
+                        
+                    case 'error':
+                        addUpdate(`❌ Error: ${data.message}`, 'error');
                         break;
                 }
             }
@@ -1444,7 +1483,13 @@ async def professional_app_interface():
                 const chatInput = document.getElementById('chatInput');
                 const message = chatInput.value.trim();
                 
-                if (!message || !analysisComplete || !ws || ws.readyState !== WebSocket.OPEN) return;
+                if (!message || !analysisComplete || !ws || ws.readyState !== WebSocket.OPEN) {
+                    if (!ws || ws.readyState !== WebSocket.OPEN) {
+                        addUpdate('❌ WebSocket not connected. Attempting to reconnect...', 'error');
+                        initWebSocket();
+                    }
+                    return;
+                }
                 
                 // Add user message
                 const chatContent = document.getElementById('chatContent');
@@ -1454,16 +1499,22 @@ async def professional_app_interface():
                 chatContent.appendChild(userMessage);
                 
                 // Send via WebSocket
-                ws.send(JSON.stringify({
-                    type: 'chat_message',
-                    message: message
-                }));
+                try {
+                    ws.send(JSON.stringify({
+                        type: 'chat_message',
+                        message: message
+                    }));
+                } catch (error) {
+                    console.error('Failed to send message:', error);
+                    addUpdate('❌ Failed to send message. Reconnecting...', 'error');
+                    initWebSocket();
+                }
                 
                 chatInput.value = '';
                 chatContent.scrollTop = chatContent.scrollHeight;
             }
             
-            // Form submission
+            // Form submission with better error handling
             document.getElementById('analysisForm').addEventListener('submit', async function(e) {
                 e.preventDefault();
                 
@@ -1472,7 +1523,8 @@ async def professional_app_interface():
                 data.session_id = sessionId;
                 
                 try {
-                    const response = await fetch('/analyze-professional', {
+                    // Use dynamic URL for API calls too
+                    const response = await fetch(`${window.location.origin}/analyze-professional`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(data)
@@ -1481,7 +1533,12 @@ async def professional_app_interface():
                     if (!response.ok) {
                         throw new Error(`Server error: ${response.status}`);
                     }
+                    
+                    const result = await response.json();
+                    console.log('Analysis started:', result);
+                    
                 } catch (error) {
+                    console.error('Analysis submission error:', error);
                     addUpdate(`❌ Error: ${error.message}`, 'error');
                     document.getElementById('submitBtn').disabled = false;
                 }
@@ -1494,30 +1551,56 @@ async def professional_app_interface():
                 }
             });
             
-            // Initialize on page load
+            // Initialize on page load with retry mechanism
             window.onload = function() {
+                console.log('Page loaded, initializing WebSocket...');
                 initWebSocket();
+                
+                // Check connection status every 30 seconds
+                setInterval(() => {
+                    if (ws && ws.readyState === WebSocket.CLOSED && !analysisComplete) {
+                        console.log('WebSocket disconnected, attempting to reconnect...');
+                        initWebSocket();
+                    }
+                }, 30000);
             };
         </script>
     </body>
     </html>
     """)
 
+# Updated WebSocket endpoint with better error handling
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
-    await manager.connect(websocket, session_id)
     try:
+        await manager.connect(websocket, session_id)
+        logger.info(f"WebSocket connected for session: {session_id}")
+        
         while True:
-            data = await websocket.receive_text()
             try:
+                data = await websocket.receive_text()
                 message_data = json.loads(data)
+                
                 if message_data['type'] == 'chat_message':
                     await zee_system.process_chat_message(session_id, message_data['message'])
                 elif message_data['type'] == 'ping':
                     await websocket.send_text(json.dumps({'type': 'pong'}))
-            except json.JSONDecodeError:
+                    
+            except json.JSONDecodeError as e:
                 logger.warning(f"Invalid JSON received: {data}")
+                await websocket.send_text(json.dumps({
+                    'type': 'error',
+                    'message': 'Invalid message format'
+                }))
+            except Exception as e:
+                logger.error(f"WebSocket message error: {e}")
+                break
+                
     except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected for session: {session_id}")
+        manager.disconnect(session_id)
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
         manager.disconnect(session_id)
 
 @app.post("/analyze-professional")
@@ -1546,6 +1629,9 @@ async def debug_agents_endpoint():
         "total_active_instances": len(zee_system.agents),
         "failed_imports": load_report['failed'],
         "success_rate": f"{load_report['success_rate']*100:.1f}%",
+        "environment": config.ENVIRONMENT,
+        "host": config.HOST,
+        "port": config.PORT,
         "features": [
             "Advanced agent auto-discovery",
             "Real Reddit API with subreddit discovery", 
@@ -1553,13 +1639,32 @@ async def debug_agents_endpoint():
             "Complete E-E-A-T assessment",
             "Comprehensive quality scoring",
             "Live metrics and real-time updates",
-            "Professional interface with all features"
+            "Professional interface with all features",
+            "Railway deployment ready"
         ]
     })
 
+# Health check endpoint for Railway
+@app.get("/health")
+async def health_check():
+    return JSONResponse({
+        "status": "healthy",
+        "agents_loaded": len(zee_system.agents),
+        "environment": config.ENVIRONMENT,
+        "timestamp": datetime.now().isoformat()
+    })
+
+# Updated server startup for Railway
 if __name__ == "__main__":
-    print("🚀 Starting Zee SEO Tool v5.0 - Complete Professional System...")
+    print("🚀 Starting Zee SEO Tool v5.0 for Railway Deployment...")
     print("=" * 80)
+    
+    # Show configuration
+    print(f"🌐 Host: {config.HOST}")
+    print(f"🔌 Port: {config.PORT}")
+    print(f"🐛 Debug: {config.DEBUG_MODE}")
+    print(f"🔧 Environment: {config.ENVIRONMENT}")
+    print()
     
     # Show agent loading report
     load_report = zee_system.agent_loader.get_load_report()
@@ -1585,19 +1690,33 @@ if __name__ == "__main__":
         print(f"   • {agent_name}")
     
     print("=" * 80)
-    print("🌟 PROFESSIONAL FEATURES ACTIVE:")
-    print("   ✅ Advanced agent auto-discovery system")
-    print("   ✅ Real Reddit API scraping with subreddit discovery")
-    print("   ✅ Claude-style streaming chat with all your agents")
-    print("   ✅ Live metrics updates and real-time analysis")
-    print("   ✅ Complete E-E-A-T assessment and quality scoring")
-    print("   ✅ Professional interface with comprehensive features")
+    print("🌟 RAILWAY DEPLOYMENT FEATURES:")
+    print("   ✅ Dynamic WebSocket URL detection")
+    print("   ✅ Railway-compatible CORS settings")
+    print("   ✅ Environment-aware configuration")
+    print("   ✅ Automatic reconnection on disconnect")
+    print("   ✅ Health check endpoint")
+    print("   ✅ Professional streaming chat interface")
     print("=" * 80)
-    print(f"🚀 Access the application at: http://localhost:{config.PORT}/")
-    print(f"🔧 Debug agents at: http://localhost:{config.PORT}/debug/agents")
+    
+    if config.ENVIRONMENT == "production":
+        print(f"🚀 Production mode - Access at Railway URL")
+    else:
+        print(f"🚀 Development mode - Access at: http://localhost:{config.PORT}/")
+    
+    print(f"🔧 Debug endpoint: /debug/agents")
+    print(f"❤️  Health check: /health")
     print("=" * 80)
     
     try:
-        uvicorn.run(app, host="0.0.0.0", port=config.PORT)
+        # Updated uvicorn configuration for Railway
+        uvicorn.run(
+            app, 
+            host=config.HOST, 
+            port=config.PORT,
+            log_level="info" if config.DEBUG_MODE else "warning",
+            access_log=config.DEBUG_MODE
+        )
     except Exception as e:
         print(f"❌ Failed to start server: {e}")
+        raise e
