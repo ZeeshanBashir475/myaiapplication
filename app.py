@@ -278,9 +278,10 @@ class ProfessionalContentSystem:
         
         # Send start signal
         await manager.send_message(session_id, {
-            'type': 'generation_start',
-            'message': f'🚀 Starting content generation for: {form_data["topic"]}'
-        })
+    'type': 'content_stream_complete',
+    'content': generated_content,
+    'word_count': len(generated_content.split())
+})
         
         try:
             # Stage 1: Research phase
