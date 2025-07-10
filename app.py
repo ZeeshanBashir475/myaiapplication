@@ -307,6 +307,35 @@ class Config:
 
 config = Config()
 
+# Enhanced form validation
+def validate_form_data(form_data: Dict[str, str]) -> Dict[str, str]:
+    """Enhanced form validation with quality controls"""
+    errors = {}
+    
+    # Validate topic
+    topic = form_data.get('topic', '').strip()
+    if len(topic) < 10:
+        errors['topic'] = 'Topic must be at least 10 characters and descriptive'
+    elif len(topic.split()) < 3:
+        errors['topic'] = 'Topic should contain at least 3 words for better specificity'
+    
+    # Validate target audience with quality checks
+    audience = form_data.get('target_audience', '').strip()
+    if len(audience) < 15:
+        errors['target_audience'] = 'Target audience must be specific and detailed (at least 15 characters)'
+    elif not any(word in audience.lower() for word in ['aged', 'years', 'who', 'looking', 'seeking', 'need', 'want']):
+        errors['target_audience'] = 'Target audience should be more specific (include demographics, needs, or characteristics)'
+    
+    # Validate required fields
+    required_fields = ['content_type', 'content_goal', 'ai_instructions', 'unique_value_prop', 'customer_pain_points']
+    for field in required_fields:
+        if not form_data.get(field, '').strip():
+            errors[field] = f'{field.replace("_", " ").title()} is required'
+        elif len(form_data.get(field, '').strip()) < 20:
+            errors[field] = f'{field.replace("_", " ").title()} must be at least 20 characters'
+    
+    return errors
+
 # Enhanced LLM Client with Streaming
 class StreamingLLMClient:
     """Enhanced LLM client with streaming support"""
@@ -427,7 +456,7 @@ class ProfessionalStreamingChatAgent:
         """Analyze what type of improvement the user wants"""
         message_lower = message.lower()
         
-        if any(word in message_lower for word in ['trust', 'credibility', 'authority', 'eeat']):
+        if any(word in message_lower for word in ['trust', 'credibility', 'authority', 'trustworthy']):
             return 'trust_improvement'
         elif any(word in message_lower for word in ['quality', 'better', 'improve']):
             return 'quality_improvement'
@@ -489,7 +518,9 @@ Provide specific, actionable recommendations. If they're asking to modify conten
         context_parts = [
             f"Topic: {form_data.get('topic', 'Unknown')}",
             f"Target Audience: {form_data.get('target_audience', 'General')}",
-            f"Industry: {form_data.get('industry', 'General')}"
+            f"Industry: {form_data.get('industry', 'General')}",
+            f"Content Type: {form_data.get('content_type', 'guide')}",
+            f"Content Goal: {form_data.get('content_goal', 'educate_audience')}"
         ]
         
         # Add Reddit insights if available
@@ -697,9 +728,9 @@ class ZeeSEOProfessionalSystem:
                 results['analysis_stages']['content_type'] = content_type_data
             except Exception as e:
                 logger.error(f"Content classification error: {e}")
-                results['analysis_stages']['content_type'] = {'primary_content_type': 'comprehensive_guide'}
+                results['analysis_stages']['content_type'] = {'primary_content_type': form_data.get('content_type', 'guide')}
         else:
-            results['analysis_stages']['content_type'] = {'primary_content_type': 'comprehensive_guide'}
+            results['analysis_stages']['content_type'] = {'primary_content_type': form_data.get('content_type', 'guide')}
         
         await manager.send_message(session_id, {
             'type': 'stage_complete',
@@ -794,7 +825,7 @@ class ZeeSEOProfessionalSystem:
                     topic=form_data.get('topic', ''),
                     industry=form_data.get('industry', ''),
                     target_audience=form_data.get('target_audience', ''),
-                    business_goals=form_data.get('business_goals', '')
+                    business_goals=form_data.get('content_goal', '')
                 )
                 results['analysis_stages']['topic_research'] = topic_research
             except Exception as e:
@@ -809,11 +840,11 @@ class ZeeSEOProfessionalSystem:
         })
     
     async def _run_content_generation_streaming(self, session_id: str, form_data: dict, results: dict):
-        """Run content generation with streaming output"""
+        """Run content generation with enhanced streaming output and proper formatting"""
         await manager.send_message(session_id, {
             'type': 'stage_update',
             'stage': 'content_generation',
-            'message': '✍️ Generating comprehensive content...'
+            'message': '✍️ Generating comprehensive content with professional insights...'
         })
         
         await manager.send_message(session_id, {
@@ -822,9 +853,11 @@ class ZeeSEOProfessionalSystem:
         
         if 'content_generator' in self.agents:
             try:
+                # Enhanced content generation with all form data
                 generated_content = self.agents['content_generator'].generate_complete_content(
                     topic=form_data.get('topic', ''),
-                    content_type=results['analysis_stages'].get('content_type', {}).get('primary_content_type', 'guide'),
+                    content_type=form_data.get('content_type', 'guide'),
+                    target_audience=form_data.get('target_audience', ''),
                     reddit_insights=results['analysis_stages'].get('reddit_insights', {}),
                     journey_data=results['analysis_stages'].get('intent', {}),
                     business_context=form_data,
@@ -833,18 +866,22 @@ class ZeeSEOProfessionalSystem:
                 )
                 results['generated_content'] = generated_content
                 self.sessions[session_id]['current_content'] = generated_content
+                
             except Exception as e:
                 logger.error(f"Content generation error: {e}")
-                results['generated_content'] = self._fallback_content(form_data)
-                self.sessions[session_id]['current_content'] = results['generated_content']
+                generated_content = self._enhanced_fallback_content(form_data)
+                results['generated_content'] = generated_content
+                self.sessions[session_id]['current_content'] = generated_content
         else:
-            results['generated_content'] = self._fallback_content(form_data)
-            self.sessions[session_id]['current_content'] = results['generated_content']
+            generated_content = self._enhanced_fallback_content(form_data)
+            results['generated_content'] = generated_content
+            self.sessions[session_id]['current_content'] = generated_content
         
+        # Send the complete content to frontend
         await manager.send_message(session_id, {
             'type': 'content_stream_complete',
-            'content': results['generated_content'],
-            'word_count': len(results['generated_content'].split())
+            'content': generated_content,
+            'word_count': len(generated_content.split())
         })
     
     async def _run_quality_assessment(self, session_id: str, form_data: dict, results: dict):
@@ -918,7 +955,7 @@ class ZeeSEOProfessionalSystem:
             try:
                 human_inputs = self.agents['human_input'].identify_human_inputs(
                     topic=form_data.get('topic', ''),
-                    content_type=results['analysis_stages'].get('content_type', {}).get('primary_content_type', 'guide'),
+                    content_type=form_data.get('content_type', 'guide'),
                     business_context=form_data
                 )
                 results['analysis_stages']['human_inputs'] = human_inputs
@@ -998,42 +1035,130 @@ class ZeeSEOProfessionalSystem:
             }
         }
     
-    def _fallback_content(self, form_data: Dict) -> str:
-        """Generate comprehensive fallback content"""
+    def _enhanced_fallback_content(self, form_data: Dict) -> str:
+        """Generate comprehensive fallback content based on form data"""
         topic = form_data.get('topic', 'the topic')
         audience = form_data.get('target_audience', 'general audience')
+        content_type = form_data.get('content_type', 'guide')
+        content_goal = form_data.get('content_goal', 'educate_audience')
+        ai_instructions = form_data.get('ai_instructions', '')
+        unique_value = form_data.get('unique_value_prop', '')
+        pain_points = form_data.get('customer_pain_points', '')
+        word_count_target = int(form_data.get('word_count_target', 1500))
         
-        return f"""# The Complete {topic.title()} Guide
-
-## Overview
-This comprehensive guide addresses the key challenges and questions surrounding {topic} for {audience}.
-
-## Understanding the Real Challenges
-Based on extensive research, the most common pain points with {topic} include:
-- Confusion about where to start
-- Overwhelming number of options
-- Cost and budget concerns
-- Technical complexity
-- Time constraints
-
-## Expert Solutions
-Here are proven strategies for {topic}:
-
-### 1. Start with the Basics
-Before diving into complex aspects, ensure you understand the fundamentals of {topic}.
-
-### 2. Address Cost Concerns
-Budget considerations are crucial when dealing with {topic}. Here's how to manage costs effectively.
-
-### 3. Simplify the Process
-Break down {topic} into manageable steps to avoid overwhelm.
-
-## Conclusion
-This guide provides practical, actionable advice for {topic} based on real customer needs and expert insights.
-
-*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*
-*Word count: ~200 words*
-"""
+        # Content type specific titles and structures
+        content_structures = {
+            'blog_post': f"# {topic.title()}: A Complete Guide\n\n",
+            'landing_page': f"# {topic.title()}\n## The Ultimate Solution for {audience}\n\n",
+            'product_page': f"# {topic.title()}\n## Perfect for {audience}\n\n",
+            'service_page': f"# Professional {topic.title()} Services\n## Tailored for {audience}\n\n",
+            'guide': f"# The Complete {topic.title()} Guide\n## Everything {audience} Need to Know\n\n",
+            'case_study': f"# Case Study: {topic.title()}\n## How We Helped {audience}\n\n",
+            'comparison': f"# {topic.title()}: Complete Comparison Guide\n## Best Options for {audience}\n\n",
+            'listicle': f"# Top Strategies for {topic.title()}\n## Essential Tips for {audience}\n\n",
+            'faq': f"# {topic.title()}: Frequently Asked Questions\n## Answers {audience} Need\n\n",
+            'review': f"# {topic.title()}: Comprehensive Review\n## Honest Assessment for {audience}\n\n"
+        }
+        
+        content = content_structures.get(content_type, content_structures['guide'])
+        
+        # Add introduction based on content goal
+        goal_intros = {
+            'generate_leads': f"Discover how {topic} can transform your situation. This comprehensive guide provides everything {audience} need to make informed decisions.",
+            'drive_sales': f"Ready to get started with {topic}? This guide shows you exactly what you need to know to make the best choice.",
+            'educate_audience': f"Understanding {topic} can be complex. This detailed guide breaks down everything {audience} need to know.",
+            'build_authority': f"As experts in {topic}, we've compiled this comprehensive resource for {audience} based on years of experience.",
+            'improve_seo': f"This complete guide to {topic} covers all aspects that {audience} search for most frequently.",
+            'support_customers': f"Having issues with {topic}? This guide addresses the most common challenges faced by {audience}.",
+            'brand_awareness': f"Learn about {topic} from industry leaders. This guide showcases proven strategies for {audience}."
+        }
+        
+        content += goal_intros.get(content_goal, goal_intros['educate_audience'])
+        content += "\n\n"
+        
+        # Add main sections
+        content += "## Understanding the Challenge\n\n"
+        if pain_points:
+            content += f"Based on extensive research, {audience} commonly face these challenges:\n\n"
+            for point in pain_points.split(',')[:5]:
+                content += f"- {point.strip()}\n"
+            content += "\n"
+        else:
+            content += f"The most common challenges with {topic} include:\n"
+            content += "- Lack of clear, reliable information\n"
+            content += "- Overwhelming number of options\n"
+            content += "- Cost and budget concerns\n"
+            content += "- Time constraints and complexity\n"
+            content += "- Uncertainty about the best approach\n\n"
+        
+        # Add expert solutions section
+        content += "## Expert Solutions and Strategies\n\n"
+        if unique_value:
+            content += f"### Our Unique Approach\n\n{unique_value}\n\n"
+        
+        content += f"### Key Strategies for {audience}\n\n"
+        content += "#### 1. Start with Clear Objectives\n"
+        content += f"Before diving into {topic}, establish clear goals and expectations. This foundation ensures you make the right decisions from the start.\n\n"
+        
+        content += "#### 2. Understand Your Options\n"
+        content += f"There are multiple approaches to {topic}. Understanding the pros and cons of each option helps you choose the best path forward.\n\n"
+        
+        content += "#### 3. Consider Long-term Impact\n"
+        content += f"The decisions you make regarding {topic} today will impact your future. Consider both immediate and long-term consequences.\n\n"
+        
+        content += "#### 4. Seek Expert Guidance\n"
+        content += f"Complex decisions around {topic} benefit from professional insight. Don't hesitate to consult with experts in the field.\n\n"
+        
+        # Add practical implementation
+        content += "## Practical Implementation\n\n"
+        content += f"### Step-by-Step Approach\n\n"
+        content += "1. **Assessment**: Evaluate your current situation and specific needs\n"
+        content += "2. **Research**: Gather relevant information and compare options\n"
+        content += "3. **Planning**: Develop a clear strategy and timeline\n"
+        content += "4. **Implementation**: Execute your plan with careful monitoring\n"
+        content += "5. **Review**: Assess results and make necessary adjustments\n\n"
+        
+        # Add common mistakes section
+        content += "## Common Mistakes to Avoid\n\n"
+        content += f"When dealing with {topic}, avoid these common pitfalls:\n\n"
+        content += "- Rushing into decisions without proper research\n"
+        content += "- Focusing only on cost without considering value\n"
+        content += "- Ignoring long-term implications\n"
+        content += "- Not seeking professional advice when needed\n"
+        content += "- Failing to regularly review and adjust your approach\n\n"
+        
+        # Add FAQ section
+        content += "## Frequently Asked Questions\n\n"
+        content += f"### What should {audience} know first about {topic}?\n"
+        content += f"The most important thing to understand is that {topic} requires careful consideration of your specific situation and needs.\n\n"
+        
+        content += f"### How long does it typically take to see results with {topic}?\n"
+        content += "Results vary depending on your specific situation, but most people begin to see positive outcomes within a few weeks to months.\n\n"
+        
+        content += f"### Is professional help necessary for {topic}?\n"
+        content += "While not always required, professional guidance can significantly improve outcomes and help avoid costly mistakes.\n\n"
+        
+        # Add conclusion
+        content += "## Conclusion\n\n"
+        content += f"Success with {topic} requires understanding, planning, and often professional guidance. "
+        content += f"By following the strategies outlined in this guide, {audience} can achieve their objectives more effectively.\n\n"
+        
+        if unique_value:
+            content += f"Remember, {unique_value.split('.')[0]}. We're here to help you navigate {topic} successfully.\n\n"
+        
+        # Add call to action based on content goal
+        if content_goal in ['generate_leads', 'drive_sales']:
+            content += "## Ready to Get Started?\n\n"
+            content += f"Take the next step with {topic}. Contact our experts today for personalized guidance.\n\n"
+        
+        # Add metadata
+        content += f"---\n\n"
+        content += f"*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n"
+        content += f"*Content type: {content_type.replace('_', ' ').title()}*\n"
+        content += f"*Target audience: {audience}*\n"
+        content += f"*Word count: ~{len(content.split())} words*\n"
+        
+        return content
     
     async def process_chat_message(self, session_id: str, message: str):
         """Process chat message with the professional streaming agent"""
@@ -1083,12 +1208,16 @@ async def home():
     <a href="/app" style="background:white;color:#667eea;padding:1rem 2rem;text-decoration:none;border-radius:1rem;font-weight:bold;margin-top:2rem;display:inline-block;">
     🎬 Launch Professional Analysis Dashboard
     </a>
+    <div style="margin-top: 2rem; font-size: 0.9rem; color: #e2e8f0;">
+        Developed with ❤️ by <strong>Zeeshan Bashir</strong>
+    </div>
     </body></html>
     """)
 
 @app.get("/app", response_class=HTMLResponse) 
 async def professional_app_interface():
-    """Complete professional application interface with fixed WebSocket URL"""
+    """Complete professional application interface with enhanced features"""
+    # Insert the complete HTML content from the enhanced_professional_app artifact
     return HTMLResponse(content="""
     <!DOCTYPE html>
     <html lang="en">
@@ -1100,15 +1229,15 @@ async def professional_app_interface():
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; color: #1a202c; line-height: 1.6; }
             .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1.5rem 0; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-            .header-content { max-width: 1400px; margin: 0 auto; padding: 0 2rem; display: flex; justify-content: space-between; align-items: center; }
+            .header-content { max-width: 1600px; margin: 0 auto; padding: 0 2rem; display: flex; justify-content: space-between; align-items: center; }
             .header-title { font-size: 1.5rem; font-weight: 700; }
             .status-indicator { padding: 0.5rem 1rem; border-radius: 0.5rem; font-weight: 600; }
             .status-connected { background: #065f46; color: #d1fae5; }
             .status-disconnected { background: #7f1d1d; color: #fecaca; }
             .status-analyzing { background: #92400e; color: #fef3c7; }
-            .container { max-width: 1400px; margin: 0 auto; padding: 2rem; display: grid; grid-template-columns: 400px 1fr 350px; gap: 2rem; min-height: calc(100vh - 100px); }
+            .container { max-width: 1600px; margin: 0 auto; padding: 2rem; display: grid; grid-template-columns: 400px 1fr 350px; gap: 2rem; min-height: calc(100vh - 100px); }
             .panel { background: white; border-radius: 1rem; padding: 2rem; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0; }
-            .form-panel { position: sticky; top: 120px; height: fit-content; }
+            .form-panel { position: sticky; top: 120px; height: fit-content; max-height: calc(100vh - 140px); overflow-y: auto; }
             .metrics-panel { position: sticky; top: 120px; height: fit-content; }
             .main-area { display: flex; flex-direction: column; gap: 2rem; }
             .form-group { margin-bottom: 1.5rem; }
@@ -1116,11 +1245,22 @@ async def professional_app_interface():
             .label-desc { font-size: 0.85rem; color: #4a5568; margin-bottom: 0.5rem; }
             .input, .textarea, .select { width: 100%; padding: 0.75rem; border: 2px solid #e2e8f0; border-radius: 0.5rem; font-size: 0.9rem; transition: all 0.3s ease; }
             .input:focus, .textarea:focus, .select:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
+            .input.error { border-color: #ef4444; }
+            .error-message { color: #ef4444; font-size: 0.8rem; margin-top: 0.25rem; }
             .textarea { resize: vertical; min-height: 80px; }
             .button { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1rem 2rem; border: none; border-radius: 0.75rem; font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.3s ease; width: 100%; }
             .button:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4); }
             .button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
             .updates-container { background: white; border-radius: 1rem; padding: 2rem; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0; min-height: 400px; }
+            .content-display { background: white; border-radius: 1rem; padding: 2rem; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0; min-height: 500px; display: none; }
+            .content-display.visible { display: block; }
+            .content-display h1, .content-display h2, .content-display h3 { color: #2d3748; margin: 1rem 0 0.5rem 0; }
+            .content-display h1 { font-size: 1.8rem; border-bottom: 2px solid #667eea; padding-bottom: 0.5rem; }
+            .content-display h2 { font-size: 1.4rem; color: #4a5568; }
+            .content-display h3 { font-size: 1.2rem; color: #667eea; }
+            .content-display p { margin-bottom: 1rem; line-height: 1.7; }
+            .content-display ul, .content-display ol { margin: 1rem 0 1rem 2rem; }
+            .content-display li { margin-bottom: 0.5rem; }
             .update-item { padding: 1rem; margin-bottom: 1rem; border-radius: 0.5rem; border-left: 4px solid #667eea; background: #f8fafc; font-size: 0.9rem; }
             .update-item.completed { border-left-color: #10b981; background: #f0fff4; }
             .update-item.error { border-left-color: #ef4444; background: #fef2f2; }
@@ -1139,7 +1279,20 @@ async def professional_app_interface():
             .streaming-text { white-space: pre-wrap; font-family: inherit; }
             .subreddit-list { background: #f0f9ff; padding: 1rem; border-radius: 0.5rem; margin: 0.5rem 0; font-size: 0.9rem; border-left: 4px solid #0ea5e9; }
             .progress-indicator { background: #fef3c7; padding: 0.75rem; border-radius: 0.5rem; margin: 0.5rem 0; font-size: 0.9rem; border-left: 4px solid #f59e0b; }
-            @media (max-width: 1200px) { .container { grid-template-columns: 1fr; } .form-panel, .metrics-panel { position: relative; top: auto; } }
+            .subreddit-suggestions { background: #f8fafc; border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem; border: 1px solid #e2e8f0; }
+            .subreddit-suggestions h4 { color: #2d3748; margin-bottom: 0.5rem; font-size: 0.9rem; }
+            .subreddit-tag { display: inline-block; background: #667eea; color: white; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.8rem; margin: 0.25rem; }
+            .content-tabs { display: flex; border-bottom: 2px solid #e2e8f0; margin-bottom: 1rem; }
+            .tab { padding: 0.75rem 1.5rem; cursor: pointer; border-bottom: 2px solid transparent; font-weight: 600; color: #4a5568; }
+            .tab.active { color: #667eea; border-bottom-color: #667eea; }
+            .tab-content { display: none; }
+            .tab-content.active { display: block; }
+            .copy-button { background: #10b981; color: white; padding: 0.5rem 1rem; border: none; border-radius: 0.5rem; font-size: 0.9rem; cursor: pointer; margin-top: 1rem; }
+            .footer { background: #2d3748; color: white; text-align: center; padding: 2rem; margin-top: 3rem; }
+            .footer-content { max-width: 1200px; margin: 0 auto; }
+            .footer-title { font-size: 1.2rem; font-weight: 700; margin-bottom: 0.5rem; }
+            .footer-subtitle { color: #a0aec0; font-size: 0.9rem; }
+            @media (max-width: 1200px) { .container { grid-template-columns: 1fr; } .form-panel, .metrics-panel { position: relative; top: auto; max-height: none; } }
         </style>
     </head>
     <body>
@@ -1151,32 +1304,86 @@ async def professional_app_interface():
         </div>
         
         <div class="container">
-            <!-- Form Panel -->
+            <!-- Enhanced Form Panel -->
             <div class="panel form-panel">
                 <h3 style="margin-bottom: 1.5rem; color: #2d3748;">🎯 Analysis Configuration</h3>
+                
+                <!-- Subreddit Suggestions -->
+                <div class="subreddit-suggestions" id="subredditSuggestions" style="display: none;">
+                    <h4>📱 Discovered Subreddits</h4>
+                    <div id="subredditTags"></div>
+                </div>
+                
                 <form id="analysisForm">
+                    <div class="form-group">
+                        <label class="label">Content Type *</label>
+                        <div class="label-desc">What type of content do you want to create?</div>
+                        <select class="select" name="content_type" required>
+                            <option value="">Choose content type...</option>
+                            <option value="blog_post">📝 Blog Post</option>
+                            <option value="landing_page">🎯 Landing Page</option>
+                            <option value="product_page">🛍️ Product Page</option>
+                            <option value="service_page">🔧 Service Page</option>
+                            <option value="guide">📚 Comprehensive Guide</option>
+                            <option value="case_study">📊 Case Study</option>
+                            <option value="comparison">⚖️ Comparison Article</option>
+                            <option value="listicle">📋 List Article</option>
+                            <option value="faq">❓ FAQ Page</option>
+                            <option value="review">⭐ Review Article</option>
+                        </select>
+                    </div>
+                    
                     <div class="form-group">
                         <label class="label">Topic *</label>
                         <div class="label-desc">What specific topic would you like to analyze?</div>
                         <input class="input" type="text" name="topic" placeholder="e.g., NHS car discount schemes for employees" required>
+                        <div class="error-message" id="topicError"></div>
                     </div>
                     
                     <div class="form-group">
                         <label class="label">Target Audience *</label>
-                        <div class="label-desc">Who is your primary audience?</div>
-                        <input class="input" type="text" name="target_audience" placeholder="e.g., NHS employees looking for car discounts" required>
+                        <div class="label-desc">Who is your primary audience? Be specific.</div>
+                        <input class="input" type="text" name="target_audience" placeholder="e.g., NHS employees aged 25-45 looking for car discounts" required>
+                        <div class="error-message" id="audienceError"></div>
                     </div>
                     
                     <div class="form-group">
                         <label class="label">Industry</label>
                         <select class="select" name="industry">
-                            <option value="Healthcare">🏥 Healthcare</option>
-                            <option value="Finance">💰 Finance</option>
-                            <option value="Technology">💻 Technology</option>
-                            <option value="Education">🎓 Education</option>
-                            <option value="Automotive">🚗 Automotive</option>
-                            <option value="Government">🏛️ Government</option>
+                            <option value="Healthcare">🏥 Healthcare & Medical</option>
+                            <option value="Finance">💰 Finance & Banking</option>
+                            <option value="Technology">💻 Technology & Software</option>
+                            <option value="Education">🎓 Education & Training</option>
+                            <option value="Automotive">🚗 Automotive & Transport</option>
+                            <option value="Government">🏛️ Government & Public Sector</option>
+                            <option value="Real Estate">🏠 Real Estate & Property</option>
+                            <option value="Legal">⚖️ Legal & Law</option>
+                            <option value="Insurance">🛡️ Insurance & Protection</option>
+                            <option value="Retail">🛒 Retail & E-commerce</option>
+                            <option value="Travel">✈️ Travel & Hospitality</option>
+                            <option value="Food">🍽️ Food & Restaurants</option>
                         </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="label">Content Goal *</label>
+                        <div class="label-desc">What's the primary goal of this content?</div>
+                        <select class="select" name="content_goal" required>
+                            <option value="">Select primary goal...</option>
+                            <option value="generate_leads">📈 Generate Leads</option>
+                            <option value="drive_sales">💰 Drive Sales</option>
+                            <option value="educate_audience">🎓 Educate Audience</option>
+                            <option value="build_authority">👑 Build Authority</option>
+                            <option value="improve_seo">🔍 Improve SEO Rankings</option>
+                            <option value="support_customers">🤝 Support Customers</option>
+                            <option value="brand_awareness">📢 Brand Awareness</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="label">AI Instructions *</label>
+                        <div class="label-desc">Specific instructions for the AI about tone, style, and approach</div>
+                        <textarea class="textarea" name="ai_instructions" placeholder="e.g., Write in a professional but approachable tone. Focus on practical benefits. Include real-world examples. Target decision-makers who need quick, actionable information..." required style="min-height: 100px;"></textarea>
                     </div>
                     
                     <div class="form-group">
@@ -1189,6 +1396,16 @@ async def professional_app_interface():
                         <label class="label">Customer Pain Points *</label>
                         <div class="label-desc">What specific problems do your customers face?</div>
                         <textarea class="textarea" name="customer_pain_points" placeholder="e.g., NHS staff struggle to find reliable information about car discount schemes, often miss out on savings due to complex eligibility requirements..." required></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="label">Desired Word Count</label>
+                        <select class="select" name="word_count_target">
+                            <option value="800">📄 Short (800 words)</option>
+                            <option value="1500" selected>📰 Medium (1,500 words)</option>
+                            <option value="2500">📚 Long (2,500 words)</option>
+                            <option value="4000">📖 Comprehensive (4,000+ words)</option>
+                        </select>
                     </div>
                     
                     <div class="form-group">
@@ -1207,7 +1424,7 @@ async def professional_app_interface():
                 </form>
             </div>
             
-            <!-- Main Analysis Area -->
+            <!-- Enhanced Main Analysis Area -->
             <div class="main-area">
                 <div class="updates-container">
                     <h3 style="margin-bottom: 1rem; color: #2d3748;">📊 Live Analysis Progress</h3>
@@ -1215,6 +1432,32 @@ async def professional_app_interface():
                         <div class="update-item">
                             💡 Professional analysis system ready. Fill in the configuration and click "Start Professional Analysis" to begin comprehensive research.
                         </div>
+                    </div>
+                </div>
+                
+                <!-- Content Display Area -->
+                <div class="content-display" id="contentDisplay">
+                    <div class="content-tabs">
+                        <div class="tab active" onclick="switchTab('generated')">📝 Generated Content</div>
+                        <div class="tab" onclick="switchTab('markdown')">📋 Markdown</div>
+                        <div class="tab" onclick="switchTab('html')">🌐 HTML</div>
+                    </div>
+                    
+                    <div class="tab-content active" id="generated-content">
+                        <div id="formattedContent">
+                            <!-- Generated content will appear here -->
+                        </div>
+                        <button class="copy-button" onclick="copyContent('formatted')">📋 Copy Content</button>
+                    </div>
+                    
+                    <div class="tab-content" id="markdown-content">
+                        <pre id="markdownContent" style="white-space: pre-wrap; font-family: 'Courier New', monospace; background: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; max-height: 500px; overflow-y: auto;"></pre>
+                        <button class="copy-button" onclick="copyContent('markdown')">📋 Copy Markdown</button>
+                    </div>
+                    
+                    <div class="tab-content" id="html-content">
+                        <pre id="htmlContent" style="white-space: pre-wrap; font-family: 'Courier New', monospace; background: #f8fafc; padding: 1rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; max-height: 500px; overflow-y: auto;"></pre>
+                        <button class="copy-button" onclick="copyContent('html')">📋 Copy HTML</button>
                     </div>
                 </div>
                 
@@ -1228,8 +1471,8 @@ async def professional_app_interface():
                             <strong>AI Assistant:</strong> Professional analysis complete! I can now help you improve your content in real-time using insights from all your agents. Try asking:<br><br>
                             • "Make this content more trustworthy and authoritative"<br>
                             • "Address the top Reddit pain points more directly"<br>
-                            • "Improve the E-E-A-T score with specific recommendations"<br>
-                            • "Make this more beginner-friendly for NHS employees"<br>
+                            • "Improve the Trust Score with specific recommendations"<br>
+                            • "Make this more beginner-friendly for my target audience"<br>
                             • "Optimize for better search rankings"
                         </div>
                     </div>
@@ -1240,7 +1483,7 @@ async def professional_app_interface():
                 </div>
             </div>
             
-            <!-- Metrics Panel -->
+            <!-- Enhanced Metrics Panel -->
             <div class="panel metrics-panel">
                 <h3 style="margin-bottom: 1rem; color: #2d3748;">📈 Professional Metrics</h3>
                 
@@ -1250,7 +1493,7 @@ async def professional_app_interface():
                 </div>
                 
                 <div class="metric">
-                    <span class="metric-label">Trust Score (E-E-A-T)</span>
+                    <span class="metric-label">Trust Score</span>
                     <span class="metric-value" id="trustScore">--</span>
                 </div>
                 
@@ -1291,18 +1534,114 @@ async def professional_app_interface():
             </div>
         </div>
         
+        <!-- Footer -->
+        <div class="footer">
+            <div class="footer-content">
+                <div class="footer-title">🚀 Professional SEO Analysis Tool</div>
+                <div class="footer-subtitle">Developed with ❤️ by <strong>Zeeshan Bashir</strong></div>
+                <div style="margin-top: 0.5rem; font-size: 0.8rem; color: #718096;">
+                    Advanced AI-powered content analysis and optimization platform
+                </div>
+            </div>
+        </div>
+        
         <script>
             let ws = null;
             let sessionId = 'session_' + Date.now();
             let analysisComplete = false;
             let currentAssistantMessage = null;
+            let generatedContent = '';
+            
+            // Form validation
+            function validateForm() {
+                let isValid = true;
+                
+                // Validate topic
+                const topic = document.querySelector('input[name="topic"]').value.trim();
+                const topicError = document.getElementById('topicError');
+                if (topic.length < 10) {
+                    topicError.textContent = 'Topic must be at least 10 characters and descriptive';
+                    document.querySelector('input[name="topic"]').classList.add('error');
+                    isValid = false;
+                } else {
+                    topicError.textContent = '';
+                    document.querySelector('input[name="topic"]').classList.remove('error');
+                }
+                
+                // Validate target audience
+                const audience = document.querySelector('input[name="target_audience"]').value.trim();
+                const audienceError = document.getElementById('audienceError');
+                if (audience.length < 15 || !audience.includes(' ')) {
+                    audienceError.textContent = 'Target audience must be specific and detailed (at least 15 characters)';
+                    document.querySelector('input[name="target_audience"]').classList.add('error');
+                    isValid = false;
+                } else {
+                    audienceError.textContent = '';
+                    document.querySelector('input[name="target_audience"]').classList.remove('error');
+                }
+                
+                return isValid;
+            }
+            
+            // Tab switching
+            function switchTab(tabName) {
+                // Update tab buttons
+                document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+                event.target.classList.add('active');
+                
+                // Update tab content
+                document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+                document.getElementById(tabName + '-content').classList.add('active');
+            }
+            
+            // Copy content functions
+            function copyContent(type) {
+                let textToCopy = '';
+                
+                switch(type) {
+                    case 'formatted':
+                        textToCopy = document.getElementById('formattedContent').innerText;
+                        break;
+                    case 'markdown':
+                        textToCopy = document.getElementById('markdownContent').textContent;
+                        break;
+                    case 'html':
+                        textToCopy = document.getElementById('htmlContent').textContent;
+                        break;
+                }
+                
+                navigator.clipboard.writeText(textToCopy).then(() => {
+                    // Show success feedback
+                    event.target.textContent = '✅ Copied!';
+                    setTimeout(() => {
+                        event.target.textContent = '📋 Copy ' + type.charAt(0).toUpperCase() + type.slice(1);
+                    }, 2000);
+                });
+            }
+            
+            // Format content for display
+            function formatContent(content) {
+                // Convert markdown-style content to HTML
+                let html = content
+                    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+                    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+                    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+                    .replace(/^\* (.+)$/gm, '<li>$1</li>')
+                    .replace(/^- (.+)$/gm, '<li>$1</li>')
+                    .replace(/\n\n/g, '</p><p>')
+                    .replace(/^(.+)$/gm, '<p>$1</p>');
+                
+                // Wrap lists
+                html = html.replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>');
+                
+                return html;
+            }
             
             // Initialize WebSocket connection with dynamic URL
             function initWebSocket() {
                 try {
-                    // Dynamically determine WebSocket URL based on current location
                     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                    const host = window.location.host; // This will use the Railway domain
+                    const host = window.location.host;
                     const wsUrl = `${protocol}//${host}/ws/${sessionId}`;
                     
                     console.log('Connecting to WebSocket:', wsUrl);
@@ -1328,7 +1667,6 @@ async def professional_app_interface():
                         document.getElementById('connectionStatus').textContent = 'Disconnected';
                         document.getElementById('connectionStatus').className = 'status-indicator status-disconnected';
                         
-                        // Attempt to reconnect after 3 seconds
                         setTimeout(() => {
                             if (!analysisComplete) {
                                 console.log('Attempting to reconnect...');
@@ -1366,6 +1704,7 @@ async def professional_app_interface():
                         
                     case 'reddit_subreddits_discovered':
                         addSubredditUpdate(data.subreddits, data.message);
+                        showSubredditSuggestions(data.subreddits);
                         break;
                         
                     case 'reddit_progress':
@@ -1382,6 +1721,7 @@ async def professional_app_interface():
                         
                     case 'content_stream_complete':
                         addUpdate(`✅ Professional content generated: ${data.word_count} words`, 'completed');
+                        displayContent(data.content);
                         break;
                         
                     case 'metrics_update':
@@ -1414,6 +1754,33 @@ async def professional_app_interface():
                         addUpdate(`❌ Error: ${data.message}`, 'error');
                         break;
                 }
+            }
+            
+            function showSubredditSuggestions(subreddits) {
+                const container = document.getElementById('subredditSuggestions');
+                const tagsContainer = document.getElementById('subredditTags');
+                
+                tagsContainer.innerHTML = '';
+                subreddits.forEach(subreddit => {
+                    const tag = document.createElement('span');
+                    tag.className = 'subreddit-tag';
+                    tag.textContent = `r/${subreddit}`;
+                    tagsContainer.appendChild(tag);
+                });
+                
+                container.style.display = 'block';
+            }
+            
+            function displayContent(content) {
+                generatedContent = content;
+                
+                // Show the content display area
+                document.getElementById('contentDisplay').classList.add('visible');
+                
+                // Format and display content
+                document.getElementById('formattedContent').innerHTML = formatContent(content);
+                document.getElementById('markdownContent').textContent = content;
+                document.getElementById('htmlContent').textContent = formatContent(content);
             }
             
             function addUpdate(message, type = 'progress') {
@@ -1491,14 +1858,12 @@ async def professional_app_interface():
                     return;
                 }
                 
-                // Add user message
                 const chatContent = document.getElementById('chatContent');
                 const userMessage = document.createElement('div');
                 userMessage.className = 'message user';
                 userMessage.innerHTML = `<strong>You:</strong> ${message}`;
                 chatContent.appendChild(userMessage);
                 
-                // Send via WebSocket
                 try {
                     ws.send(JSON.stringify({
                         type: 'chat_message',
@@ -1514,16 +1879,20 @@ async def professional_app_interface():
                 chatContent.scrollTop = chatContent.scrollHeight;
             }
             
-            // Form submission with better error handling
+            // Form submission with validation
             document.getElementById('analysisForm').addEventListener('submit', async function(e) {
                 e.preventDefault();
+                
+                if (!validateForm()) {
+                    addUpdate('❌ Please fix the form errors before submitting', 'error');
+                    return;
+                }
                 
                 const formData = new FormData(e.target);
                 const data = Object.fromEntries(formData.entries());
                 data.session_id = sessionId;
                 
                 try {
-                    // Use dynamic URL for API calls too
                     const response = await fetch(`${window.location.origin}/analyze-professional`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -1551,12 +1920,11 @@ async def professional_app_interface():
                 }
             });
             
-            // Initialize on page load with retry mechanism
+            // Initialize on page load
             window.onload = function() {
                 console.log('Page loaded, initializing WebSocket...');
                 initWebSocket();
                 
-                // Check connection status every 30 seconds
                 setInterval(() => {
                     if (ws && ws.readyState === WebSocket.CLOSED && !analysisComplete) {
                         console.log('WebSocket disconnected, attempting to reconnect...');
@@ -1603,11 +1971,20 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         logger.error(f"WebSocket error: {e}")
         manager.disconnect(session_id)
 
+# Updated analyze_professional_endpoint with validation
 @app.post("/analyze-professional")
 async def analyze_professional_endpoint(request: Request):
     try:
         data = await request.json()
         session_id = data.get('session_id')
+        
+        # Validate form data
+        validation_errors = validate_form_data(data)
+        if validation_errors:
+            return JSONResponse({
+                "error": "Validation failed", 
+                "validation_errors": validation_errors
+            }, status_code=400)
         
         # Start comprehensive analysis in background
         asyncio.create_task(zee_system.analyze_comprehensive_streaming(data, session_id))
@@ -1633,14 +2010,14 @@ async def debug_agents_endpoint():
         "host": config.HOST,
         "port": config.PORT,
         "features": [
-            "Advanced agent auto-discovery",
-            "Real Reddit API with subreddit discovery", 
-            "Professional streaming chat",
-            "Complete E-E-A-T assessment",
-            "Comprehensive quality scoring",
-            "Live metrics and real-time updates",
-            "Professional interface with all features",
-            "Railway deployment ready"
+            "Enhanced form validation with quality controls",
+            "Content display with tabs (Generated, Markdown, HTML)",
+            "Subreddit suggestions display",
+            "Advanced content generation with all form fields",
+            "Professional metrics without E-E-A-T reference",
+            "Footer with Zeeshan Bashir attribution",
+            "Railway deployment ready",
+            "Copy content functionality"
         ]
     })
 
@@ -1656,7 +2033,7 @@ async def health_check():
 
 # Updated server startup for Railway
 if __name__ == "__main__":
-    print("🚀 Starting Zee SEO Tool v5.0 for Railway Deployment...")
+    print("🚀 Starting Enhanced Zee SEO Tool v5.0 for Railway Deployment...")
     print("=" * 80)
     
     # Show configuration
@@ -1690,13 +2067,16 @@ if __name__ == "__main__":
         print(f"   • {agent_name}")
     
     print("=" * 80)
-    print("🌟 RAILWAY DEPLOYMENT FEATURES:")
-    print("   ✅ Dynamic WebSocket URL detection")
-    print("   ✅ Railway-compatible CORS settings")
-    print("   ✅ Environment-aware configuration")
-    print("   ✅ Automatic reconnection on disconnect")
-    print("   ✅ Health check endpoint")
-    print("   ✅ Professional streaming chat interface")
+    print("🌟 ENHANCED FEATURES:")
+    print("   ✅ Enhanced form with content type, goals, and AI instructions")
+    print("   ✅ Quality controls and form validation")
+    print("   ✅ Content display with Generated/Markdown/HTML tabs")
+    print("   ✅ Copy content functionality")
+    print("   ✅ Subreddit suggestions display")
+    print("   ✅ Trust Score (removed E-E-A-T reference)")
+    print("   ✅ Footer with Zeeshan Bashir attribution")
+    print("   ✅ Professional content generation with all form fields")
+    print("   ✅ Railway deployment ready")
     print("=" * 80)
     
     if config.ENVIRONMENT == "production":
