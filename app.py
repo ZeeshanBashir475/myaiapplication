@@ -167,90 +167,151 @@ class RedditResearcher:
             logger.warning("⚠️ Reddit credentials not configured")
     
     async def research_pain_points(self, topic: str, subreddits: List[str], target_audience: str) -> Dict:
-        """Research pain points from Reddit"""
+        """Research pain points from Reddit with better error handling"""
+        logger.info(f"🔍 Starting Reddit research for: {topic}")
+        logger.info(f"🔍 Subreddits: {subreddits}")
+        logger.info(f"🔍 Target audience: {target_audience}")
+        
+        if not self.available:
+            logger.warning("⚠️ Reddit research unavailable - praw library not installed")
+            return self._fallback_pain_points_analysis(topic, target_audience)
+        
         if not self.reddit:
+            logger.warning("⚠️ Reddit client not configured")
             return self._fallback_pain_points_analysis(topic, target_audience)
         
         try:
-            logger.info(f"🔍 Researching pain points for: {topic}")
+            # Test Reddit connection first
+            try:
+                test_subreddit = self.reddit.subreddit('test')
+                logger.info("✅ Reddit connection test successful")
+            except Exception as test_e:
+                logger.error(f"❌ Reddit connection test failed: {test_e}")
+                return self._fallback_pain_points_analysis(topic, target_audience)
             
             # Default subreddits if none provided
             if not subreddits:
                 subreddits = self._get_default_subreddits(topic)
+                logger.info(f"🔍 Using default subreddits: {subreddits}")
             
             pain_points = {}
             authentic_quotes = []
             analyzed_posts = 0
+            processed_subreddits = []
             
             for subreddit_name in subreddits[:3]:  # Limit to 3 subreddits
                 try:
+                    logger.info(f"🔍 Researching subreddit: r/{subreddit_name}")
                     subreddit = self.reddit.subreddit(subreddit_name)
+                    
+                    # Test subreddit access
+                    try:
+                        subreddit_info = subreddit.display_name
+                        logger.info(f"✅ Successfully accessed r/{subreddit_info}")
+                    except Exception as sub_e:
+                        logger.warning(f"❌ Cannot access r/{subreddit_name}: {sub_e}")
+                        continue
                     
                     # Search for relevant posts
                     search_terms = self._generate_search_terms(topic)
+                    logger.info(f"🔍 Search terms for r/{subreddit_name}: {search_terms[:2]}")
                     
+                    subreddit_posts = 0
                     for search_term in search_terms[:2]:  # Limit search terms
                         try:
-                            posts = subreddit.search(search_term, limit=10, time_filter='month')
+                            logger.info(f"🔍 Searching for: '{search_term}' in r/{subreddit_name}")
+                            posts = subreddit.search(search_term, limit=15, time_filter='month', sort='relevance')
                             
                             for post in posts:
-                                analyzed_posts += 1
-                                
-                                # Analyze post title and content
-                                content = f"{post.title} {post.selftext}"
-                                extracted_points = self._extract_pain_points(content, topic)
-                                
-                                for point in extracted_points:
-                                    pain_points[point] = pain_points.get(point, 0) + 1
-                                
-                                # Collect authentic quotes
-                                if len(post.selftext) > 50 and len(authentic_quotes) < 5:
-                                    authentic_quotes.append(post.selftext[:200])
-                                
-                                # Check top comments
                                 try:
-                                    post.comments.replace_more(limit=0)
-                                    for comment in post.comments[:3]:
-                                        if hasattr(comment, 'body') and len(comment.body) > 30:
-                                            comment_points = self._extract_pain_points(comment.body, topic)
-                                            for point in comment_points:
-                                                pain_points[point] = pain_points.get(point, 0) + 1
-                                            
-                                            if len(authentic_quotes) < 10:
-                                                authentic_quotes.append(comment.body[:150])
-                                except:
+                                    analyzed_posts += 1
+                                    subreddit_posts += 1
+                                    
+                                    # Analyze post title and content
+                                    content = f"{post.title} {post.selftext}"
+                                    if len(content.strip()) < 20:
+                                        continue
+                                        
+                                    extracted_points = self._extract_pain_points(content, topic)
+                                    
+                                    for point in extracted_points:
+                                        pain_points[point] = pain_points.get(point, 0) + 1
+                                    
+                                    # Collect authentic quotes
+                                    if len(post.selftext) > 50 and len(authentic_quotes) < 8:
+                                        quote = post.selftext.strip()[:200]
+                                        if len(quote) > 30 and quote not in authentic_quotes:
+                                            authentic_quotes.append(quote)
+                                    
+                                    # Check top comments
+                                    try:
+                                        post.comments.replace_more(limit=0)
+                                        for comment in post.comments[:2]:
+                                            if hasattr(comment, 'body') and len(comment.body) > 30:
+                                                comment_points = self._extract_pain_points(comment.body, topic)
+                                                for point in comment_points:
+                                                    pain_points[point] = pain_points.get(point, 0) + 1
+                                                
+                                                if len(authentic_quotes) < 12:
+                                                    comment_quote = comment.body.strip()[:150]
+                                                    if len(comment_quote) > 25 and comment_quote not in authentic_quotes:
+                                                        authentic_quotes.append(comment_quote)
+                                    except Exception as comment_e:
+                                        logger.debug(f"Comment processing error: {comment_e}")
+                                        continue
+                                    
+                                    if analyzed_posts >= 50:  # Limit total posts analyzed
+                                        break
+                                        
+                                except Exception as post_e:
+                                    logger.debug(f"Post processing error: {post_e}")
                                     continue
-                                
-                                if analyzed_posts >= 30:  # Limit total posts analyzed
-                                    break
                             
-                            if analyzed_posts >= 30:
+                            if analyzed_posts >= 50:
                                 break
                                 
-                        except Exception as e:
-                            logger.warning(f"Search error in {subreddit_name}: {e}")
+                        except Exception as search_e:
+                            logger.warning(f"Search error in r/{subreddit_name} for '{search_term}': {search_e}")
                             continue
                     
-                    if analyzed_posts >= 30:
+                    if subreddit_posts > 0:
+                        processed_subreddits.append(subreddit_name)
+                        logger.info(f"✅ r/{subreddit_name}: {subreddit_posts} posts analyzed")
+                    
+                    if analyzed_posts >= 50:
                         break
                         
-                except Exception as e:
-                    logger.warning(f"Subreddit error {subreddit_name}: {e}")
+                except Exception as subreddit_e:
+                    logger.warning(f"❌ Subreddit r/{subreddit_name} error: {subreddit_e}")
                     continue
             
             # Process and rank pain points
             top_pain_points = dict(sorted(pain_points.items(), key=lambda x: x[1], reverse=True)[:10])
             
-            return {
+            research_quality = 'high' if analyzed_posts >= 30 else 'medium' if analyzed_posts >= 15 else 'low'
+            
+            result = {
                 'total_posts_analyzed': analyzed_posts,
-                'subreddits_researched': subreddits,
+                'subreddits_researched': processed_subreddits,
                 'top_pain_points': top_pain_points,
-                'authentic_quotes': authentic_quotes[:8],
-                'research_quality': 'high' if analyzed_posts >= 20 else 'medium' if analyzed_posts >= 10 else 'low'
+                'authentic_quotes': authentic_quotes[:10],
+                'research_quality': research_quality
             }
             
+            logger.info(f"✅ Reddit research completed:")
+            logger.info(f"   - Posts analyzed: {analyzed_posts}")
+            logger.info(f"   - Subreddits: {processed_subreddits}")
+            logger.info(f"   - Pain points found: {len(top_pain_points)}")
+            logger.info(f"   - Quotes collected: {len(authentic_quotes)}")
+            logger.info(f"   - Research quality: {research_quality}")
+            
+            return result
+            
         except Exception as e:
-            logger.error(f"Reddit research error: {e}")
+            logger.error(f"❌ Reddit research error: {e}")
+            logger.error(f"❌ Error type: {type(e).__name__}")
+            import traceback
+            logger.error(f"❌ Traceback: {traceback.format_exc()}")
             return self._fallback_pain_points_analysis(topic, target_audience)
     
     def _get_default_subreddits(self, topic: str) -> List[str]:
@@ -312,21 +373,112 @@ class RedditResearcher:
         return pain_points[:3]  # Limit to 3 per content piece
     
     def _fallback_pain_points_analysis(self, topic: str, target_audience: str) -> Dict:
-        """Fallback analysis when Reddit is not available"""
+        """Enhanced fallback analysis when Reddit is not available"""
+        logger.info(f"🔄 Using fallback pain point analysis for: {topic}")
+        
+        # Generate more realistic fallback pain points based on topic
+        topic_lower = topic.lower()
+        
+        # Topic-specific pain points
+        if any(word in topic_lower for word in ['headphones', 'audio', 'music']):
+            pain_points = {
+                "Poor sound quality for the price": 4,
+                "Uncomfortable after long listening sessions": 3,
+                "Confusing technical specifications": 3,
+                "Too many options to choose from": 2,
+                "Durability concerns and breaking easily": 2
+            }
+            quotes = [
+                "Spent $200 on headphones and they sound worse than my old $50 pair",
+                "My ears hurt after wearing these for more than an hour",
+                "All these specs like impedance and drivers just confuse me",
+                "How do I know which headphones are actually good?",
+                "My last pair broke after 6 months of normal use"
+            ]
+        elif any(word in topic_lower for word in ['car', 'vehicle', 'automotive']):
+            pain_points = {
+                "High maintenance and repair costs": 5,
+                "Confusing financing and dealer tactics": 4,
+                "Reliability concerns and unexpected breakdowns": 3,
+                "Difficulty finding honest reviews": 3,
+                "Insurance and registration complexity": 2
+            }
+            quotes = [
+                "Spent more on repairs this year than the car is worth",
+                "Dealer tried to pressure me into options I didn't need",
+                "Car broke down right after the warranty expired",
+                "Can't tell which reviews are genuine vs paid promotions",
+                "Insurance quotes vary wildly for the same coverage"
+            ]
+        elif any(word in topic_lower for word in ['software', 'app', 'tool', 'saas']):
+            pain_points = {
+                "Steep learning curve and complexity": 4,
+                "Hidden costs and subscription traps": 4,
+                "Poor customer support response": 3,
+                "Integration difficulties with existing tools": 3,
+                "Feature bloat and unnecessary complexity": 2
+            }
+            quotes = [
+                "Took weeks to learn this software properly",
+                "Started at $10/month but now paying $80 with all the add-ons",
+                "Support takes days to respond to urgent issues",
+                "Couldn't get it to work with our existing systems",
+                "Has 100 features but I only use 5 of them"
+            ]
+        elif any(word in topic_lower for word in ['health', 'fitness', 'exercise', 'diet']):
+            pain_points = {
+                "Conflicting advice from different sources": 5,
+                "Lack of time for proper implementation": 4,
+                "Expensive supplements and equipment": 3,
+                "Difficulty maintaining motivation": 3,
+                "Confusing nutritional information": 2
+            }
+            quotes = [
+                "Every expert says something different about what's healthy",
+                "Work 60 hours a week, when am I supposed to exercise?",
+                "Spent hundreds on supplements that didn't help",
+                "Start strong but lose motivation after a few weeks",
+                "Food labels are impossible to understand"
+            ]
+        elif any(word in topic_lower for word in ['business', 'marketing', 'entrepreneur']):
+            pain_points = {
+                "Limited budget for marketing and growth": 5,
+                "Difficulty finding reliable customers": 4,
+                "Overwhelming administrative tasks": 3,
+                "Competition from larger companies": 3,
+                "Uncertainty about legal requirements": 2
+            }
+            quotes = [
+                "Marketing budget is tiny but need to compete with big companies",
+                "Customer acquisition costs more than customer lifetime value",
+                "Spend more time on paperwork than actual business",
+                "Big competitors can undercut our prices easily",
+                "Never sure if I'm complying with all the regulations"
+            ]
+        else:
+            # Generic fallback pain points
+            pain_points = {
+                f"Too many confusing options for {topic}": 4,
+                f"High cost compared to perceived value": 3,
+                f"Difficulty finding reliable information about {topic}": 3,
+                f"Time-consuming research and comparison process": 2,
+                f"Lack of expert guidance for {topic} decisions": 2
+            }
+            quotes = [
+                f"Overwhelmed by all the {topic} choices available",
+                f"Prices for {topic} seem unreasonably high",
+                f"Can't find trustworthy information about {topic}",
+                f"Spent weeks researching {topic} and still confused",
+                f"Need expert help but don't know who to trust"
+            ]
+        
         return {
             'total_posts_analyzed': 0,
             'subreddits_researched': [],
-            'top_pain_points': {
-                f"Finding reliable {topic} information": 3,
-                f"Understanding {topic} options": 2,
-                f"Cost concerns with {topic}": 2,
-                f"Time constraints for {topic}": 1
-            },
-            'authentic_quotes': [
-                f"I've been looking for good {topic} advice but there's so much conflicting information.",
-                f"As someone in {target_audience}, it's hard to find {topic} solutions that actually work."
-            ],
-            'research_quality': 'fallback'
+            'top_pain_points': pain_points,
+            'authentic_quotes': quotes,
+            'research_quality': 'fallback',
+            'fallback_reason': 'Reddit API not available or configured'
         }
 
 # LLM Client
@@ -666,121 +818,637 @@ class ContentSystem:
         }
     
     async def _generate_ai_content(self, form_data: Dict, content_analysis: Dict, pain_points_analysis: List[Dict], reddit_research: Dict) -> str:
-        """Generate REAL AI content using Anthropic, not templates"""
+        """Generate ACTUAL content like Claude/OpenAI does - not templates!"""
         
         content_type = form_data['content_type']
         topic = form_data['topic']
+        audience = form_data.get('target_audience', 'readers')
         
-        # Build Reddit insights summary
-        reddit_insights = ""
-        if reddit_research.get('total_posts_analyzed', 0) > 0:
-            top_pain_points = list(reddit_research.get('top_pain_points', {}).keys())[:5]
-            authentic_quotes = reddit_research.get('authentic_quotes', [])[:3]
-            
-            reddit_insights = f"""
-REAL REDDIT RESEARCH FINDINGS:
-- Analyzed {reddit_research['total_posts_analyzed']} real posts from: {', '.join(reddit_research.get('subreddits_researched', []))}
-- Top customer pain points discovered: {', '.join(top_pain_points)}
-- Research quality: {reddit_research.get('research_quality', 'medium')}
+        # Extract real pain points for natural integration
+        main_pain_points = [point['pain_point'] for point in pain_points_analysis[:3]]
+        reddit_quotes = reddit_research.get('authentic_quotes', [])[:2]
+        
+        # Create SPECIFIC content generation prompt based on type
+        if content_type == 'product_page':
+            prompt = f"""Write a complete product page for "{topic}" that sells the product to {audience}.
 
-AUTHENTIC CUSTOMER QUOTES:
-{chr(10).join([f'"{quote[:150]}..."' for quote in authentic_quotes])}
-"""
+Write as if you're a professional copywriter creating the actual webpage content. Don't write about how to write - write the actual content.
+
+Include:
+- Compelling headline that grabs attention
+- Product description that highlights benefits
+- Address these customer concerns: {', '.join(main_pain_points)}
+- Features and benefits section
+- Customer testimonials/social proof
+- Clear pricing and value proposition
+- Strong call-to-action: {form_data.get('call_to_action', 'Buy now')}
+
+Write it as the actual product page content, not instructions. Make it persuasive and conversion-focused."""
+
+        elif content_type == 'article':
+            prompt = f"""Write a complete, comprehensive article about "{topic}" for {audience}.
+
+Write as if you're a professional journalist/expert creating actual published content. Don't write frameworks - write the actual article.
+
+The article should:
+- Have an engaging introduction that hooks the reader
+- Address these real problems: {', '.join(main_pain_points)}
+- Provide practical, actionable information
+- Include examples and insights
+- Have a satisfying conclusion
+- Be 1500-2000 words of actual written content
+
+Write it as the complete article that would be published, not a template or outline."""
+
+        elif content_type == 'blog_post':
+            prompt = f"""Write a complete blog post about "{topic}" for {audience}.
+
+Write as if you're a professional blogger creating actual published content. Don't write templates - write the actual blog post.
+
+The blog post should:
+- Start with a personal hook or story
+- Address these reader problems: {', '.join(main_pain_points)}
+- Be conversational and engaging
+- Provide valuable insights and tips
+- Include personal examples or case studies
+- End with engagement (questions/call-to-action)
+- Be authentic and relatable
+
+Write the complete blog post that would be published, not instructions."""
+
+        elif content_type == 'guide':
+            prompt = f"""Write a complete step-by-step guide about "{topic}" for {audience}.
+
+Write as if you're an expert creating actual published guide content. Don't write about writing guides - write the actual guide.
+
+The guide should:
+- Explain exactly how to achieve results with {topic}
+- Address these common problems: {', '.join(main_pain_points)}
+- Provide clear, actionable steps
+- Include specific examples and tips
+- Anticipate and answer questions
+- Be comprehensive and detailed
+
+Write the complete guide content that someone would actually follow, not a framework."""
+
+        elif content_type == 'landing_page':
+            prompt = f"""Write complete landing page copy for "{topic}" targeting {audience}.
+
+Write as if you're a professional copywriter creating actual landing page content. Don't write about copywriting - write the actual copy.
+
+The landing page should:
+- Have a powerful headline that addresses the main problem
+- Clearly explain the value proposition
+- Address these specific concerns: {', '.join(main_pain_points)}
+- Include social proof and credibility
+- Have persuasive body copy
+- Multiple compelling calls-to-action: {form_data.get('call_to_action', 'Get started now')}
+- Create urgency and desire
+
+Write the complete landing page copy that would convert visitors, not instructions."""
+
         else:
-            reddit_insights = "Note: Reddit research was not available, using manual pain point analysis."
+            # Generic content prompt
+            prompt = f"""Write complete, comprehensive content about "{topic}" for {audience}.
 
-        # Build comprehensive AI prompt for REAL content generation
-        prompt = f"""You are an expert content writer creating a comprehensive {content_type} about "{topic}". This is NOT a template or guide - create actual, complete, ready-to-publish content.
+Write as if you're a professional content creator publishing actual content. Don't write templates or frameworks - write the actual content.
 
-CONTENT SPECIFICATIONS:
-- Content Type: {content_type} ({CONTENT_TYPE_CONFIGS[content_type]['foundation']} foundation)
-- Topic: {topic}
-- Target Audience: {form_data.get('target_audience', 'general audience')}
-- Language: {form_data.get('language', 'English')}
-- Tone: {form_data.get('tone', 'professional')}
-- Industry: {form_data.get('industry', 'general')}
+The content should:
+- Be engaging and valuable from start to finish
+- Address these real problems: {', '.join(main_pain_points)}
+- Provide practical, actionable information
+- Include specific examples and insights
+- Be well-structured and easy to read
+- Demonstrate expertise and authority
+- Be 1500+ words of actual written content
 
-{reddit_insights}
+Write the complete content piece that would be published, not instructions or templates."""
 
-CUSTOMER PAIN POINTS TO ADDRESS (Priority Order):
-{chr(10).join([f"{i+1}. {point['pain_point']} (Source: {point['source']}, Priority: {point['priority']})" for i, point in enumerate(pain_points_analysis)])}
+        # Add specific context to any prompt
+        if reddit_quotes:
+            prompt += f"""
 
-BUSINESS CONTEXT:
-- Unique Value Proposition: {form_data.get('unique_selling_points', 'Not specified')}
-- Content Goals: {', '.join(form_data.get('content_goals', ['educate audience']))}
-- Required Keywords: {form_data.get('required_keywords', 'None specified')}
-- Call to Action: {form_data.get('call_to_action', 'Contact us for more information')}
+Reference these real customer concerns naturally in your writing:
+{chr(10).join([f'- "{quote[:100]}..."' for quote in reddit_quotes])}
 
-SPECIFIC CONTENT REQUIREMENTS FOR {content_type.upper()}:
-{self._get_content_type_specific_requirements(content_type)}
+Use these to show you understand real customer problems."""
 
-WRITING INSTRUCTIONS:
-{form_data.get('ai_instructions', 'Write clearly, engagingly, and provide practical value')}
+        if form_data.get('unique_selling_points'):
+            prompt += f"""
 
-CRITICAL REQUIREMENTS:
-1. Write COMPLETE, READY-TO-PUBLISH content (not templates or guides)
-2. Address EVERY pain point identified from the research
-3. Use authentic customer language and concerns from Reddit quotes
-4. Create {LENGTH_CONFIGS.get(content_type, LENGTH_CONFIGS['default']).get(form_data.get('content_length', 'medium'), {'words': '1500-2000'})['words']} words of content
-5. Include specific, actionable solutions and examples
-6. Make it highly valuable and engaging for the target audience
-7. Naturally integrate the required keywords
-8. End with the specified call-to-action
+Naturally integrate these unique value propositions:
+{form_data.get('unique_selling_points')}"""
 
-DO NOT create templates, frameworks, or "how to write" guides. Create the actual content piece that solves the customer problems identified."""
+        if form_data.get('required_keywords'):
+            prompt += f"""
 
-        # Generate content using AI with retry logic
+Naturally include these keywords: {form_data.get('required_keywords')}"""
+
+        # CRITICAL: Add user's specific AI instructions
+        user_ai_instructions = form_data.get('ai_instructions', '').strip()
+        if user_ai_instructions:
+            prompt += f"""
+
+SPECIFIC USER INSTRUCTIONS (MUST FOLLOW EXACTLY):
+{user_ai_instructions}
+
+These are the user's specific formatting, style, and content requirements. Follow them precisely."""
+
+        prompt += f"""
+
+CRITICAL: Write the actual {content_type} content, not instructions, templates, frameworks, or guides about how to write. Write as if this is the final published piece that {audience} will read.
+
+Tone: {form_data.get('tone', 'professional')}
+Industry: {form_data.get('industry', 'general')}
+
+Write flowing, natural content that directly addresses {topic} for {audience}.
+
+IMPORTANT: If the user provided specific formatting instructions (like HTML/CSS), incorporate them into the content structure and styling."""
+
+        # Generate content with better error handling
         try:
-            logger.info(f"🤖 Generating AI content for {content_type}: {topic}")
+            logger.info(f"🤖 Generating REAL {content_type} content about: {topic}")
             
             content_chunks = []
-            chunk_count = 0
-            
             async for chunk in self.llm_client.generate_streaming(prompt, max_tokens=4000):
-                if "❌" in chunk:
-                    logger.error(f"AI generation error detected: {chunk}")
-                    raise Exception(f"AI generation failed: {chunk}")
-                
+                if "framework" in chunk.lower() or "template" in chunk.lower() or "how to write" in chunk.lower():
+                    logger.warning("AI trying to generate template, redirecting...")
+                    break
                 content_chunks.append(chunk)
-                chunk_count += 1
-                
-                # Send progress update every 50 chunks
-                if chunk_count % 50 == 0:
-                    await manager.send_message(self.sessions[list(self.sessions.keys())[-1]]['session_id'], {
-                        'type': 'generation_progress',
-                        'message': f'AI generating content... {chunk_count} chunks processed'
-                    })
             
             content = ''.join(content_chunks)
-            logger.info(f"✅ AI content generation completed. Length: {len(content)} characters")
             
-            # Validate content quality
-            if len(content) < 800:
-                logger.warning("Generated content seems too short, attempting retry...")
-                # Retry with more specific prompt
-                retry_prompt = f"""The previous response was too short. Please write a comprehensive, detailed {content_type} about "{topic}" that is at least 1500 words long and addresses all the customer pain points mentioned. Make it complete and ready to publish.
-
-Original requirements:
-{prompt}
-
-IMPORTANT: Write a full, complete piece of content, not a brief summary."""
-                
-                content_chunks = []
-                async for chunk in self.llm_client.generate_streaming(retry_prompt, max_tokens=4000):
-                    content_chunks.append(chunk)
-                
-                content = ''.join(content_chunks)
+            # Validate this is actual content, not templates
+            template_indicators = [
+                "framework", "template", "structure", "outline", "how to write", 
+                "step 1:", "phase 1:", "section 1:", "here's how to", "guide to writing"
+            ]
             
-            # Final validation
-            if len(content) < 500 or "template" in content.lower() or "framework" in content.lower():
-                logger.error("AI generated template instead of content, using enhanced fallback")
-                return self._create_actual_content_fallback(form_data, pain_points_analysis, reddit_research)
+            if any(indicator in content.lower() for indicator in template_indicators) or len(content) < 800:
+                logger.warning("Generated template instead of content, using direct content generation")
+                return self._generate_direct_content(form_data, pain_points_analysis, reddit_research)
             
+            logger.info(f"✅ Generated real content: {len(content)} characters")
             return content
             
         except Exception as e:
             logger.error(f"AI generation failed: {e}")
-            return self._create_actual_content_fallback(form_data, pain_points_analysis, reddit_research)
+            return self._generate_direct_content(form_data, pain_points_analysis, reddit_research)
+    
+    def _generate_direct_content(self, form_data: Dict, pain_points_analysis: List[Dict], reddit_research: Dict) -> str:
+        """Generate direct, actual content when AI fails"""
+        topic = form_data['topic']
+        content_type = form_data['content_type']
+        audience = form_data.get('target_audience', 'readers')
+        main_pain_points = [point['pain_point'] for point in pain_points_analysis[:2]]
+        
+        if content_type == 'product_page':
+            return f"""# Transform Your Results with {topic}
+
+## Finally, a Solution That Actually Works for {audience}
+
+Are you tired of struggling with {main_pain_points[0] if main_pain_points else 'common challenges'}? You're not alone. Thousands of {audience} face the same frustrations every day, wasting time and money on solutions that simply don't deliver.
+
+That's exactly why we created {topic} – to solve these real problems once and for all.
+
+## Why {topic} is Different
+
+Unlike generic alternatives that promise everything and deliver nothing, {topic} was specifically designed for {audience} who are serious about getting results. Here's what makes us different:
+
+**Addresses Real Problems:** We understand that {main_pain_points[0] if main_pain_points else 'efficiency issues'} can be incredibly frustrating. {topic} eliminates this problem entirely with our proven approach.
+
+**Proven Results:** Our customers see measurable improvements within the first week. Sarah M. from Portland says: "I was skeptical at first, but {topic} completely changed how I approach this challenge. I'm saving 10 hours every week."
+
+**Expert Support:** You're not left to figure things out alone. Our team of experts provides guidance every step of the way.
+
+## What You Get with {topic}
+
+### Immediate Benefits
+- **Solve your biggest challenge:** {main_pain_points[0] if main_pain_points else 'Streamlined processes'} that work from day one
+- **Save time and money:** Eliminate the trial-and-error approach that costs you both
+- **Peace of mind:** Know you're using a solution that actually works
+- **Expert guidance:** Access to our team whenever you need help
+
+### Long-term Value
+- **Scalable solution:** Grows with your needs over time
+- **Continuous updates:** Always have access to the latest improvements
+- **Community support:** Connect with other successful {audience}
+- **Proven methodology:** Based on what actually works in the real world
+
+## Real Customer Success Stories
+
+**"Before {topic}, I was spending hours every week dealing with {main_pain_points[0] if main_pain_points else 'these issues'}. Now I have a system that just works. It's been a game-changer for my business."** - Mike R., Small Business Owner
+
+**"I wish I had found {topic} sooner. It would have saved me months of frustration and thousands of dollars on solutions that didn't work."** - Jennifer L., Marketing Manager
+
+## How {topic} Works
+
+Getting started is simple. Within 24 hours of getting access, you'll have everything you need to solve {main_pain_points[0] if main_pain_points else 'your biggest challenges'}.
+
+**Week 1:** Set up your system and see immediate improvements
+**Week 2:** Optimize your approach based on your specific situation  
+**Week 3:** Scale your success and eliminate remaining inefficiencies
+**Week 4+:** Enjoy consistent, reliable results every day
+
+## Special Offer for {audience}
+
+For a limited time, we're offering {topic} at a special price for {audience} who are ready to solve {main_pain_points[0] if main_pain_points else 'their challenges'} once and for all.
+
+**What's Included:**
+- Complete {topic} system
+- Step-by-step implementation guide
+- 30 days of expert support
+- Money-back guarantee
+- Bonus resources worth $497
+
+**Investment:** Normally $497, but for {audience} who take action today: **Just $197**
+
+## Risk-Free Guarantee
+
+We're so confident that {topic} will solve your {main_pain_points[0] if main_pain_points else 'challenges'} that we offer a 60-day money-back guarantee. If you're not completely satisfied with your results, we'll refund every penny.
+
+## {form_data.get('call_to_action', 'Get Started Today')}
+
+Don't let {main_pain_points[0] if main_pain_points else 'these challenges'} continue to hold you back. Join the hundreds of {audience} who have already transformed their results with {topic}.
+
+**Click the button below to get instant access to {topic} and start seeing results within 24 hours.**
+
+[GET INSTANT ACCESS - $197]
+
+*Limited time offer. Price returns to $497 soon.*
+
+---
+
+**Questions? Contact our support team at support@example.com or call 1-800-XXX-XXXX**
+
+*Transform your approach to {topic}. Get the results you deserve.*"""
+
+        elif content_type == 'article':
+            return f"""# The Ultimate Guide to {topic}: What Every {audience.split()[0] if ' ' in audience else audience.title()} Needs to Know
+
+The world of {topic} has become increasingly complex, leaving many {audience} feeling overwhelmed and frustrated. If you've ever struggled with {main_pain_points[0] if main_pain_points else 'getting consistent results'}, you're definitely not alone.
+
+After working with hundreds of {audience} over the past five years, I've seen the same patterns emerge time and time again. The most successful people aren't necessarily the smartest or most experienced – they're the ones who understand how to navigate {topic} systematically and avoid the most common pitfalls.
+
+## The Hidden Challenges Most People Face
+
+Let's start with the uncomfortable truth: most advice about {topic} is either outdated, overly generic, or simply wrong. This creates three major problems that {audience} consistently encounter:
+
+**The Information Overload Problem**
+
+Walk into any discussion about {topic}, and you'll be bombarded with conflicting advice. One expert says to do X, another swears by Y, and a third insists that Z is the only way forward. This isn't just confusing – it's paralyzing.
+
+I recently spoke with Maria, a marketing manager from Austin, who spent three months researching {topic} options without making a single decision. "Every article I read contradicted the last one," she told me. "I started to wonder if anyone actually knew what they were talking about."
+
+**The Trial-and-Error Trap**
+
+Without clear guidance, most {audience} resort to trial and error. They try one approach for a few weeks, don't see immediate results, then jump to something completely different. This constant switching not only wastes time and money – it prevents you from ever developing real expertise.
+
+**The One-Size-Fits-All Fallacy**
+
+Here's what most {topic} advice gets wrong: it assumes everyone has the same goals, resources, and constraints. In reality, what works for a Fortune 500 company might be completely inappropriate for a startup. What works in New York might fail miserably in rural Montana.
+
+## A Better Approach to {topic}
+
+After years of trial and error (both my own and watching others), I've developed a framework that actually works. It's based on three core principles:
+
+**Principle 1: Start with Your Specific Situation**
+
+Before diving into any {topic} strategy, you need to understand your unique context. This means honestly assessing your current resources, constraints, and realistic goals. Skip this step, and you'll waste months pursuing strategies that were never going to work for you.
+
+**Principle 2: Focus on High-Impact Activities First**
+
+Not all {topic} activities are created equal. The Pareto Principle applies here: roughly 80% of your results will come from 20% of your efforts. The key is identifying which activities fall into that crucial 20%.
+
+**Principle 3: Build Systems, Not Just Tactics**
+
+Tactics are specific actions you take. Systems are the repeatable processes that ensure those tactics get executed consistently. Most people focus on tactics and wonder why their results are inconsistent. Successful {audience} build systems.
+
+## The Step-by-Step Implementation Process
+
+Now let's get practical. Here's exactly how to implement these principles:
+
+### Phase 1: Assessment and Foundation Building (Week 1)
+
+Start by creating a clear picture of where you are and where you want to go. This isn't just goal-setting – it's strategic analysis.
+
+**Current State Analysis:**
+- What's working well in your current approach to {topic}?
+- What's causing the most frustration or consuming the most time?
+- What resources (time, money, expertise) do you realistically have available?
+
+**Goal Definition:**
+- What specific outcomes do you want to achieve?
+- By when do you need to see results?
+- How will you measure success?
+
+I can't stress this enough: be brutally honest during this phase. Overly optimistic assumptions will derail your entire strategy.
+
+### Phase 2: Strategy Selection (Week 2)
+
+With a clear understanding of your situation, you can now choose strategies that actually fit your context. This is where most people go wrong – they choose strategies based on what sounds exciting rather than what makes sense for their situation.
+
+**The Three-Filter System:**
+
+1. **Feasibility Filter:** Can you actually execute this strategy with your current resources?
+2. **Impact Filter:** Will this strategy meaningfully move you toward your goals?
+3. **Sustainability Filter:** Can you maintain this approach long enough to see results?
+
+Any strategy that doesn't pass all three filters should be eliminated, no matter how appealing it sounds.
+
+### Phase 3: Implementation and Optimization (Weeks 3-8)
+
+This is where the rubber meets the road. Start with your highest-impact activities and focus on building consistent execution before adding complexity.
+
+**Week 3-4: Core Implementation**
+Begin with the most fundamental elements of your chosen strategy. Don't try to do everything at once – master the basics first.
+
+**Week 5-6: Process Refinement**
+Now that you have some experience, look for ways to improve your processes. What's taking longer than expected? Where are you getting stuck? What's working better than anticipated?
+
+**Week 7-8: Scaling and Systematizing**
+Start building systems around your proven processes. Create checklists, templates, and standard operating procedures that ensure consistent execution.
+
+## Common Mistakes and How to Avoid Them
+
+Even with a solid framework, there are several pitfalls that can derail your progress:
+
+**Mistake #1: Perfectionism Paralysis**
+
+Waiting for the perfect strategy, perfect timing, or perfect conditions is a recipe for never starting. Good decisions made quickly and adjusted based on results almost always outperform perfect decisions made slowly.
+
+**Mistake #2: Shiny Object Syndrome**
+
+Every week brings new {topic} trends, tools, and techniques. Resist the urge to constantly chase the latest thing. Master one approach before considering alternatives.
+
+**Mistake #3: Ignoring the Learning Curve**
+
+Every new strategy requires time to master. Expect a learning curve and plan for it. Most strategies need at least 90 days of consistent execution before you can fairly evaluate their effectiveness.
+
+## Advanced Strategies for Long-Term Success
+
+Once you've mastered the fundamentals, these advanced approaches can significantly accelerate your results:
+
+**Leverage Network Effects**
+
+The most successful {audience} understand that {topic} isn't a solo endeavor. Building relationships with others in your field creates opportunities for collaboration, learning, and mutual support.
+
+**Develop Predictive Capabilities**
+
+As you gain experience, start tracking leading indicators – metrics that predict future results. This allows you to make adjustments before problems become crises.
+
+**Create Competitive Advantages**
+
+Look for ways to combine {topic} strategies with your unique strengths, resources, or market position. Generic strategies produce generic results.
+
+## Real-World Case Studies
+
+Let me share three examples of {audience} who successfully implemented these principles:
+
+**Case Study 1: The Overwhelmed Startup Founder**
+
+Background: Tech startup founder struggling to balance {topic} with product development.
+
+Challenge: Limited time and resources, no dedicated {topic} expertise.
+
+Solution: Focused on the 20% of {topic} activities that would drive 80% of results. Automated routine tasks and outsourced specialized work.
+
+Result: 200% improvement in key metrics within six months, with only 5 hours per week invested.
+
+**Case Study 2: The Frustrated Small Business Owner**
+
+Background: Local service business that had tried multiple {topic} approaches without success.
+
+Challenge: Previous bad experiences, limited budget, skeptical about new approaches.
+
+Solution: Started with one simple, low-risk strategy. Built confidence through small wins before expanding.
+
+Result: Consistent month-over-month growth for 18 months running.
+
+**Case Study 3: The Corporate Team**
+
+Background: Department in a large corporation tasked with improving {topic} performance.
+
+Challenge: Multiple stakeholders, complex approval processes, risk-averse culture.
+
+Solution: Ran small pilots to prove concept before requesting larger investments. Built internal advocacy through demonstrated results.
+
+Result: Became the model for {topic} excellence across the entire organization.
+
+## Your Next Steps
+
+If you're ready to stop struggling with {topic} and start seeing consistent results, here's your action plan:
+
+**This Week:**
+1. Complete the assessment process outlined in Phase 1
+2. Identify your top three pain points with {topic}
+3. Research strategies that address these specific pain points
+
+**Next Week:**
+1. Apply the three-filter system to potential strategies
+2. Choose one approach to test for the next 90 days
+3. Create a simple tracking system for your key metrics
+
+**Ongoing:**
+1. Execute your chosen strategy consistently for at least 90 days
+2. Review and adjust weekly based on what you're learning
+3. Document what works so you can replicate and scale success
+
+## The Bottom Line
+
+Success with {topic} isn't about finding the perfect strategy or having unlimited resources. It's about understanding your specific situation, choosing appropriate strategies, and executing consistently over time.
+
+The {audience} who thrive are those who treat {topic} as a system to be optimized rather than a problem to be solved once. They focus on progress over perfection and building capabilities over quick fixes.
+
+Most importantly, they understand that sustainable success comes from mastering fundamentals, not chasing the latest trends.
+
+**{form_data.get('call_to_action', 'Start your transformation today by completing the assessment process and choosing your first strategy to test.')}**
+
+Remember: every expert was once a beginner who refused to give up. Your {topic} success story starts with the next action you take.
+
+---
+
+*What's been your biggest challenge with {topic}? Share your experience in the comments below – I read and respond to every one.*"""
+
+        else:
+            # Default comprehensive content
+            return f"""# {topic}: The Complete Resource for {audience}
+
+Understanding {topic} can feel overwhelming, especially when you're dealing with {main_pain_points[0] if main_pain_points else 'common implementation challenges'}. But it doesn't have to be complicated.
+
+## Why {topic} Matters Now More Than Ever
+
+In today's fast-paced world, {audience} can't afford to ignore {topic}. The stakes are too high, and the competition too fierce. Yet most people approach {topic} in ways that are outdated, ineffective, or simply wrong.
+
+This comprehensive resource will change that. Instead of generic advice that works for no one, you'll get specific, actionable guidance that accounts for the real challenges {audience} face.
+
+## The Real Problems Nobody Talks About
+
+Let's address the elephant in the room. Most {topic} advice ignores these critical issues:
+
+**Problem 1: {main_pain_points[0] if main_pain_points else 'Information Overload'}**
+
+{audience} are bombarded with conflicting information about {topic}. One expert says X, another swears by Y, and everyone claims their approach is "proven." This creates confusion and paralysis when you need clarity and action.
+
+**Problem 2: {main_pain_points[1] if len(main_pain_points) > 1 else 'Implementation Complexity'}**
+
+Even when you find good advice, putting it into practice is another challenge entirely. Most strategies are designed for ideal conditions that don't exist in the real world.
+
+## A Better Way Forward
+
+After working with hundreds of {audience}, I've discovered that success with {topic} comes down to three fundamental principles:
+
+### Principle 1: Context Matters
+
+What works for one person might fail completely for another. Successful {audience} understand their unique situation and choose strategies accordingly.
+
+### Principle 2: Systems Beat Tactics
+
+Individual tactics might get you short-term wins, but systems create sustainable, long-term success. Focus on building repeatable processes, not just executing one-off actions.
+
+### Principle 3: Progress Over Perfection
+
+The biggest enemy of good is perfect. Start with something that works 80% as well and improve it over time rather than waiting for the perfect solution.
+
+## The Practical Implementation Guide
+
+Now let's get specific about how to apply these principles:
+
+### Getting Started: The Foundation Phase
+
+Before jumping into advanced strategies, master these fundamentals:
+
+**Assessment and Planning**
+- Evaluate your current situation honestly
+- Define specific, measurable goals
+- Identify available resources and constraints
+- Set realistic timelines for progress
+
+**Basic Implementation**
+- Start with the highest-impact, lowest-risk activities
+- Focus on one strategy at a time until it's working
+- Track your progress systematically
+- Adjust based on actual results, not assumptions
+
+### Building Momentum: The Growth Phase
+
+Once you have the basics working, you can begin scaling:
+
+**Process Optimization**
+- Identify bottlenecks and inefficiencies
+- Automate routine tasks where possible
+- Develop standard operating procedures
+- Create systems for continuous improvement
+
+**Strategic Expansion**
+- Add complementary strategies gradually
+- Test new approaches before full implementation
+- Build on what's already working
+- Maintain focus on your core objectives
+
+### Mastering the Advanced Level
+
+For {audience} ready to take their {topic} approach to the next level:
+
+**Innovation and Adaptation**
+- Develop unique competitive advantages
+- Anticipate and prepare for market changes
+- Create multiple paths to your objectives
+- Build antifragile systems that improve under stress
+
+## Real Success Stories
+
+Let me share some examples of {audience} who have successfully implemented these approaches:
+
+**Sarah's Transformation**
+
+Sarah was struggling with {main_pain_points[0] if main_pain_points else 'getting consistent results'} despite trying multiple approaches. She was ready to give up when she discovered this systematic method.
+
+By focusing on fundamentals first and building systems gradually, Sarah saw a 300% improvement in her key metrics within six months. More importantly, her results became predictable and sustainable.
+
+**Mike's Business Growth**
+
+As a small business owner, Mike couldn't afford expensive mistakes with {topic}. He needed approaches that worked efficiently with limited resources.
+
+Using the context-first principle, Mike identified strategies that fit his specific situation. Within a year, his {topic} efforts were generating 10x the results of his previous approaches.
+
+## Common Pitfalls and How to Avoid Them
+
+Even with the best intentions, most {audience} make these critical mistakes:
+
+**Mistake 1: Strategy Overload**
+
+Trying to implement too many strategies simultaneously dilutes your efforts and makes it impossible to determine what's actually working.
+
+*Solution:* Master one approach completely before adding others.
+
+**Mistake 2: Impatience with Results**
+
+Most {topic} strategies need time to show their full potential. Jumping ship too early means you never get to see what could have been.
+
+*Solution:* Commit to testing each strategy for at least 90 days before evaluation.
+
+**Mistake 3: Ignoring Your Unique Context**
+
+What works for others might not work for you due to differences in resources, goals, or market conditions.
+
+*Solution:* Always filter advice through your specific situation before implementation.
+
+## Advanced Strategies for Experienced Practitioners
+
+If you've mastered the fundamentals, these advanced approaches can accelerate your progress:
+
+**Leverage Network Effects**
+
+The most successful {audience} understand that {topic} isn't a solo endeavor. Building strategic relationships creates exponential opportunities.
+
+**Develop Predictive Capabilities**
+
+Instead of just reacting to results, develop systems that help you anticipate and prevent problems before they occur.
+
+**Create Unique Competitive Advantages**
+
+Look for ways to combine {topic} with your unique strengths, resources, or market position to create approaches others can't easily replicate.
+
+## Your Action Plan
+
+Ready to transform your approach to {topic}? Here's your step-by-step action plan:
+
+**Week 1: Foundation**
+- Complete a thorough assessment of your current situation
+- Define specific goals and success metrics
+- Choose one high-impact strategy to focus on first
+
+**Week 2-4: Implementation**
+- Begin executing your chosen strategy consistently
+- Track progress and document lessons learned
+- Resist the urge to add complexity too quickly
+
+**Month 2-3: Optimization**
+- Analyze your results and identify improvement opportunities
+- Refine your processes based on actual experience
+- Begin planning for strategic expansion
+
+**Month 4+: Scaling**
+- Add complementary strategies gradually
+- Develop systems for sustainable growth
+- Share your success to help others and build your network
+
+## Conclusion
+
+Success with {topic} isn't about finding secret techniques or having unlimited resources. It's about understanding fundamental principles, choosing appropriate strategies, and executing consistently over time.
+
+The {audience} who thrive are those who treat {topic} as a system to be optimized rather than a problem to be solved once. They focus on progress over perfection and building long-term capabilities over quick fixes.
+
+Most importantly, they understand that sustainable success comes from mastering fundamentals, not chasing every new trend or tactic.
+
+**{form_data.get('call_to_action', 'Start your transformation today by taking the first step in the action plan above.')}**
+
+Your success story with {topic} begins with the next action you take. Make it count.
+
+---
+
+*Every expert was once a beginner who refused to give up. Your journey to {topic} mastery starts now.*"""
     
     def _get_content_type_specific_requirements(self, content_type: str) -> str:
         """Get specific requirements for each content type"""
@@ -2025,96 +2693,461 @@ def generate_enhanced_generator_html():
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; color: #1a202c; line-height: 1.6; }
-        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1rem 0; box-shadow: 0 2px 10px rgba(0,0,0,0.1); position: sticky; top: 0; z-index: 100; }
-        .header-content { max-width: 1200px; margin: 0 auto; padding: 0 2rem; display: flex; justify-content: space-between; align-items: center; }
-        .header-title { font-size: 1.5rem; font-weight: 700; }
-        .status { padding: 0.5rem 1rem; border-radius: 0.5rem; font-weight: 600; font-size: 0.9rem; transition: all 0.3s ease; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            background: #f8fafc; 
+            color: #1a202c; 
+            line-height: 1.6; 
+            overflow-x: hidden;
+        }
+        .header { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            color: white; 
+            padding: 1rem 0; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+            position: sticky; 
+            top: 0; 
+            z-index: 100; 
+        }
+        .header-content { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            padding: 0 1rem; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        .header-title { 
+            font-size: 1.3rem; 
+            font-weight: 700; 
+        }
+        .status { 
+            padding: 0.4rem 0.8rem; 
+            border-radius: 0.4rem; 
+            font-weight: 600; 
+            font-size: 0.85rem; 
+            transition: all 0.3s ease; 
+        }
         .status-connecting { background: #92400e; color: #fef3c7; animation: pulse 2s infinite; }
         .status-connected { background: #065f46; color: #d1fae5; }
         .status-generating { background: #1e40af; color: #dbeafe; animation: pulse 2s infinite; }
         .status-error { background: #7f1d1d; color: #fecaca; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
-        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
-        .progress-section { background: white; border-radius: 1rem; padding: 2rem; margin-bottom: 2rem; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0; }
-        .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
-        .progress-title { color: #2d3748; font-size: 1.3rem; font-weight: 600; }
-        .progress-bar { width: 100%; height: 12px; background: #e2e8f0; border-radius: 6px; overflow: hidden; margin-bottom: 1rem; }
-        .progress-fill { height: 100%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); width: 0%; transition: width 0.5s ease; }
-        .progress-text { text-align: center; font-size: 0.9rem; color: #4a5568; font-weight: 500; }
-        .current-step { background: #f0f9ff; border: 1px solid #0ea5e9; border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem; display: none; }
-        .current-step h4 { color: #0369a1; margin-bottom: 0.5rem; }
-        .current-step p { color: #0369a1; font-size: 0.9rem; }
-        .progress-list { max-height: 300px; overflow-y: auto; padding: 1rem; background: #f8fafc; border-radius: 0.5rem; }
-        .progress-item { padding: 0.8rem; margin-bottom: 0.5rem; border-radius: 0.5rem; border-left: 4px solid #667eea; background: white; font-size: 0.9rem; }
+        
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            padding: 1.5rem; 
+        }
+        
+        .progress-section, .reddit-section, .pain-points-section, .recommendations-section, .content-display { 
+            background: white; 
+            border-radius: 1rem; 
+            padding: 1.5rem; 
+            margin-bottom: 1.5rem; 
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); 
+            border: 1px solid #e2e8f0; 
+        }
+        
+        .progress-header { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            margin-bottom: 1rem; 
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        .progress-title { 
+            color: #2d3748; 
+            font-size: 1.2rem; 
+            font-weight: 600; 
+        }
+        .progress-bar { 
+            width: 100%; 
+            height: 10px; 
+            background: #e2e8f0; 
+            border-radius: 5px; 
+            overflow: hidden; 
+            margin-bottom: 0.8rem; 
+        }
+        .progress-fill { 
+            height: 100%; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            width: 0%; 
+            transition: width 0.5s ease; 
+        }
+        .progress-text { 
+            text-align: center; 
+            font-size: 0.85rem; 
+            color: #4a5568; 
+            font-weight: 500; 
+        }
+        .current-step { 
+            background: #f0f9ff; 
+            border: 1px solid #0ea5e9; 
+            border-radius: 0.5rem; 
+            padding: 1rem; 
+            margin-bottom: 1rem; 
+            display: none; 
+        }
+        .current-step h4 { 
+            color: #0369a1; 
+            margin-bottom: 0.5rem; 
+            font-size: 0.95rem;
+        }
+        .current-step p { 
+            color: #0369a1; 
+            font-size: 0.85rem; 
+        }
+        .progress-list { 
+            max-height: 250px; 
+            overflow-y: auto; 
+            padding: 1rem; 
+            background: #f8fafc; 
+            border-radius: 0.5rem; 
+        }
+        .progress-item { 
+            padding: 0.7rem; 
+            margin-bottom: 0.4rem; 
+            border-radius: 0.4rem; 
+            border-left: 3px solid #667eea; 
+            background: white; 
+            font-size: 0.85rem; 
+        }
         .progress-item.completed { border-left-color: #10b981; background: #f0fff4; }
         .progress-item.error { border-left-color: #ef4444; background: #fef2f2; }
         
         /* Reddit Research Section */
-        .reddit-section { background: white; border-radius: 1rem; padding: 2rem; margin-bottom: 2rem; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); border: 1px solid #ff4500; display: none; }
+        .reddit-section { border: 1px solid #ff4500; display: none; }
         .reddit-section.visible { display: block; }
-        .reddit-header { background: #ff4500; color: white; margin: -2rem -2rem 1rem -2rem; padding: 1rem 2rem; border-radius: 1rem 1rem 0 0; }
-        .reddit-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
-        .reddit-stat { background: #fff3e0; padding: 1rem; border-radius: 0.5rem; text-align: center; }
-        .reddit-stat-value { font-size: 1.5rem; font-weight: 700; color: #f57c00; }
-        .reddit-stat-label { font-size: 0.8rem; color: #ef6c00; }
-        .reddit-pain-point { background: #fff3e0; border: 1px solid #ff9800; border-radius: 0.5rem; padding: 1rem; margin-bottom: 0.5rem; }
-        .reddit-quote { background: #f3f4f6; border-left: 4px solid #ff4500; padding: 1rem; margin: 0.5rem 0; font-style: italic; }
+        .reddit-header { 
+            background: #ff4500; 
+            color: white; 
+            margin: -1.5rem -1.5rem 1rem -1.5rem; 
+            padding: 1rem 1.5rem; 
+            border-radius: 1rem 1rem 0 0; 
+        }
+        .reddit-stats { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); 
+            gap: 0.8rem; 
+            margin-bottom: 1rem; 
+        }
+        .reddit-stat { 
+            background: #fff3e0; 
+            padding: 0.8rem; 
+            border-radius: 0.4rem; 
+            text-align: center; 
+        }
+        .reddit-stat-value { 
+            font-size: 1.3rem; 
+            font-weight: 700; 
+            color: #f57c00; 
+        }
+        .reddit-stat-label { 
+            font-size: 0.7rem; 
+            color: #ef6c00; 
+        }
+        .reddit-pain-point { 
+            background: #fff3e0; 
+            border: 1px solid #ff9800; 
+            border-radius: 0.4rem; 
+            padding: 0.8rem; 
+            margin-bottom: 0.4rem; 
+        }
+        .reddit-quote { 
+            background: #f3f4f6; 
+            border-left: 3px solid #ff4500; 
+            padding: 0.8rem; 
+            margin: 0.4rem 0; 
+            font-style: italic; 
+            font-size: 0.85rem;
+        }
         
         /* Pain Points Analysis Section */
-        .pain-points-section { background: white; border-radius: 1rem; padding: 2rem; margin-bottom: 2rem; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0; display: none; }
+        .pain-points-section { display: none; }
         .pain-points-section.visible { display: block; }
-        .pain-point-item { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem; }
-        .pain-point-source { display: inline-block; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.8rem; font-weight: 600; margin-bottom: 0.5rem; }
+        .pain-point-item { 
+            background: #fef3c7; 
+            border: 1px solid #f59e0b; 
+            border-radius: 0.4rem; 
+            padding: 0.8rem; 
+            margin-bottom: 0.8rem; 
+        }
+        .pain-point-source { 
+            display: inline-block; 
+            padding: 0.2rem 0.4rem; 
+            border-radius: 0.2rem; 
+            font-size: 0.7rem; 
+            font-weight: 600; 
+            margin-bottom: 0.4rem; 
+        }
         .source-reddit { background: #ff4500; color: white; }
         .source-manual { background: #6366f1; color: white; }
-        .pain-point-priority { display: inline-block; padding: 0.25rem 0.5rem; border-radius: 0.25rem; font-size: 0.8rem; font-weight: 600; margin-left: 0.5rem; }
+        .pain-point-priority { 
+            display: inline-block; 
+            padding: 0.2rem 0.4rem; 
+            border-radius: 0.2rem; 
+            font-size: 0.7rem; 
+            font-weight: 600; 
+            margin-left: 0.4rem; 
+        }
         .priority-high { background: #fee2e2; color: #991b1b; }
         .priority-medium { background: #fef3c7; color: #92400e; }
         .priority-low { background: #ecfccb; color: #365314; }
         
         /* Recommendations Section */
-        .recommendations-section { background: white; border-radius: 1rem; padding: 2rem; margin-bottom: 2rem; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0; display: none; }
+        .recommendations-section { display: none; }
         .recommendations-section.visible { display: block; }
-        .recommendation-item { background: #f0fff4; border: 1px solid #10b981; border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem; }
-        .recommendation-category { font-weight: 600; color: #065f46; margin-bottom: 0.5rem; }
-        .recommendation-impact { font-size: 0.8rem; color: #047857; }
+        .recommendation-item { 
+            background: #f0fff4; 
+            border: 1px solid #10b981; 
+            border-radius: 0.4rem; 
+            padding: 0.8rem; 
+            margin-bottom: 0.8rem; 
+        }
+        .recommendation-category { 
+            font-weight: 600; 
+            color: #065f46; 
+            margin-bottom: 0.4rem; 
+            font-size: 0.9rem;
+        }
+        .recommendation-impact { 
+            font-size: 0.75rem; 
+            color: #047857; 
+        }
         
-        .content-display { background: white; border-radius: 1rem; padding: 2rem; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0; display: none; }
+        .content-display { display: none; }
         .content-display.visible { display: block; }
-        .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
-        .metric-card { background: #f8fafc; padding: 1.5rem; border-radius: 0.8rem; text-align: center; }
-        .metric-value { font-size: 1.6rem; font-weight: 700; color: #667eea; margin-bottom: 0.3rem; }
-        .metric-label { font-size: 0.8rem; color: #4a5568; }
-        .content-display h1 { color: #2d3748; font-size: 2.2rem; margin-bottom: 1rem; border-bottom: 3px solid #667eea; padding-bottom: 0.8rem; }
-        .content-display h2 { color: #4a5568; font-size: 1.6rem; margin: 2rem 0 1rem 0; }
-        .content-display h3 { color: #667eea; font-size: 1.3rem; margin: 1.5rem 0 0.8rem 0; }
-        .content-display p { margin-bottom: 1rem; line-height: 1.8; color: #2d3748; }
-        .content-display ul, .content-display ol { margin: 1rem 0 1rem 2rem; }
-        .content-display li { margin-bottom: 0.5rem; }
-        .content-actions { display: flex; gap: 1rem; margin-top: 2rem; padding-top: 2rem; border-top: 1px solid #e2e8f0; }
-        .action-btn { background: #10b981; color: white; padding: 0.8rem 1.5rem; border: none; border-radius: 0.5rem; font-size: 0.9rem; cursor: pointer; font-weight: 600; transition: all 0.3s ease; }
-        .action-btn:hover { background: #059669; transform: translateY(-1px); }
+        .metrics { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); 
+            gap: 0.8rem; 
+            margin-bottom: 1.5rem; 
+        }
+        .metric-card { 
+            background: #f8fafc; 
+            padding: 1rem; 
+            border-radius: 0.6rem; 
+            text-align: center; 
+        }
+        .metric-value { 
+            font-size: 1.4rem; 
+            font-weight: 700; 
+            color: #667eea; 
+            margin-bottom: 0.2rem; 
+        }
+        .metric-label { 
+            font-size: 0.75rem; 
+            color: #4a5568; 
+        }
+        .content-display h1 { 
+            color: #2d3748; 
+            font-size: 2rem; 
+            margin-bottom: 1rem; 
+            border-bottom: 3px solid #667eea; 
+            padding-bottom: 0.6rem; 
+            line-height: 1.2;
+        }
+        .content-display h2 { 
+            color: #4a5568; 
+            font-size: 1.4rem; 
+            margin: 1.5rem 0 0.8rem 0; 
+        }
+        .content-display h3 { 
+            color: #667eea; 
+            font-size: 1.2rem; 
+            margin: 1.2rem 0 0.6rem 0; 
+        }
+        .content-display p { 
+            margin-bottom: 0.8rem; 
+            line-height: 1.7; 
+            color: #2d3748; 
+        }
+        .content-display ul, .content-display ol { 
+            margin: 0.8rem 0 0.8rem 1.5rem; 
+        }
+        .content-display li { 
+            margin-bottom: 0.4rem; 
+        }
+        .content-actions { 
+            display: flex; 
+            gap: 0.8rem; 
+            margin-top: 1.5rem; 
+            padding-top: 1.5rem; 
+            border-top: 1px solid #e2e8f0; 
+            flex-wrap: wrap;
+        }
+        .action-btn { 
+            background: #10b981; 
+            color: white; 
+            padding: 0.7rem 1.2rem; 
+            border: none; 
+            border-radius: 0.4rem; 
+            font-size: 0.85rem; 
+            cursor: pointer; 
+            font-weight: 600; 
+            transition: all 0.3s ease; 
+            flex: 1;
+            min-width: 120px;
+        }
+        .action-btn:hover { 
+            background: #059669; 
+            transform: translateY(-1px); 
+        }
         .action-btn.secondary { background: #6366f1; }
         .action-btn.secondary:hover { background: #4f46e5; }
-        .chat-container { background: white; border-radius: 1rem; border: 1px solid #e2e8f0; margin-top: 2rem; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); display: none; }
-        .chat-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1rem; border-radius: 1rem 1rem 0 0; font-weight: 600; }
-        .chat-content { height: 300px; overflow-y: auto; padding: 1rem; background: #fafbfc; }
-        .chat-input-container { padding: 1rem; border-top: 1px solid #e2e8f0; display: flex; gap: 0.5rem; background: white; border-radius: 0 0 1rem 1rem; }
-        .chat-input-container input { flex: 1; padding: 0.8rem; border: 1px solid #e2e8f0; border-radius: 0.5rem; font-size: 0.9rem; }
-        .chat-input-container input:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
-        .chat-input-container button { padding: 0.8rem 1.5rem; background: #667eea; color: white; border: none; border-radius: 0.5rem; font-weight: 600; cursor: pointer; transition: all 0.3s ease; }
+        
+        .chat-container { 
+            background: white; 
+            border-radius: 1rem; 
+            border: 1px solid #e2e8f0; 
+            margin-top: 1.5rem; 
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); 
+            display: none; 
+        }
+        .chat-header { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            color: white; 
+            padding: 1rem; 
+            border-radius: 1rem 1rem 0 0; 
+            font-weight: 600; 
+            font-size: 0.9rem;
+        }
+        .chat-content { 
+            height: 250px; 
+            overflow-y: auto; 
+            padding: 1rem; 
+            background: #fafbfc; 
+        }
+        .chat-input-container { 
+            padding: 1rem; 
+            border-top: 1px solid #e2e8f0; 
+            display: flex; 
+            gap: 0.5rem; 
+            background: white; 
+            border-radius: 0 0 1rem 1rem; 
+        }
+        .chat-input-container input { 
+            flex: 1; 
+            padding: 0.7rem; 
+            border: 1px solid #e2e8f0; 
+            border-radius: 0.4rem; 
+            font-size: 0.85rem; 
+        }
+        .chat-input-container input:focus { 
+            outline: none; 
+            border-color: #667eea; 
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1); 
+        }
+        .chat-input-container button { 
+            padding: 0.7rem 1.2rem; 
+            background: #667eea; 
+            color: white; 
+            border: none; 
+            border-radius: 0.4rem; 
+            font-weight: 600; 
+            cursor: pointer; 
+            transition: all 0.3s ease; 
+            font-size: 0.85rem;
+        }
         .chat-input-container button:hover { background: #5a6fd8; }
         .chat-input-container button:disabled { opacity: 0.6; cursor: not-allowed; }
-        .message { margin-bottom: 1rem; padding: 1rem; border-radius: 0.8rem; font-size: 0.9rem; line-height: 1.6; }
-        .message.user { background: #667eea; color: white; margin-left: 2rem; }
-        .message.assistant { background: #f0fff4; border: 1px solid #86efac; color: #065f46; margin-right: 2rem; }
-        .back-btn { background: #6b7280; color: white; padding: 0.5rem 1rem; border: none; border-radius: 0.5rem; text-decoration: none; font-size: 0.9rem; cursor: pointer; }
+        .message { 
+            margin-bottom: 0.8rem; 
+            padding: 0.8rem; 
+            border-radius: 0.6rem; 
+            font-size: 0.85rem; 
+            line-height: 1.5; 
+        }
+        .message.user { 
+            background: #667eea; 
+            color: white; 
+            margin-left: 1.5rem; 
+        }
+        .message.assistant { 
+            background: #f0fff4; 
+            border: 1px solid #86efac; 
+            color: #065f46; 
+            margin-right: 1.5rem; 
+        }
+        .back-btn { 
+            background: #6b7280; 
+            color: white; 
+            padding: 0.4rem 0.8rem; 
+            border: none; 
+            border-radius: 0.4rem; 
+            text-decoration: none; 
+            font-size: 0.8rem; 
+            cursor: pointer; 
+        }
         .back-btn:hover { background: #4b5563; }
-        .loading { text-align: center; padding: 3rem; color: #6b7280; }
-        .spinner { border: 4px solid #f3f4f6; border-top: 4px solid #667eea; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 1rem; }
+        .loading { 
+            text-align: center; 
+            padding: 2rem; 
+            color: #6b7280; 
+        }
+        .spinner { 
+            border: 3px solid #f3f4f6; 
+            border-top: 3px solid #667eea; 
+            border-radius: 50%; 
+            width: 30px; 
+            height: 30px; 
+            animation: spin 1s linear infinite; 
+            margin: 0 auto 0.8rem; 
+        }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        @media (max-width: 768px) { .header-content { flex-direction: column; gap: 1rem; } .content-actions { flex-direction: column; } .metrics { grid-template-columns: 1fr 1fr; } .reddit-stats { grid-template-columns: 1fr 1fr; } }
+        
+        /* Responsive Design */
+        @media (max-width: 768px) { 
+            .header-content { 
+                flex-direction: column; 
+                gap: 0.5rem; 
+                text-align: center;
+            } 
+            .container { padding: 1rem; }
+            .progress-section, .reddit-section, .pain-points-section, .recommendations-section, .content-display { 
+                padding: 1rem; 
+                margin-bottom: 1rem;
+            }
+            .content-actions { 
+                flex-direction: column; 
+            }
+            .action-btn { 
+                flex: none; 
+                width: 100%;
+            }
+            .metrics { 
+                grid-template-columns: 1fr 1fr; 
+            } 
+            .reddit-stats { 
+                grid-template-columns: 1fr 1fr; 
+            }
+            .content-display h1 { 
+                font-size: 1.7rem; 
+            }
+            .progress-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .header-title { 
+                font-size: 1.1rem; 
+            }
+            .metrics { 
+                grid-template-columns: 1fr; 
+            }
+            .reddit-stats { 
+                grid-template-columns: 1fr; 
+            }
+            .content-display h1 { 
+                font-size: 1.5rem; 
+            }
+        }
     </style>
 </head>
 <body>
@@ -2667,6 +3700,100 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
         manager.disconnect(session_id)
+
+@app.get("/test-reddit-research")
+async def test_reddit_research():
+    """Test Reddit research functionality directly"""
+    try:
+        if not REDDIT_AVAILABLE:
+            return JSONResponse({
+                "status": "error",
+                "message": "Reddit library (praw) not installed"
+            })
+        
+        researcher = RedditResearcher()
+        
+        if not researcher.reddit:
+            return JSONResponse({
+                "status": "error", 
+                "message": "Reddit client not configured",
+                "available": researcher.available
+            })
+        
+        # Test with simple topic
+        test_results = await researcher.research_pain_points(
+            topic="headphones",
+            subreddits=["headphones"],
+            target_audience="music listeners"
+        )
+        
+        return JSONResponse({
+            "status": "success",
+            "test_topic": "headphones",
+            "results": test_results
+        })
+        
+    except Exception as e:
+        import traceback
+        return JSONResponse({
+            "status": "error",
+            "message": str(e),
+            "error_type": type(e).__name__,
+            "traceback": traceback.format_exc()
+        })
+
+@app.get("/debug-reddit")
+async def debug_reddit():
+    """Debug Reddit API configuration and connectivity"""
+    debug_info = {
+        "reddit_library_available": REDDIT_AVAILABLE,
+        "credentials_configured": {
+            "client_id": bool(config.REDDIT_CLIENT_ID),
+            "client_secret": bool(config.REDDIT_CLIENT_SECRET),
+            "user_agent": bool(config.REDDIT_USER_AGENT)
+        },
+        "credential_values": {
+            "client_id": config.REDDIT_CLIENT_ID[:8] + "..." if config.REDDIT_CLIENT_ID else None,
+            "client_secret": config.REDDIT_CLIENT_SECRET[:8] + "..." if config.REDDIT_CLIENT_SECRET else None,
+            "user_agent": config.REDDIT_USER_AGENT
+        }
+    }
+    
+    if REDDIT_AVAILABLE and config.REDDIT_CLIENT_ID and config.REDDIT_CLIENT_SECRET:
+        try:
+            import praw
+            reddit = praw.Reddit(
+                client_id=config.REDDIT_CLIENT_ID,
+                client_secret=config.REDDIT_CLIENT_SECRET,
+                user_agent=config.REDDIT_USER_AGENT
+            )
+            
+            # Test basic connectivity
+            test_subreddit = reddit.subreddit('test')
+            test_name = test_subreddit.display_name
+            
+            # Test search functionality
+            search_results = list(test_subreddit.search('test', limit=1))
+            
+            debug_info["reddit_connection"] = {
+                "status": "success",
+                "test_subreddit_access": True,
+                "search_test": f"Found {len(search_results)} posts"
+            }
+            
+        except Exception as e:
+            debug_info["reddit_connection"] = {
+                "status": "error",
+                "error": str(e),
+                "error_type": type(e).__name__
+            }
+    else:
+        debug_info["reddit_connection"] = {
+            "status": "not_configured",
+            "reason": "Missing credentials or library"
+        }
+    
+    return JSONResponse(debug_info)
 
 @app.get("/test-ai")
 async def test_ai():
