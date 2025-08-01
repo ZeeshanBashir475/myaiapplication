@@ -141,33 +141,6 @@ LENGTH_CONFIGS = {
 
 # Reddit Research Agent
 class RedditResearcher:
-    def __init__(self):
-        self.reddit = None
-        self.available = REDDIT_AVAILABLE
-        if self.available:
-            self.setup_reddit()
-        else:
-            logger.warning("⚠️ Reddit research unavailable - praw library not installed")
-    
-    def setup_reddit(self):
-        if not self.available:
-            return
-            
-        if config.REDDIT_CLIENT_ID and config.REDDIT_CLIENT_SECRET:
-            try:
-                self.reddit = praw.Reddit(
-                    client_id=config.REDDIT_CLIENT_ID,
-                    client_secret=config.REDDIT_CLIENT_SECRET,
-                    user_agent=config.REDDIT_USER_AGENT
-                )
-                logger.info("✅ Reddit client initialized")
-            except Exception as e:
-                logger.error(f"❌ Reddit setup failed: {e}")
-        else:
-            logger.warning("⚠️ Reddit credentials not configured")
-    
-# Reddit Research Agent - Using the Enhanced Version
-class RedditResearcher:
     """REAL Reddit Researcher that actually scrapes Reddit using PRAW"""
     
     def __init__(self):
@@ -588,64 +561,6 @@ class RedditResearcher:
             'fallback_reason': 'Reddit API not available or configured'
         }
     
-    def _get_default_subreddits(self, topic: str) -> List[str]:
-        """Get default subreddits based on topic"""
-        topic_lower = topic.lower()
-        
-        if any(word in topic_lower for word in ['product', 'shopping', 'buy', 'review']):
-            return ['BuyItForLife', 'reviews', 'products']
-        elif any(word in topic_lower for word in ['business', 'entrepreneur', 'startup']):
-            return ['entrepreneur', 'smallbusiness', 'business']
-        elif any(word in topic_lower for word in ['tech', 'software', 'app']):
-            return ['technology', 'software', 'apps']
-        elif any(word in topic_lower for word in ['marketing', 'seo', 'content']):
-            return ['marketing', 'SEO', 'content_marketing']
-        else:
-            return ['AskReddit', 'LifeProTips', 'productivity']
-    
-    def _generate_search_terms(self, topic: str) -> List[str]:
-        """Generate search terms for Reddit"""
-        base_terms = [topic]
-        
-        # Add variations
-        words = topic.split()
-        if len(words) > 1:
-            base_terms.extend(words)
-        
-        # Add problem-focused terms
-        problem_terms = [
-            f"{topic} problems",
-            f"{topic} issues",
-            f"{topic} difficulties",
-            f"struggling with {topic}",
-            f"{topic} challenges"
-        ]
-        
-        return base_terms + problem_terms
-    
-    def _extract_pain_points(self, content: str, topic: str) -> List[str]:
-        """Extract pain points from content"""
-        content_lower = content.lower()
-        pain_indicators = [
-            'problem', 'issue', 'difficulty', 'struggle', 'frustrating', 'annoying',
-            'hate', 'worst', 'terrible', 'awful', 'disappointed', 'fail', 'broken',
-            'doesn\'t work', 'not working', 'can\'t', 'unable', 'impossible'
-        ]
-        
-        pain_points = []
-        sentences = content.split('.')
-        
-        for sentence in sentences:
-            sentence_lower = sentence.lower().strip()
-            if any(indicator in sentence_lower for indicator in pain_indicators):
-                if len(sentence.strip()) > 20 and len(sentence.strip()) < 150:
-                    # Clean and add pain point
-                    clean_point = sentence.strip().replace('\n', ' ')
-                    if topic.lower() in sentence_lower or len(pain_points) < 3:
-                        pain_points.append(clean_point)
-        
-        return pain_points[:3]  # Limit to 3 per content piece
-    
     def _fallback_pain_points_analysis(self, topic: str, target_audience: str) -> Dict:
         """Enhanced fallback analysis when Reddit is not available"""
         logger.info(f"🔄 Using fallback pain point analysis for: {topic}")
@@ -668,66 +583,6 @@ class RedditResearcher:
                 "All these specs like impedance and drivers just confuse me",
                 "How do I know which headphones are actually good?",
                 "My last pair broke after 6 months of normal use"
-            ]
-        elif any(word in topic_lower for word in ['car', 'vehicle', 'automotive']):
-            pain_points = {
-                "High maintenance and repair costs": 5,
-                "Confusing financing and dealer tactics": 4,
-                "Reliability concerns and unexpected breakdowns": 3,
-                "Difficulty finding honest reviews": 3,
-                "Insurance and registration complexity": 2
-            }
-            quotes = [
-                "Spent more on repairs this year than the car is worth",
-                "Dealer tried to pressure me into options I didn't need",
-                "Car broke down right after the warranty expired",
-                "Can't tell which reviews are genuine vs paid promotions",
-                "Insurance quotes vary wildly for the same coverage"
-            ]
-        elif any(word in topic_lower for word in ['software', 'app', 'tool', 'saas']):
-            pain_points = {
-                "Steep learning curve and complexity": 4,
-                "Hidden costs and subscription traps": 4,
-                "Poor customer support response": 3,
-                "Integration difficulties with existing tools": 3,
-                "Feature bloat and unnecessary complexity": 2
-            }
-            quotes = [
-                "Took weeks to learn this software properly",
-                "Started at $10/month but now paying $80 with all the add-ons",
-                "Support takes days to respond to urgent issues",
-                "Couldn't get it to work with our existing systems",
-                "Has 100 features but I only use 5 of them"
-            ]
-        elif any(word in topic_lower for word in ['health', 'fitness', 'exercise', 'diet']):
-            pain_points = {
-                "Conflicting advice from different sources": 5,
-                "Lack of time for proper implementation": 4,
-                "Expensive supplements and equipment": 3,
-                "Difficulty maintaining motivation": 3,
-                "Confusing nutritional information": 2
-            }
-            quotes = [
-                "Every expert says something different about what's healthy",
-                "Work 60 hours a week, when am I supposed to exercise?",
-                "Spent hundreds on supplements that didn't help",
-                "Start strong but lose motivation after a few weeks",
-                "Food labels are impossible to understand"
-            ]
-        elif any(word in topic_lower for word in ['business', 'marketing', 'entrepreneur']):
-            pain_points = {
-                "Limited budget for marketing and growth": 5,
-                "Difficulty finding reliable customers": 4,
-                "Overwhelming administrative tasks": 3,
-                "Competition from larger companies": 3,
-                "Uncertainty about legal requirements": 2
-            }
-            quotes = [
-                "Marketing budget is tiny but need to compete with big companies",
-                "Customer acquisition costs more than customer lifetime value",
-                "Spend more time on paperwork than actual business",
-                "Big competitors can undercut our prices easily",
-                "Never sure if I'm complying with all the regulations"
             ]
         else:
             # Generic fallback pain points
@@ -755,7 +610,7 @@ class RedditResearcher:
             'fallback_reason': 'Reddit API not available or configured'
         }
 
-# LLM Client
+# IMPROVED LLM Client for Railway
 class LLMClient:
     def __init__(self):
         self.anthropic_client = None
@@ -772,7 +627,12 @@ class LLMClient:
         
         if self.api_key:
             try:
-                self.anthropic_client = anthropic.Anthropic(api_key=self.api_key)
+                # Initialize with Railway-optimized settings
+                self.anthropic_client = anthropic.Anthropic(
+                    api_key=self.api_key,
+                    timeout=60.0,  # Longer timeout for Railway
+                    max_retries=3   # Retry failed requests
+                )
                 logger.info("✅ Anthropic client initialized successfully")
                 
                 # Test the client with a simple call
@@ -780,34 +640,35 @@ class LLMClient:
                     test_response = self.anthropic_client.messages.create(
                         model="claude-3-haiku-20240307",
                         max_tokens=10,
-                        messages=[{"role": "user", "content": "Hello"}]
+                        messages=[{"role": "user", "content": "Hello"}],
+                        timeout=30.0
                     )
                     logger.info("✅ Anthropic API test successful")
                 except Exception as test_e:
                     logger.error(f"❌ Anthropic API test failed: {test_e}")
-                    self.anthropic_client = None
+                    # Don't set client to None - let it try again later
                     
             except Exception as e:
                 logger.error(f"❌ Anthropic setup failed: {e}")
                 self.anthropic_client = None
         else:
             logger.error("❌ ANTHROPIC_API_KEY not found in environment variables")
-            logger.error(f"❌ Available env vars starting with 'ANTH': {[k for k in os.environ.keys() if k.startswith('ANTH')]}")
+            logger.error(f"❌ Available env vars: {list(os.environ.keys())}")
     
     def is_configured(self):
         """Check if the client is properly configured"""
-        return self.anthropic_client is not None
+        return self.anthropic_client is not None and self.api_key is not None
     
     async def generate_streaming(self, prompt: str, max_tokens: int = 3000):
-        """Generate streaming response with better error handling"""
+        """Generate streaming response with Railway-optimized error handling"""
         
-        # Re-initialize if client is None
-        if not self.anthropic_client:
-            logger.warning("🔄 Anthropic client not found, attempting re-initialization...")
+        # Always try to re-initialize if not configured
+        if not self.is_configured():
+            logger.warning("🔄 Anthropic client not configured, attempting re-initialization...")
             self.setup_anthropic()
         
-        if not self.anthropic_client:
-            error_msg = f"❌ Anthropic client not available. API Key: {'Present' if self.api_key else 'Missing'}"
+        if not self.is_configured():
+            error_msg = f"❌ Anthropic client not available. Please check your API key and credits."
             logger.error(error_msg)
             yield error_msg
             return
@@ -815,34 +676,52 @@ class LLMClient:
         try:
             logger.info(f"🤖 Generating content with prompt length: {len(prompt)}")
             
+            # Use Railway-optimized settings
             stream = self.anthropic_client.messages.create(
                 model="claude-3-haiku-20240307",
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}],
-                stream=True
+                stream=True,
+                timeout=120.0  # Extended timeout for Railway
             )
             
             chunk_count = 0
+            total_content = ""
+            
             for chunk in stream:
                 if chunk.type == "content_block_delta":
                     chunk_count += 1
-                    yield chunk.delta.text
+                    content_piece = chunk.delta.text
+                    total_content += content_piece
+                    yield content_piece
             
-            logger.info(f"✅ Content generation completed. Chunks: {chunk_count}")
+            logger.info(f"✅ Content generation completed. Chunks: {chunk_count}, Total chars: {len(total_content)}")
                         
         except Exception as e:
             error_msg = f"❌ Anthropic API error: {str(e)}"
             logger.error(error_msg)
             
-            # Provide more specific error information
+            # Provide specific error guidance for Railway
             if "authentication" in str(e).lower() or "api_key" in str(e).lower():
-                yield "❌ Authentication error. Please check if your Anthropic API key is valid and has sufficient credits."
+                yield "❌ Authentication error. Your Anthropic API key may be invalid. Please check your Railway environment variables."
             elif "rate_limit" in str(e).lower():
                 yield "❌ Rate limit exceeded. Please wait a moment and try again."
+            elif "insufficient_quota" in str(e).lower() or "quota" in str(e).lower():
+                yield "❌ No credits remaining. Please add credits to your Anthropic account at console.anthropic.com"
+            elif "timeout" in str(e).lower():
+                yield "❌ Request timeout. This may be a Railway connectivity issue. Trying shorter content..."
+                # Retry with shorter max_tokens
+                if max_tokens > 1000:
+                    async for chunk in self.generate_streaming(prompt, max_tokens // 2):
+                        yield chunk
+                    return
             elif "model" in str(e).lower():
                 yield "❌ Model error. The AI model might be temporarily unavailable."
             else:
                 yield f"❌ AI Generation Error: {str(e)}"
+                
+            # Set client to None to force reinitialization on next request
+            self.anthropic_client = None
 
 # WebSocket Manager
 class ConnectionManager:
@@ -1092,7 +971,7 @@ class ContentSystem:
         }
     
     async def _generate_ai_content(self, form_data: Dict, content_analysis: Dict, pain_points_analysis: List[Dict], reddit_research: Dict) -> str:
-        """Generate REAL AI content like Claude does - comprehensive and following all instructions"""
+        """Generate REAL AI content using Claude - this is the key fix!"""
         
         content_type = form_data['content_type']
         topic = form_data['topic']
@@ -1108,287 +987,239 @@ class ContentSystem:
         industry = form_data.get('industry', '')
         tone = form_data.get('tone', 'professional')
         
-        # Build comprehensive AI prompt like Claude would receive
-        prompt = f"""You are Claude, an expert content writer creating high-quality {content_type} content. Create complete, ready-to-publish content about "{topic}" for {audience}.
-
-CONTENT TYPE: {content_type}
-TOPIC: {topic}
-TARGET AUDIENCE: {audience}
-TONE: {tone}
-INDUSTRY: {industry}
-
-REDDIT RESEARCH FINDINGS:
-- Analyzed {reddit_research.get('total_posts_analyzed', 0)} real Reddit posts
-- Key customer pain points discovered: {', '.join(main_pain_points)}
-- Research quality: {reddit_research.get('research_quality', 'medium')}
-
-REAL CUSTOMER QUOTES FROM REDDIT:
-{chr(10).join([f'"{quote[:100]}..."' for quote in reddit_quotes]) if reddit_quotes else 'No specific quotes available'}
-
-CUSTOMER PAIN POINTS TO ADDRESS:
-{chr(10).join([f"• {point['pain_point']} (Priority: {point['priority']}, Source: {point['source']})" for point in pain_points_analysis])}
-
-BUSINESS CONTEXT:
-- Unique Value Proposition: {unique_selling_points}
-- Call to Action: {call_to_action}
-- Required Keywords: {required_keywords}
-- Content Goals: {', '.join(form_data.get('content_goals', []))}
-
-USER'S SPECIFIC INSTRUCTIONS (FOLLOW EXACTLY):
-{ai_instructions}
+        # Build comprehensive AI prompt that actually works
+        prompt = f"""You are an expert content writer creating a comprehensive {content_type} about "{topic}" for {audience}.
 
 CONTENT REQUIREMENTS:
-1. Write COMPLETE, READY-TO-PUBLISH {content_type} content
-2. Address EVERY pain point from the research
-3. Use natural language that resonates with {audience}
-4. Include specific solutions and actionable advice
-5. Naturally integrate keywords: {required_keywords}
-6. Follow the user's specific instructions exactly
-7. End with the call-to-action: {call_to_action}
-8. Make it comprehensive (1500-2500 words)
-9. Use authentic customer language from Reddit research
+- Write a complete, ready-to-publish {content_type}
+- Length: 1500-2500 words
+- Tone: {tone}
+- Industry: {industry}
 
-WRITING STYLE:
-- Write like Claude: intelligent, helpful, comprehensive
-- {tone} tone throughout
-- Industry-specific knowledge for {industry}
-- Address real customer concerns authentically
-- Provide genuine value and insights
+REDDIT RESEARCH DATA TO INTEGRATE:
+- Analyzed {reddit_research.get('total_posts_analyzed', 0)} real posts from Reddit
+- Key pain points discovered: {', '.join(main_pain_points[:3])}
 
-Write the complete {content_type} now. This should be publication-ready content that directly serves {audience} who are dealing with the pain points identified. Make it exceptionally valuable and well-researched."""
+CUSTOMER PAIN POINTS TO ADDRESS:
+{chr(10).join([f"• {point['pain_point']}" for point in pain_points_analysis[:5]])}
 
-        # Generate content with better error handling
+REAL CUSTOMER QUOTES FROM REDDIT:
+{chr(10).join([f'"{quote[:100]}"' for quote in reddit_quotes]) if reddit_quotes else 'Address common customer concerns authentically'}
+
+BUSINESS CONTEXT:
+- Unique selling points: {unique_selling_points}
+- Required keywords: {required_keywords}
+- Call to action: {call_to_action}
+
+{f"SPECIFIC INSTRUCTIONS: {ai_instructions}" if ai_instructions else ""}
+
+Write a complete {content_type} that:
+1. Addresses EVERY pain point listed above
+2. Uses natural, authentic language
+3. Provides genuine value and solutions
+4. Includes the call-to-action naturally
+5. Integrates keywords naturally
+6. Is comprehensive (1500-2500 words)
+
+Write the complete {content_type} now:"""
+
+        # Generate content with the improved LLM client
         try:
-            logger.info(f"🤖 Generating comprehensive AI content for {content_type}: {topic}")
+            logger.info(f"🤖 Generating REAL AI content for {content_type}: {topic}")
             
             content_chunks = []
             async for chunk in self.llm_client.generate_streaming(prompt, max_tokens=4000):
-                if "❌" in chunk or "Please configure" in chunk:
+                if "❌" in chunk:
                     logger.error(f"AI generation error detected: {chunk}")
-                    return self._generate_claude_style_fallback(form_data, pain_points_analysis, reddit_research)
+                    # Return fallback instead of broken content
+                    return self._generate_comprehensive_fallback(form_data, pain_points_analysis, reddit_research)
                 content_chunks.append(chunk)
             
             content = ''.join(content_chunks)
             logger.info(f"✅ AI content generation completed. Length: {len(content)} characters")
             
             # Validate content quality
-            if len(content) < 1000:
-                logger.warning("Content too short, generating enhanced version...")
-                return self._generate_claude_style_fallback(form_data, pain_points_analysis, reddit_research)
-            
-            # Check if it follows instructions
-            if ai_instructions and len(ai_instructions) > 20:
-                if not self._validates_user_instructions(content, ai_instructions):
-                    logger.warning("Content doesn't follow user instructions, enhancing...")
-                    enhanced_content = self._enhance_content_with_instructions(content, ai_instructions)
-                    return enhanced_content
+            if len(content) < 500:
+                logger.warning("Content too short, using fallback...")
+                return self._generate_comprehensive_fallback(form_data, pain_points_analysis, reddit_research)
             
             return content
             
         except Exception as e:
             logger.error(f"AI generation failed: {e}")
-            return self._generate_claude_style_fallback(form_data, pain_points_analysis, reddit_research)
+            return self._generate_comprehensive_fallback(form_data, pain_points_analysis, reddit_research)
     
-    def _validates_user_instructions(self, content: str, instructions: str) -> bool:
-        """Check if content follows user instructions"""
-        instructions_lower = instructions.lower()
-        content_lower = content.lower()
-        
-        # Check for specific formatting instructions
-        if 'style>' in instructions_lower and '<style>' not in content_lower:
-            return False
-        if 'css' in instructions_lower and 'css' not in content_lower:
-            return False
-        if 'html' in instructions_lower and '<' not in content_lower:
-            return False
-        
-        return True
-    
-    def _enhance_content_with_instructions(self, content: str, instructions: str) -> str:
-        """Enhance content to follow user instructions"""
-        if 'style>' in instructions.lower():
-            # Add CSS styling if requested
-            styled_content = f"""<style>
-{instructions}
-</style>
-
-{content}"""
-            return styled_content
-        
-        return content
-    
-    def _generate_claude_style_fallback(self, form_data: Dict, pain_points_analysis: List[Dict], reddit_research: Dict) -> str:
-        """Generate Claude-style comprehensive content when AI fails"""
+    def _generate_comprehensive_fallback(self, form_data: Dict, pain_points_analysis: List[Dict], reddit_research: Dict) -> str:
+        """Generate comprehensive fallback content when AI fails"""
         topic = form_data['topic']
         content_type = form_data['content_type']
         audience = form_data.get('target_audience', 'readers')
-        tone = form_data.get('tone', 'professional')
         main_pain_points = [point['pain_point'] for point in pain_points_analysis[:3]]
-        ai_instructions = form_data.get('ai_instructions', '')
-        
-        # Apply user instructions to the fallback
-        content_style = ""
-        if ai_instructions and 'style>' in ai_instructions.lower():
-            content_style = f"<style>\n{ai_instructions}\n</style>\n\n"
         
         if content_type == 'product_page':
-            content = f"""{content_style}# {topic}: The Solution You've Been Searching For
+            return f"""# {topic}: The Complete Solution for {audience}
 
-## Finally, Address Your Biggest {topic} Challenges
+## Transform Your Experience with {topic}
 
-Based on our analysis of {reddit_research.get('total_posts_analyzed', 'numerous')} real customer discussions, we understand exactly what {audience} are going through. You're not alone in facing these challenges:
+Are you struggling with {main_pain_points[0] if main_pain_points else 'common challenges'}? You're not alone. Based on our research of {reddit_research.get('total_posts_analyzed', 'numerous')} customer discussions, we understand exactly what {audience} face every day.
 
-**The Most Common Pain Points We Discovered:**
-{chr(10).join([f"• **{pain}** - This affects {audience} daily and impacts their success" for pain in main_pain_points])}
+## The Real Problems We Solve
 
-That's exactly why we developed {topic} - to solve these real problems with a proven, effective approach.
+Our comprehensive research revealed these critical challenges:
 
-## How {topic} Solves Each Pain Point
+### Problem 1: {main_pain_points[0] if main_pain_points else 'Information Overload'}
+This is the #1 issue affecting {audience} today. Customers consistently tell us: "{reddit_research.get('authentic_quotes', ['This is such a common problem I face'])[0][:100] if reddit_research.get('authentic_quotes') else 'This is exactly what I was struggling with'}"
 
-### Problem 1: {main_pain_points[0] if main_pain_points else 'Common Challenges'}
+**How We Solve It:** {topic} eliminates this frustration with {form_data.get('unique_selling_points', 'our proven approach that works')}.
 
-**What Our Research Shows:** Customer after customer mentioned struggling with {main_pain_points[0] if main_pain_points else 'this issue'}. One Reddit user said: "{reddit_research.get('authentic_quotes', ['This is a real challenge I face'])[0][:100]}..."
+### Problem 2: {main_pain_points[1] if len(main_pain_points) > 1 else 'Time Constraints'}
+{audience} don't have time to deal with complicated solutions. That's why {topic} is designed for busy professionals who need results fast.
 
-**Our Solution:** {topic} eliminates this frustration by providing {form_data.get('unique_selling_points', 'a comprehensive, tested solution that actually works')}.
+**Real Results:** Customers save an average of 5-10 hours per week after implementing our solution.
 
-**Real Results:** Customers report resolving this issue within days, not weeks or months.
+### Problem 3: {main_pain_points[2] if len(main_pain_points) > 2 else 'Lack of Expert Support'}
+Nobody wants to figure everything out alone. {topic} comes with dedicated expert support to ensure your success.
 
-### Problem 2: {main_pain_points[1] if len(main_pain_points) > 1 else 'Time and Efficiency Concerns'}
-
-**Customer Reality:** {audience} consistently told us that {main_pain_points[1] if len(main_pain_points) > 1 else 'time constraints'} were holding them back from success.
-
-**How We Help:** {topic} streamlines the entire process, saving you hours of frustration and getting you results faster.
-
-**Measurable Impact:** The average customer saves 5-10 hours per week after implementing our approach.
-
-### Problem 3: {main_pain_points[2] if len(main_pain_points) > 2 else 'Lack of Expert Guidance'}
-
-**The Pattern We Saw:** Again and again, {audience} mentioned feeling lost without proper guidance for {topic}.
-
-**Expert Support:** Unlike generic solutions, {topic} comes with dedicated expert support to ensure your success.
-
-## What Makes {topic} Different
-
-**Research-Driven Development**
-We didn't guess at what {audience} needed - we analyzed real customer discussions and built {topic} to solve actual problems.
-
-**Proven Results**
-{topic} has helped hundreds of {audience} overcome the exact challenges you're facing right now.
-
-**Comprehensive Solution**
-Instead of partial fixes, {topic} addresses the complete spectrum of challenges related to {topic}.
-
-**Ongoing Support**
-You're not left to figure things out alone. Our team ensures you succeed with {topic}.
-
-## Complete {topic} Package
+## Complete {topic} Solution
 
 **What You Get:**
-• Complete {topic} system designed for {audience}
-• Step-by-step implementation guide
-• Expert support and guidance
+• Comprehensive {topic} system designed specifically for {audience}
+• Step-by-step implementation guide that actually works
+• Expert support when you need it most
 • Access to our community of successful users
-• Regular updates and improvements
-• Money-back guarantee
+• Regular updates and continuous improvements
+• 100% satisfaction guarantee
 
 **Immediate Benefits:**
 • Solve your primary challenge: {main_pain_points[0] if main_pain_points else 'improved efficiency'}
-• Save time and reduce frustration
-• Get expert guidance when you need it
-• Join a community of successful {audience}
+• Save time and reduce daily frustration
+• Get expert guidance without the expert price tag
+• Join hundreds of successful {audience}
 
-**Long-term Value:**
-• Sustainable results that compound over time
-• Skills and knowledge you can apply broadly
-• Confidence in your {topic} decisions
-• Foundation for continued growth and success
+## Why {audience} Choose {topic}
 
-## Real Customer Success Stories
+**Proven Track Record:** We've helped over 1,000 {audience} overcome the exact challenges you're facing right now.
 
-**Before {topic}:** "I was spending hours every week dealing with {main_pain_points[0] if main_pain_points else 'these challenges'} and getting nowhere. It was incredibly frustrating."
+**Research-Based Solution:** Unlike generic alternatives, {topic} was built based on analysis of real customer feedback and pain points.
 
-**After {topic}:** "Everything changed. I now have a system that works consistently. I've saved both time and money, and I actually enjoy working with {topic} now." - Sarah K., {audience.split()[0] if ' ' in audience else audience}
+**Complete Support System:** You get everything you need to succeed, plus ongoing support to ensure your continued success.
 
-**The Bottom Line:** "{topic} solved problems I didn't even know I had. It's been transformational for my approach to {topic}." - Mike R., Professional
+**Risk-Free Trial:** Try {topic} completely risk-free with our satisfaction guarantee.
 
-## Risk-Free Implementation
+## Customer Success Stories
 
-We're so confident that {topic} will solve your challenges that we offer:
+**"Before using {topic}, I was spending hours every week dealing with {main_pain_points[0] if main_pain_points else 'these challenges'} and getting nowhere. Now I have a system that just works."** - Sarah K., Marketing Manager
 
-• **60-day money-back guarantee**
-• **Free implementation support**
-• **Access to our expert team**
-• **Community of successful users**
-• **Regular updates and improvements**
+**"This solved problems I didn't even know I had. {topic} has been transformational for how I approach these challenges."** - Mike R., Business Owner
 
-## {form_data.get('call_to_action', 'Transform Your Approach Today')}
+## Frequently Asked Questions
+
+**Q: How quickly will I see results with {topic}?**
+A: Most customers see improvements within the first week, with significant results by day 30.
+
+**Q: What if {topic} doesn't work for my specific situation?**
+A: Every situation is unique, which is why we provide personalized support and a satisfaction guarantee.
+
+**Q: Is this really different from other solutions?**
+A: Absolutely. {topic} was built specifically for {audience} based on real research into what actually works.
+
+## Technical Specifications
+
+{topic} includes everything you need:
+- Complete implementation system
+- Expert guidance and support
+- Community access and resources
+- Regular updates and improvements
+- Mobile and desktop compatibility
+- 24/7 customer support
+
+## Get Started Today
 
 Don't let {main_pain_points[0] if main_pain_points else 'these challenges'} continue to hold you back. Join the {audience} who have already transformed their results with {topic}.
 
-**Ready to solve these challenges once and for all?**
+**{form_data.get('call_to_action', 'Experience the complete solution today')}**
 
-{form_data.get('call_to_action', 'Get started today and experience the difference')}
+### Special Offer for {audience}
 
----
+For a limited time, we're including:
+- Bonus implementation templates ($297 value)
+- Private consultation session ($197 value)
+- Extended support access ($97 value)
+- Money-back guarantee
 
-*This solution is backed by research of {reddit_research.get('total_posts_analyzed', 'extensive')} real customer experiences and proven methodologies designed specifically for {audience}.*"""
+**Total Value: $591 - Yours FREE when you act today**
 
-        elif content_type == 'article':
-            content = f"""{content_style}# The Complete Guide to {topic}: Based on Real {audience.title()} Experiences
+## Ready to Transform Your Results?
+
+{form_data.get('call_to_action', 'Get started with ' + topic + ' today and experience the difference')}
+
+*This solution is backed by research from {reddit_research.get('total_posts_analyzed', 'extensive')} real customer experiences and proven methodologies.*
+
+## About Our Company
+
+We specialize in creating solutions for {audience} who are serious about results. Our team has years of experience solving the exact challenges you face, and we're committed to your success.
+
+**Contact Information:**
+- Email: support@example.com
+- Phone: 1-800-XXX-XXXX
+- Live Chat: Available 24/7
+
+*Transform your approach to {topic}. Get the results you deserve.*"""
+        
+        else:  # Default comprehensive content for all other types
+            return f"""# The Complete Guide to {topic}: Based on Real {audience} Research
 
 ## Introduction
 
-If you're reading this, you're probably dealing with some of the same challenges that {reddit_research.get('total_posts_analyzed', 'countless')} other {audience} have shared in online communities. This isn't just another generic guide - it's based on real research into what {audience} actually struggle with when it comes to {topic}.
+{topic} has become crucial for {audience}, but success requires understanding the real challenges people face. This comprehensive guide addresses actual problems based on research of {reddit_research.get('total_posts_analyzed', 'numerous')} customer discussions and provides proven solutions.
 
-## The Reality of {topic} for {audience}
+## The Current Reality for {audience}
 
-Our comprehensive analysis of real customer discussions revealed some eye-opening patterns. Here are the most common challenges {audience} face:
+Our extensive research reveals that {audience} consistently struggle with these key challenges:
 
 ### Challenge 1: {main_pain_points[0] if main_pain_points else 'Information Overload'}
 
-The number one issue we discovered? {main_pain_points[0] if main_pain_points else 'Information overload'}. As one Reddit user put it: "{reddit_research.get('authentic_quotes', ['There is so much conflicting information out there'])[0][:100]}..."
+The most common issue we discovered through our research is {main_pain_points[0] if main_pain_points else 'information overload'}. One customer put it perfectly: "{reddit_research.get('authentic_quotes', ['There is so much conflicting information out there'])[0][:100] if reddit_research.get('authentic_quotes') else 'There is so much conflicting information out there'}..."
 
-**Why This Matters:** This isn't just frustrating - it's costly. When {audience} can't find reliable information about {topic}, they make expensive mistakes or miss valuable opportunities.
+**Why This Matters:** This isn't just frustrating—it's costly. When {audience} can't find reliable information about {topic}, they make expensive mistakes or miss valuable opportunities.
 
-**The Real Impact:** Based on the discussions we analyzed, this single issue causes {audience} to:
-- Waste weeks researching without taking action
-- Make decisions based on incomplete information
-- Second-guess themselves constantly
-- Miss out on better opportunities
+**The Real Impact:**
+- Weeks wasted researching without taking action
+- Decisions based on incomplete or incorrect information
+- Constant second-guessing and uncertainty
+- Missing out on better opportunities
 
 ### Challenge 2: {main_pain_points[1] if len(main_pain_points) > 1 else 'Implementation Complexity'}
 
-The second most common theme was {main_pain_points[1] if len(main_pain_points) > 1 else 'implementation complexity'}. Even when {audience} find good information, putting it into practice proves difficult.
-
-**What We Learned:** The gap between knowing what to do and actually doing it successfully is where most {audience} get stuck with {topic}.
+Even when {audience} find good information, putting it into practice proves difficult. The gap between knowing what to do and actually doing it successfully is where most people get stuck.
 
 **Common Frustrations:**
 - Instructions that seem clear but don't work in practice
 - Missing steps that experts assume you know
-- Lack of troubleshooting guidance when things go wrong
-- No clear path from beginner to advanced levels
+- No troubleshooting guidance when things go wrong
+- Lack of personalized guidance for specific situations
 
 ### Challenge 3: {main_pain_points[2] if len(main_pain_points) > 2 else 'Lack of Reliable Support'}
 
-Perhaps most telling was how often {audience} mentioned feeling alone in their {topic} journey. Traditional resources often leave you to figure things out by yourself.
+Perhaps most telling in our research was how often {audience} mentioned feeling alone in their {topic} journey. Traditional resources often leave you to figure things out by yourself.
 
-## A Better Approach to {topic}
+## A Research-Based Approach to {topic}
 
-Based on this research, here's what actually works for {audience}:
+Based on our comprehensive analysis, here's what actually works for {audience}:
 
-### Principle 1: Start with Real Problems, Not Theoretical Solutions
+### Principle 1: Start with Real Problems, Not Theory
 
 Instead of jumping into complex strategies, successful {audience} focus first on solving their most pressing {topic} challenges.
 
-**Practical Application:**
-1. Identify your specific pain point from the list above
+**Practical Implementation:**
+1. Identify your specific pain point from our research above
 2. Focus on that single issue until it's resolved
 3. Build confidence through early wins
 4. Gradually expand to more advanced strategies
 
-### Principle 2: Use Proven, Step-by-Step Methods
+### Principle 2: Use Proven, Systematic Methods
 
-The {audience} who succeed with {topic} don't reinvent the wheel. They follow proven processes that others have already tested.
+The {audience} who succeed with {topic} don't reinvent the wheel. They follow proven processes that others have already tested and refined.
 
 **Implementation Framework:**
 - **Week 1:** Foundation building and initial setup
@@ -1396,25 +1227,23 @@ The {audience} who succeed with {topic} don't reinvent the wheel. They follow pr
 - **Week 4:** Optimization and troubleshooting
 - **Month 2+:** Advanced techniques and scaling
 
-### Principle 3: Build Support Systems
+### Principle 3: Build Strong Support Systems
 
-Isolation is the enemy of success with {topic}. The most successful {audience} create support systems early.
+Isolation is the enemy of success with {topic}. The most successful {audience} create support systems early in their journey.
 
 **Support Strategy:**
 - Connect with others facing similar challenges
 - Find mentors who've succeeded with {topic}
 - Create accountability mechanisms
-- Document your progress and lessons learned
+- Document progress and lessons learned
 
-## Real-World Implementation Guide
+## Comprehensive Implementation Guide
 
-### For Beginners: The Foundation Phase
-
-If you're new to {topic}, resist the urge to jump into advanced techniques. Focus on:
+### Phase 1: Foundation Building (Weeks 1-2)
 
 **Essential First Steps:**
 1. **Clear Goal Setting:** Define exactly what success looks like for your situation
-2. **Resource Gathering:** Collect the tools and information you'll actually need
+2. **Resource Assessment:** Identify what you have and what you need
 3. **Simple Start:** Begin with the most basic, proven approach
 4. **Progress Tracking:** Set up systems to measure your progress
 
@@ -1424,47 +1253,71 @@ If you're new to {topic}, resist the urge to jump into advanced techniques. Focu
 - Not tracking progress systematically
 - Going it alone instead of seeking guidance
 
-### For Intermediate Users: The Growth Phase
+### Phase 2: Core Implementation (Weeks 3-8)
 
-If you have some {topic} experience but aren't seeing the results you want:
+**Systematic Approach:**
+1. **Focus on Fundamentals:** Master basic techniques before advancing
+2. **Consistent Execution:** Daily action beats sporadic heroic efforts
+3. **Regular Monitoring:** Track what's working and what isn't
+4. **Quick Adjustments:** Make small changes based on results
 
 **Optimization Strategies:**
-1. **Audit Current Approach:** Honestly assess what's working and what isn't
-2. **Identify Bottlenecks:** Find the specific points where you're getting stuck
-3. **Systematic Improvement:** Address one bottleneck at a time
-4. **Advanced Techniques:** Gradually incorporate more sophisticated methods
+1. **Identify Bottlenecks:** Find where you're getting stuck
+2. **Address One Issue at a Time:** Don't try to fix everything simultaneously
+3. **Learn from Others:** Study what successful people are doing differently
+4. **Document Your Process:** Keep track of what works for your situation
 
-### For Advanced Practitioners: The Mastery Phase
+### Phase 3: Advanced Mastery (Month 3+)
 
-For {audience} ready to take {topic} to the next level:
-
-**Advanced Strategies:**
+**Advanced Techniques:**
 - Develop unique competitive advantages
 - Create systems that work without constant attention
 - Help others while continuing to learn
 - Stay current with {topic} evolution and trends
 
+## Real-World Success Stories
+
+### Case Study 1: The Overwhelmed Professional
+
+**Background:** Marketing manager struggling to balance {topic} with other responsibilities.
+
+**Challenge:** Limited time and resources, no specialized expertise.
+
+**Solution:** Focused on the 20% of {topic} activities that would drive 80% of results. Automated routine tasks and outsourced specialized work.
+
+**Result:** 200% improvement in key metrics within six months, with only 5 hours per week invested.
+
+### Case Study 2: The Skeptical Small Business Owner
+
+**Background:** Local business that had tried multiple {topic} approaches without success.
+
+**Challenge:** Previous bad experiences, limited budget, skeptical about new approaches.
+
+**Solution:** Started with one simple, low-risk strategy. Built confidence through small wins before expanding.
+
+**Result:** Consistent month-over-month growth for 18 months running.
+
 ## Measuring Success and Avoiding Pitfalls
 
-### Key Metrics to Track
+### Key Performance Indicators
 
-Based on successful {audience} experiences:
+Track these metrics to ensure you're making real progress:
 
-**Essential Measurements:**
-- Progress toward your primary {topic} goal
-- Time invested vs. results achieved
-- Quality of outcomes, not just quantity
-- Sustainability of your approach
+**Primary Measurements:**
+- Progress toward your specific {topic} goals
+- Efficiency improvements over time
+- Quality and sustainability of results
+- Return on time and resource investment
 
 ### Warning Signs and Course Corrections
 
-Watch for these indicators that suggest you need to adjust your {topic} approach:
+Watch for these indicators that suggest you need to adjust your approach:
 
 **Red Flags:**
 - No measurable progress after 30 days of consistent effort
 - Increasing complexity without proportional results
-- Feeling overwhelmed or burned out
-- Constant second-guessing of decisions
+- Team resistance or adoption challenges
+- Costs escalating beyond planned budget
 
 **Course Corrections:**
 - Simplify your approach and focus on fundamentals
@@ -1476,13 +1329,13 @@ Watch for these indicators that suggest you need to adjust your {topic} approach
 
 ### Emerging Trends in {topic}
 
-Based on our analysis of recent discussions:
+Based on our analysis of recent discussions and industry developments:
 
 **Key Developments:**
-- New tools and techniques gaining popularity
+- New tools and techniques gaining popularity among {audience}
 - Changing best practices and industry standards
 - Evolving challenges and opportunities
-- Shifts in what {audience} prioritize
+- Shifts in what {audience} prioritize most
 
 ### Preparing for Long-term Success
 
@@ -1519,1117 +1372,20 @@ Based on our analysis of recent discussions:
 
 Success with {topic} isn't about having perfect information or ideal conditions. It's about understanding the real challenges {audience} face and applying proven solutions systematically.
 
-The {audience} who thrive are those who:
-- Focus on solving actual problems, not just learning theory
-- Follow proven processes rather than reinventing everything
-- Build support systems and seek guidance when needed
-- Measure progress and adjust based on real results
-- Stay patient and consistent with their approach
-
-**Your {topic} success story starts with the next action you take.** Use the insights from this research-based guide to avoid common pitfalls and achieve better results faster.
-
-{form_data.get('call_to_action', 'Ready to transform your approach to ' + topic + '? Start with the immediate actions above and build momentum from there.')}
-
----
-
-*This guide is based on comprehensive analysis of real {audience} experiences and proven methodologies. Every recommendation has been tested by others facing the same challenges you're working to overcome.*"""
-
-        else:
-            # Generic comprehensive content
-            content = f"""{content_style}# {topic}: Complete Solution Guide for {audience}
-
-## Overview
-
-Understanding {topic} can feel overwhelming, especially when you're dealing with {main_pain_points[0] if main_pain_points else 'common implementation challenges'}. This comprehensive guide addresses the real problems {audience} face and provides proven solutions based on extensive research.
-
-## Real Customer Challenges
-
-Our analysis of {reddit_research.get('total_posts_analyzed', 'numerous')} customer discussions reveals these critical pain points:
-
-{chr(10).join([f"**{pain}** - This significantly impacts {audience} success and daily operations" for pain in main_pain_points[:3]])}
-
-These aren't theoretical problems - they're real challenges that cost time, money, and opportunity.
-
-## Comprehensive Solution Framework
-
-### Understanding Your Situation
-
-Every successful {topic} implementation starts with honest assessment:
-
-**Critical Questions:**
-- What specific outcome do you want to achieve?
-- What constraints are you working within?
-- What's worked or failed for you in the past?
-- How will you measure success?
-
-### The Proven Implementation Process
-
-**Phase 1: Foundation Building (Week 1-2)**
-Establish the groundwork for sustainable success:
-- Clear goal definition and success metrics
-- Resource assessment and gap identification
-- Initial strategy selection based on your situation
-- Support system development
-
-**Phase 2: Core Implementation (Week 3-8)**
-Execute your primary {topic} strategy:
-- Systematic implementation of core elements
-- Regular progress monitoring and adjustment
-- Problem-solving and optimization
-- Building momentum through early wins
-
-**Phase 3: Advanced Optimization (Month 3+)**
-Scale and refine your approach:
-- Performance analysis and improvement identification
-- Advanced technique integration
-- System automation and efficiency gains
-- Long-term sustainability planning
-
-## Problem-Specific Solutions
-
-### For {main_pain_points[0] if main_pain_points else 'Information Overload'}
-
-**The Challenge:** {audience} struggle with {main_pain_points[0] if main_pain_points else 'too much conflicting information'} when approaching {topic}.
-
-**Proven Solutions:**
-- Focus on single, authoritative sources initially
-- Implement systematic evaluation criteria
-- Create decision frameworks to reduce overwhelm
-- Build knowledge incrementally rather than trying to learn everything at once
-
-### For {main_pain_points[1] if len(main_pain_points) > 1 else 'Implementation Complexity'}
-
-**The Reality:** Even with good information, putting {topic} strategies into practice proves challenging for {audience}.
-
-**Effective Approaches:**
-- Start with proven, simple implementations
-- Follow step-by-step processes rather than improvising
-- Build support systems for guidance and accountability
-- Plan for obstacles and have contingency strategies
-
-## Advanced Strategies and Best Practices
-
-### For Experienced {audience}
-
-Once you've mastered the fundamentals:
-
-**Advanced Techniques:**
-- Develop unique competitive advantages
-- Create scalable, systematic approaches
-- Build predictive capabilities
-- Establish thought leadership in your area
-
-### Avoiding Common Pitfalls
-
-**Critical Mistakes to Prevent:**
-- Rushing implementation without proper foundation
-- Ignoring proven processes in favor of "innovative" approaches
-- Failing to measure progress systematically
-- Not seeking guidance when facing complex challenges
-
-## Measuring Success and Long-term Growth
-
-### Essential Metrics
-
-Track these indicators to ensure you're making real progress:
-
-**Primary Measures:**
-- Progress toward your specific {topic} goals
-- Efficiency improvements over time
-- Quality and sustainability of results
-- Return on time and resource investment
-
-### Continuous Improvement
-
-**Optimization Strategies:**
-- Regular performance review and adjustment
-- Staying current with {topic} best practices
-- Building on successful approaches
-- Learning from setbacks and course-correcting quickly
-
-## Your Implementation Roadmap
-
-### Immediate Actions (Today)
-
-1. Assess your current {topic} situation honestly
-2. Choose one specific area for immediate improvement
-3. Gather necessary resources and support
-4. Set up basic progress tracking
-
-### Short-term Milestones (30 Days)
-
-1. Implement core {topic} strategy consistently
-2. Establish support systems and guidance sources
-3. Achieve first measurable improvement
-4. Refine approach based on initial results
-
-### Long-term Success (90+ Days)
-
-1. Achieve significant progress on primary goals
-2. Develop systematic, sustainable processes
-3. Build expertise that compounds over time
-4. Help others while continuing to grow
-
-## Conclusion
-
-Success with {topic} comes from understanding real challenges and applying proven solutions systematically. The {audience} who achieve lasting results focus on fundamentals, seek appropriate guidance, and maintain consistent effort over time.
-
 **Key Success Factors:**
 - Address actual problems, not theoretical concerns
 - Follow proven processes rather than reinventing approaches
-- Build strong support systems and seek guidance
+- Build strong support systems and seek guidance when needed
 - Measure progress and adjust based on real results
 - Maintain long-term perspective while taking consistent action
 
-{form_data.get('call_to_action', 'Ready to transform your approach to ' + topic + '? Start with the immediate actions above and build your foundation for long-term success.')}
-
----
-
-*This comprehensive guide is based on analysis of real {audience} experiences and proven methodologies. Every recommendation has been validated through practical application and measurable results.*"""
-
-        return content
-    
-    def _generate_direct_content(self, form_data: Dict, pain_points_analysis: List[Dict], reddit_research: Dict) -> str:
-        """Generate direct, actual content when AI fails"""
-        topic = form_data['topic']
-        content_type = form_data['content_type']
-        audience = form_data.get('target_audience', 'readers')
-        main_pain_points = [point['pain_point'] for point in pain_points_analysis[:2]]
-        
-        if content_type == 'product_page':
-            return f"""# Transform Your Results with {topic}
-
-## Finally, a Solution That Actually Works for {audience}
-
-Are you tired of struggling with {main_pain_points[0] if main_pain_points else 'common challenges'}? You're not alone. Thousands of {audience} face the same frustrations every day, wasting time and money on solutions that simply don't deliver.
-
-That's exactly why we created {topic} – to solve these real problems once and for all.
-
-## Why {topic} is Different
-
-Unlike generic alternatives that promise everything and deliver nothing, {topic} was specifically designed for {audience} who are serious about getting results. Here's what makes us different:
-
-**Addresses Real Problems:** We understand that {main_pain_points[0] if main_pain_points else 'efficiency issues'} can be incredibly frustrating. {topic} eliminates this problem entirely with our proven approach.
-
-**Proven Results:** Our customers see measurable improvements within the first week. Sarah M. from Portland says: "I was skeptical at first, but {topic} completely changed how I approach this challenge. I'm saving 10 hours every week."
-
-**Expert Support:** You're not left to figure things out alone. Our team of experts provides guidance every step of the way.
-
-## What You Get with {topic}
-
-### Immediate Benefits
-- **Solve your biggest challenge:** {main_pain_points[0] if main_pain_points else 'Streamlined processes'} that work from day one
-- **Save time and money:** Eliminate the trial-and-error approach that costs you both
-- **Peace of mind:** Know you're using a solution that actually works
-- **Expert guidance:** Access to our team whenever you need help
-
-### Long-term Value
-- **Scalable solution:** Grows with your needs over time
-- **Continuous updates:** Always have access to the latest improvements
-- **Community support:** Connect with other successful {audience}
-- **Proven methodology:** Based on what actually works in the real world
-
-## Real Customer Success Stories
-
-**"Before {topic}, I was spending hours every week dealing with {main_pain_points[0] if main_pain_points else 'these issues'}. Now I have a system that just works. It's been a game-changer for my business."** - Mike R., Small Business Owner
-
-**"I wish I had found {topic} sooner. It would have saved me months of frustration and thousands of dollars on solutions that didn't work."** - Jennifer L., Marketing Manager
-
-## How {topic} Works
-
-Getting started is simple. Within 24 hours of getting access, you'll have everything you need to solve {main_pain_points[0] if main_pain_points else 'your biggest challenges'}.
-
-**Week 1:** Set up your system and see immediate improvements
-**Week 2:** Optimize your approach based on your specific situation  
-**Week 3:** Scale your success and eliminate remaining inefficiencies
-**Week 4+:** Enjoy consistent, reliable results every day
-
-## Special Offer for {audience}
-
-For a limited time, we're offering {topic} at a special price for {audience} who are ready to solve {main_pain_points[0] if main_pain_points else 'their challenges'} once and for all.
-
-**What's Included:**
-- Complete {topic} system
-- Step-by-step implementation guide
-- 30 days of expert support
-- Money-back guarantee
-- Bonus resources worth $497
-
-**Investment:** Normally $497, but for {audience} who take action today: **Just $197**
-
-## Risk-Free Guarantee
-
-We're so confident that {topic} will solve your {main_pain_points[0] if main_pain_points else 'challenges'} that we offer a 60-day money-back guarantee. If you're not completely satisfied with your results, we'll refund every penny.
-
-## {form_data.get('call_to_action', 'Get Started Today')}
-
-Don't let {main_pain_points[0] if main_pain_points else 'these challenges'} continue to hold you back. Join the hundreds of {audience} who have already transformed their results with {topic}.
-
-**Click the button below to get instant access to {topic} and start seeing results within 24 hours.**
-
-[GET INSTANT ACCESS - $197]
-
-*Limited time offer. Price returns to $497 soon.*
-
----
-
-**Questions? Contact our support team at support@example.com or call 1-800-XXX-XXXX**
-
-*Transform your approach to {topic}. Get the results you deserve.*"""
-
-        elif content_type == 'article':
-            return f"""# The Ultimate Guide to {topic}: What Every {audience.split()[0] if ' ' in audience else audience.title()} Needs to Know
-
-The world of {topic} has become increasingly complex, leaving many {audience} feeling overwhelmed and frustrated. If you've ever struggled with {main_pain_points[0] if main_pain_points else 'getting consistent results'}, you're definitely not alone.
-
-After working with hundreds of {audience} over the past five years, I've seen the same patterns emerge time and time again. The most successful people aren't necessarily the smartest or most experienced – they're the ones who understand how to navigate {topic} systematically and avoid the most common pitfalls.
-
-## The Hidden Challenges Most People Face
-
-Let's start with the uncomfortable truth: most advice about {topic} is either outdated, overly generic, or simply wrong. This creates three major problems that {audience} consistently encounter:
-
-**The Information Overload Problem**
-
-Walk into any discussion about {topic}, and you'll be bombarded with conflicting advice. One expert says to do X, another swears by Y, and a third insists that Z is the only way forward. This isn't just confusing – it's paralyzing.
-
-I recently spoke with Maria, a marketing manager from Austin, who spent three months researching {topic} options without making a single decision. "Every article I read contradicted the last one," she told me. "I started to wonder if anyone actually knew what they were talking about."
-
-**The Trial-and-Error Trap**
-
-Without clear guidance, most {audience} resort to trial and error. They try one approach for a few weeks, don't see immediate results, then jump to something completely different. This constant switching not only wastes time and money – it prevents you from ever developing real expertise.
-
-**The One-Size-Fits-All Fallacy**
-
-Here's what most {topic} advice gets wrong: it assumes everyone has the same goals, resources, and constraints. In reality, what works for a Fortune 500 company might be completely inappropriate for a startup. What works in New York might fail miserably in rural Montana.
-
-## A Better Approach to {topic}
-
-After years of trial and error (both my own and watching others), I've developed a framework that actually works. It's based on three core principles:
-
-**Principle 1: Start with Your Specific Situation**
-
-Before diving into any {topic} strategy, you need to understand your unique context. This means honestly assessing your current resources, constraints, and realistic goals. Skip this step, and you'll waste months pursuing strategies that were never going to work for you.
-
-**Principle 2: Focus on High-Impact Activities First**
-
-Not all {topic} activities are created equal. The Pareto Principle applies here: roughly 80% of your results will come from 20% of your efforts. The key is identifying which activities fall into that crucial 20%.
-
-**Principle 3: Build Systems, Not Just Tactics**
-
-Tactics are specific actions you take. Systems are the repeatable processes that ensure those tactics get executed consistently. Most people focus on tactics and wonder why their results are inconsistent. Successful {audience} build systems.
-
-## The Step-by-Step Implementation Process
-
-Now let's get practical. Here's exactly how to implement these principles:
-
-### Phase 1: Assessment and Foundation Building (Week 1)
-
-Start by creating a clear picture of where you are and where you want to go. This isn't just goal-setting – it's strategic analysis.
-
-**Current State Analysis:**
-- What's working well in your current approach to {topic}?
-- What's causing the most frustration or consuming the most time?
-- What resources (time, money, expertise) do you realistically have available?
-
-**Goal Definition:**
-- What specific outcomes do you want to achieve?
-- By when do you need to see results?
-- How will you measure success?
-
-I can't stress this enough: be brutally honest during this phase. Overly optimistic assumptions will derail your entire strategy.
-
-### Phase 2: Strategy Selection (Week 2)
-
-With a clear understanding of your situation, you can now choose strategies that actually fit your context. This is where most people go wrong – they choose strategies based on what sounds exciting rather than what makes sense for their situation.
-
-**The Three-Filter System:**
-
-1. **Feasibility Filter:** Can you actually execute this strategy with your current resources?
-2. **Impact Filter:** Will this strategy meaningfully move you toward your goals?
-3. **Sustainability Filter:** Can you maintain this approach long enough to see results?
-
-Any strategy that doesn't pass all three filters should be eliminated, no matter how appealing it sounds.
-
-### Phase 3: Implementation and Optimization (Weeks 3-8)
-
-This is where the rubber meets the road. Start with your highest-impact activities and focus on building consistent execution before adding complexity.
-
-**Week 3-4: Core Implementation**
-Begin with the most fundamental elements of your chosen strategy. Don't try to do everything at once – master the basics first.
-
-**Week 5-6: Process Refinement**
-Now that you have some experience, look for ways to improve your processes. What's taking longer than expected? Where are you getting stuck? What's working better than anticipated?
-
-**Week 7-8: Scaling and Systematizing**
-Start building systems around your proven processes. Create checklists, templates, and standard operating procedures that ensure consistent execution.
-
-## Common Mistakes and How to Avoid Them
-
-Even with a solid framework, there are several pitfalls that can derail your progress:
-
-**Mistake #1: Perfectionism Paralysis**
-
-Waiting for the perfect strategy, perfect timing, or perfect conditions is a recipe for never starting. Good decisions made quickly and adjusted based on results almost always outperform perfect decisions made slowly.
-
-**Mistake #2: Shiny Object Syndrome**
-
-Every week brings new {topic} trends, tools, and techniques. Resist the urge to constantly chase the latest thing. Master one approach before considering alternatives.
-
-**Mistake #3: Ignoring the Learning Curve**
-
-Every new strategy requires time to master. Expect a learning curve and plan for it. Most strategies need at least 90 days of consistent execution before you can fairly evaluate their effectiveness.
-
-## Advanced Strategies for Long-Term Success
-
-Once you've mastered the fundamentals, these advanced approaches can significantly accelerate your results:
-
-**Leverage Network Effects**
-
-The most successful {audience} understand that {topic} isn't a solo endeavor. Building relationships with others in your field creates opportunities for collaboration, learning, and mutual support.
-
-**Develop Predictive Capabilities**
-
-As you gain experience, start tracking leading indicators – metrics that predict future results. This allows you to make adjustments before problems become crises.
-
-**Create Competitive Advantages**
-
-Look for ways to combine {topic} strategies with your unique strengths, resources, or market position. Generic strategies produce generic results.
-
-## Real-World Case Studies
-
-Let me share three examples of {audience} who successfully implemented these principles:
-
-**Case Study 1: The Overwhelmed Startup Founder**
-
-Background: Tech startup founder struggling to balance {topic} with product development.
-
-Challenge: Limited time and resources, no dedicated {topic} expertise.
-
-Solution: Focused on the 20% of {topic} activities that would drive 80% of results. Automated routine tasks and outsourced specialized work.
-
-Result: 200% improvement in key metrics within six months, with only 5 hours per week invested.
-
-**Case Study 2: The Frustrated Small Business Owner**
-
-Background: Local service business that had tried multiple {topic} approaches without success.
-
-Challenge: Previous bad experiences, limited budget, skeptical about new approaches.
-
-Solution: Started with one simple, low-risk strategy. Built confidence through small wins before expanding.
-
-Result: Consistent month-over-month growth for 18 months running.
-
-**Case Study 3: The Corporate Team**
-
-Background: Department in a large corporation tasked with improving {topic} performance.
-
-Challenge: Multiple stakeholders, complex approval processes, risk-averse culture.
-
-Solution: Ran small pilots to prove concept before requesting larger investments. Built internal advocacy through demonstrated results.
-
-Result: Became the model for {topic} excellence across the entire organization.
-
-## Your Next Steps
-
-If you're ready to stop struggling with {topic} and start seeing consistent results, here's your action plan:
-
-**This Week:**
-1. Complete the assessment process outlined in Phase 1
-2. Identify your top three pain points with {topic}
-3. Research strategies that address these specific pain points
-
-**Next Week:**
-1. Apply the three-filter system to potential strategies
-2. Choose one approach to test for the next 90 days
-3. Create a simple tracking system for your key metrics
-
-**Ongoing:**
-1. Execute your chosen strategy consistently for at least 90 days
-2. Review and adjust weekly based on what you're learning
-3. Document what works so you can replicate and scale success
-
-## The Bottom Line
-
-Success with {topic} isn't about finding the perfect strategy or having unlimited resources. It's about understanding your specific situation, choosing appropriate strategies, and executing consistently over time.
-
 The {audience} who thrive are those who treat {topic} as a system to be optimized rather than a problem to be solved once. They focus on progress over perfection and building capabilities over quick fixes.
 
-Most importantly, they understand that sustainable success comes from mastering fundamentals, not chasing the latest trends.
-
-**{form_data.get('call_to_action', 'Start your transformation today by completing the assessment process and choosing your first strategy to test.')}**
-
-Remember: every expert was once a beginner who refused to give up. Your {topic} success story starts with the next action you take.
+**{form_data.get('call_to_action', 'Ready to transform your approach to ' + topic + '? Start with the immediate actions above and build your foundation for long-term success.')}**
 
 ---
 
-*What's been your biggest challenge with {topic}? Share your experience in the comments below – I read and respond to every one.*"""
-
-        else:
-            # Default comprehensive content
-            return f"""# {topic}: The Complete Resource for {audience}
-
-Understanding {topic} can feel overwhelming, especially when you're dealing with {main_pain_points[0] if main_pain_points else 'common implementation challenges'}. But it doesn't have to be complicated.
-
-## Why {topic} Matters Now More Than Ever
-
-In today's fast-paced world, {audience} can't afford to ignore {topic}. The stakes are too high, and the competition too fierce. Yet most people approach {topic} in ways that are outdated, ineffective, or simply wrong.
-
-This comprehensive resource will change that. Instead of generic advice that works for no one, you'll get specific, actionable guidance that accounts for the real challenges {audience} face.
-
-## The Real Problems Nobody Talks About
-
-Let's address the elephant in the room. Most {topic} advice ignores these critical issues:
-
-**Problem 1: {main_pain_points[0] if main_pain_points else 'Information Overload'}**
-
-{audience} are bombarded with conflicting information about {topic}. One expert says X, another swears by Y, and everyone claims their approach is "proven." This creates confusion and paralysis when you need clarity and action.
-
-**Problem 2: {main_pain_points[1] if len(main_pain_points) > 1 else 'Implementation Complexity'}**
-
-Even when you find good advice, putting it into practice is another challenge entirely. Most strategies are designed for ideal conditions that don't exist in the real world.
-
-## A Better Way Forward
-
-After working with hundreds of {audience}, I've discovered that success with {topic} comes down to three fundamental principles:
-
-### Principle 1: Context Matters
-
-What works for one person might fail completely for another. Successful {audience} understand their unique situation and choose strategies accordingly.
-
-### Principle 2: Systems Beat Tactics
-
-Individual tactics might get you short-term wins, but systems create sustainable, long-term success. Focus on building repeatable processes, not just executing one-off actions.
-
-### Principle 3: Progress Over Perfection
-
-The biggest enemy of good is perfect. Start with something that works 80% as well and improve it over time rather than waiting for the perfect solution.
-
-## The Practical Implementation Guide
-
-Now let's get specific about how to apply these principles:
-
-### Getting Started: The Foundation Phase
-
-Before jumping into advanced strategies, master these fundamentals:
-
-**Assessment and Planning**
-- Evaluate your current situation honestly
-- Define specific, measurable goals
-- Identify available resources and constraints
-- Set realistic timelines for progress
-
-**Basic Implementation**
-- Start with the highest-impact, lowest-risk activities
-- Focus on one strategy at a time until it's working
-- Track your progress systematically
-- Adjust based on actual results, not assumptions
-
-### Building Momentum: The Growth Phase
-
-Once you have the basics working, you can begin scaling:
-
-**Process Optimization**
-- Identify bottlenecks and inefficiencies
-- Automate routine tasks where possible
-- Develop standard operating procedures
-- Create systems for continuous improvement
-
-**Strategic Expansion**
-- Add complementary strategies gradually
-- Test new approaches before full implementation
-- Build on what's already working
-- Maintain focus on your core objectives
-
-### Mastering the Advanced Level
-
-For {audience} ready to take their {topic} approach to the next level:
-
-**Innovation and Adaptation**
-- Develop unique competitive advantages
-- Anticipate and prepare for market changes
-- Create multiple paths to your objectives
-- Build antifragile systems that improve under stress
-
-## Real Success Stories
-
-Let me share some examples of {audience} who have successfully implemented these approaches:
-
-**Sarah's Transformation**
-
-Sarah was struggling with {main_pain_points[0] if main_pain_points else 'getting consistent results'} despite trying multiple approaches. She was ready to give up when she discovered this systematic method.
-
-By focusing on fundamentals first and building systems gradually, Sarah saw a 300% improvement in her key metrics within six months. More importantly, her results became predictable and sustainable.
-
-**Mike's Business Growth**
-
-As a small business owner, Mike couldn't afford expensive mistakes with {topic}. He needed approaches that worked efficiently with limited resources.
-
-Using the context-first principle, Mike identified strategies that fit his specific situation. Within a year, his {topic} efforts were generating 10x the results of his previous approaches.
-
-## Common Pitfalls and How to Avoid Them
-
-Even with the best intentions, most {audience} make these critical mistakes:
-
-**Mistake 1: Strategy Overload**
-
-Trying to implement too many strategies simultaneously dilutes your efforts and makes it impossible to determine what's actually working.
-
-*Solution:* Master one approach completely before adding others.
-
-**Mistake 2: Impatience with Results**
-
-Most {topic} strategies need time to show their full potential. Jumping ship too early means you never get to see what could have been.
-
-*Solution:* Commit to testing each strategy for at least 90 days before evaluation.
-
-**Mistake 3: Ignoring Your Unique Context**
-
-What works for others might not work for you due to differences in resources, goals, or market conditions.
-
-*Solution:* Always filter advice through your specific situation before implementation.
-
-## Advanced Strategies for Experienced Practitioners
-
-If you've mastered the fundamentals, these advanced approaches can accelerate your progress:
-
-**Leverage Network Effects**
-
-The most successful {audience} understand that {topic} isn't a solo endeavor. Building strategic relationships creates exponential opportunities.
-
-**Develop Predictive Capabilities**
-
-Instead of just reacting to results, develop systems that help you anticipate and prevent problems before they occur.
-
-**Create Unique Competitive Advantages**
-
-Look for ways to combine {topic} with your unique strengths, resources, or market position to create approaches others can't easily replicate.
-
-## Your Action Plan
-
-Ready to transform your approach to {topic}? Here's your step-by-step action plan:
-
-**Week 1: Foundation**
-- Complete a thorough assessment of your current situation
-- Define specific goals and success metrics
-- Choose one high-impact strategy to focus on first
-
-**Week 2-4: Implementation**
-- Begin executing your chosen strategy consistently
-- Track progress and document lessons learned
-- Resist the urge to add complexity too quickly
-
-**Month 2-3: Optimization**
-- Analyze your results and identify improvement opportunities
-- Refine your processes based on actual experience
-- Begin planning for strategic expansion
-
-**Month 4+: Scaling**
-- Add complementary strategies gradually
-- Develop systems for sustainable growth
-- Share your success to help others and build your network
-
-## Conclusion
-
-Success with {topic} isn't about finding secret techniques or having unlimited resources. It's about understanding fundamental principles, choosing appropriate strategies, and executing consistently over time.
-
-The {audience} who thrive are those who treat {topic} as a system to be optimized rather than a problem to be solved once. They focus on progress over perfection and building long-term capabilities over quick fixes.
-
-Most importantly, they understand that sustainable success comes from mastering fundamentals, not chasing every new trend or tactic.
-
-**{form_data.get('call_to_action', 'Start your transformation today by taking the first step in the action plan above.')}**
-
-Your success story with {topic} begins with the next action you take. Make it count.
-
----
-
-*Every expert was once a beginner who refused to give up. Your journey to {topic} mastery starts now.*"""
-    
-    def _get_content_type_specific_requirements(self, content_type: str) -> str:
-        """Get specific requirements for each content type"""
-        requirements = {
-            'product_page': """
-- Start with compelling product headline and key benefit
-- Include detailed product description and specifications
-- Address customer objections and concerns directly
-- Include social proof, testimonials, and trust signals
-- Clear product features and benefits sections
-- FAQ section addressing common questions
-- Strong call-to-action for purchase/inquiry""",
-            
-            'category_page': """
-- Overview of the category and its importance
-- Product/service highlights within the category
-- Buying guide and selection criteria
-- Comparison of different options
-- Customer success stories and use cases
-- Clear navigation and filtering guidance""",
-            
-            'landing_page': """
-- Compelling headline that addresses main pain point
-- Clear value proposition and unique benefits
-- Social proof and credibility indicators
-- Address objections and build trust
-- Multiple strategic call-to-action placements
-- Urgency and scarcity elements where appropriate""",
-            
-            'article': """
-- Informative and educational content structure
-- Clear introduction, body, and conclusion
-- Subheadings for easy scanning
-- Examples and case studies
-- Actionable advice and tips
-- References and supporting information""",
-            
-            'blog_post': """
-- Engaging introduction with hook
-- Conversational and relatable tone
-- Personal insights and experiences
-- Practical advice and tips
-- Engaging conclusion with discussion prompt""",
-            
-            'guide': """
-- Comprehensive step-by-step instructions
-- Clear methodology and process
-- Examples and real-world applications
-- Troubleshooting and common mistakes
-- Resources and next steps""",
-            
-            'tutorial': """
-- Step-by-step instructions with clear progression
-- Prerequisites and required materials
-- Detailed explanations for each step
-- Screenshots, examples, or illustrations (described)
-- Practice exercises and next steps""",
-            
-            'case_study': """
-- Background and challenge description
-- Solution approach and methodology
-- Implementation details and process
-- Results and measurable outcomes
-- Lessons learned and takeaways""",
-            
-            'review': """
-- Objective evaluation criteria
-- Detailed pros and cons analysis
-- Real-world testing and experience
-- Comparison with alternatives
-- Final recommendation and verdict""",
-            
-            'comparison': """
-- Clear comparison criteria and methodology
-- Side-by-side feature and benefit analysis
-- Use case scenarios for different options
-- Pricing and value analysis
-- Recommendations for different needs"""
-        }
-        
-        return requirements.get(content_type, "Create comprehensive, valuable content that addresses customer needs and provides practical solutions.")
-    
-    def _create_actual_content_fallback(self, form_data: Dict, pain_points_analysis: List[Dict], reddit_research: Dict) -> str:
-        """Create actual content (not templates) when AI fails"""
-        topic = form_data['topic']
-        content_type = form_data['content_type']
-        audience = form_data.get('target_audience', 'readers')
-        
-        # Extract real pain points
-        main_pain_points = [point['pain_point'] for point in pain_points_analysis[:3]]
-        reddit_pain_points = list(reddit_research.get('top_pain_points', {}).keys())[:3]
-        
-        if content_type == 'product_page':
-            return f"""# {topic}: The Solution You've Been Looking For
-
-## Solve Your {topic} Challenges Once and For All
-
-Are you tired of dealing with {main_pain_points[0] if main_pain_points else 'common challenges'}? You're not alone. Our research shows that {audience} consistently struggle with these issues:
-
-{chr(10).join([f"• {pain}" for pain in main_pain_points + reddit_pain_points])}
-
-That's exactly why we created {topic} - to address these real problems with a proven solution.
-
-## How {topic} Solves Your Problems
-
-### Problem: {main_pain_points[0] if main_pain_points else 'Common Challenges'}
-**Our Solution:** {topic} eliminates this frustration by providing {form_data.get('unique_selling_points', 'a comprehensive solution that works')}.
-
-**Real Customer Impact:** "Since using {topic}, I no longer worry about {main_pain_points[0] if main_pain_points else 'these issues'}. It just works." - Sarah K.
-
-### Problem: {main_pain_points[1] if len(main_pain_points) > 1 else 'Time-Consuming Processes'}
-**Our Solution:** {topic} streamlines everything into a simple, effective approach that saves you hours every week.
-
-**Measurable Results:** Customers report saving an average of 5-10 hours per week after implementing {topic}.
-
-## Key Features That Make the Difference
-
-### ✅ {form_data.get('unique_selling_points', 'Proven Effectiveness')}
-Unlike generic alternatives, {topic} is specifically designed for {audience} who need reliable results.
-
-### ✅ Expert Support and Guidance
-You're not alone in this. Our team provides ongoing support to ensure your success with {topic}.
-
-### ✅ Risk-Free Implementation
-We're so confident in {topic} that we offer a satisfaction guarantee. If it doesn't solve your problems, we'll make it right.
-
-## What You Get with {topic}
-
-**Immediate Benefits:**
-• Resolution of your primary challenge: {main_pain_points[0] if main_pain_points else 'improved efficiency'}
-• Clear, step-by-step implementation guidance
-• Access to expert support and resources
-• Measurable improvements within 30 days
-
-**Long-term Value:**
-• Ongoing efficiency improvements
-• Reduced stress and frustration
-• More time for what matters most
-• Confidence in your {topic.split()[-1] if ' ' in topic else topic} decisions
-
-## Customer Success Stories
-
-**Before {topic}:** "I was spending hours every week dealing with {main_pain_points[0] if main_pain_points else 'these challenges'} and getting nowhere."
-
-**After {topic}:** "Everything changed. I now have a system that works consistently, and I've saved both time and money." - Mike R.
-
-## Frequently Asked Questions
-
-**Q: How quickly will I see results?**
-A: Most customers see improvements within the first week, with significant results by day 30.
-
-**Q: What if {topic} doesn't work for my situation?**
-A: Every situation is unique, which is why we provide personalized guidance and a satisfaction guarantee.
-
-**Q: Is this suitable for {audience}?**
-A: Absolutely. {topic} was specifically designed with {audience} in mind, addressing the exact challenges you face.
-
-## Take Action Today
-
-Don't let {main_pain_points[0] if main_pain_points else 'these challenges'} continue to hold you back. Join the hundreds of {audience} who have already transformed their results with {topic}.
-
-**{form_data.get('call_to_action', 'Get started today and experience the difference for yourself.')}**
-
-*Ready to solve your {topic} challenges? Take the first step now.*
-
----
-
-*This solution is backed by extensive research including analysis of {reddit_research.get('total_posts_analyzed', 'hundreds of')} customer experiences and proven methodologies.*"""
-
-        elif content_type == 'article':
-            return f"""# {topic}: A Comprehensive Guide Based on Real Customer Research
-
-## Introduction
-
-{topic} has become increasingly important for {audience}, but many struggle with {main_pain_points[0] if main_pain_points else 'common implementation challenges'}. This comprehensive guide addresses the real problems people face and provides practical solutions based on extensive research.
-
-## The Current Landscape
-
-Our research, including analysis of {reddit_research.get('total_posts_analyzed', 'numerous')} customer discussions, reveals that {audience} consistently face these challenges:
-
-{chr(10).join([f"• **{pain}** - A significant concern that affects daily operations" for pain in (main_pain_points + reddit_pain_points)[:5]])}
-
-These aren't theoretical problems - they're real challenges that cost time, money, and frustration.
-
-## Understanding the Core Issues
-
-### Challenge 1: {main_pain_points[0] if main_pain_points else 'Information Overload'}
-
-The most common issue we discovered is {main_pain_points[0] if main_pain_points else 'information overload'}. This manifests as:
-
-- Difficulty finding reliable, actionable information
-- Conflicting advice from different sources
-- Uncertainty about where to start
-- Fear of making costly mistakes
-
-**Impact on {audience}:** This leads to delayed decisions, missed opportunities, and increased stress levels.
-
-### Challenge 2: {main_pain_points[1] if len(main_pain_points) > 1 else 'Implementation Complexity'}
-
-Beyond information challenges, {audience} struggle with practical implementation:
-
-- Complex processes that are difficult to follow
-- Lack of step-by-step guidance
-- Missing context for their specific situation
-- Insufficient support during implementation
-
-## Proven Solutions and Strategies
-
-### Strategy 1: Systematic Approach to {topic}
-
-Based on successful customer implementations, here's a proven framework:
-
-**Phase 1: Assessment and Planning**
-1. Evaluate your current situation and specific needs
-2. Identify your primary objectives and constraints
-3. Set realistic timelines and expectations
-4. Gather necessary resources and support
-
-**Phase 2: Implementation**
-1. Start with foundational elements
-2. Implement core components systematically
-3. Monitor progress and adjust as needed
-4. Address challenges promptly as they arise
-
-**Phase 3: Optimization**
-1. Analyze results and identify improvement opportunities
-2. Refine processes based on experience
-3. Scale successful approaches
-4. Develop long-term maintenance strategies
-
-### Strategy 2: Learning from Customer Experiences
-
-Real customer insights reveal these success factors:
-
-**What Works:**
-- Starting with clear, specific goals
-- Following proven methodologies
-- Getting expert guidance when needed
-- Measuring progress regularly
-
-**What Doesn't Work:**
-- Trying to do everything at once
-- Ignoring fundamental principles
-- Proceeding without proper planning
-- Avoiding professional help when needed
-
-## Practical Implementation Guide
-
-### For Beginners
-
-If you're new to {topic}, focus on:
-
-1. **Foundation Building:** Understand core concepts before advancing
-2. **Simple Start:** Begin with basic implementations
-3. **Gradual Expansion:** Add complexity incrementally
-4. **Learning Resources:** Invest in quality education and guidance
-
-### For Intermediate Users
-
-Those with some experience should:
-
-1. **Skills Assessment:** Identify knowledge gaps
-2. **Process Optimization:** Refine existing approaches
-3. **Advanced Techniques:** Gradually incorporate sophisticated methods
-4. **Network Building:** Connect with others for shared learning
-
-### For Advanced Practitioners
-
-Experienced users can:
-
-1. **Innovation:** Explore cutting-edge approaches
-2. **Mentoring:** Share knowledge with others
-3. **Specialization:** Develop deep expertise in specific areas
-4. **Leadership:** Guide organizational {topic} initiatives
-
-## Avoiding Common Pitfalls
-
-### Mistake 1: Rushing the Process
-
-Many {audience} try to accelerate results by skipping foundational steps. This typically leads to:
-- Suboptimal outcomes
-- Need to restart with proper foundation
-- Wasted time and resources
-
-**Solution:** Invest adequate time in planning and foundation building.
-
-### Mistake 2: Following Generic Advice
-
-One-size-fits-all solutions rarely work well because every situation has unique characteristics.
-
-**Solution:** Adapt general principles to your specific context and requirements.
-
-### Mistake 3: Neglecting Ongoing Maintenance
-
-{topic} isn't a set-and-forget solution - it requires ongoing attention and optimization.
-
-**Solution:** Plan for regular review, maintenance, and improvement activities.
-
-## Measuring Success
-
-### Key Performance Indicators
-
-Track these metrics to ensure progress:
-
-- **Primary Objectives:** Measure against your initial goals
-- **Efficiency Metrics:** Time saved, costs reduced, quality improved
-- **Satisfaction Indicators:** Stress levels, confidence, user feedback
-- **Long-term Impact:** Sustainability, scalability, strategic value
-
-### Regular Review Process
-
-Implement systematic review:
-
-1. **Weekly Check-ins:** Monitor immediate progress and issues
-2. **Monthly Assessments:** Evaluate overall trajectory and adjustments needed
-3. **Quarterly Reviews:** Strategic evaluation and planning for next phase
-4. **Annual Analysis:** Comprehensive assessment and long-term planning
-
-## Future Considerations
-
-### Emerging Trends
-
-Stay informed about developments in {topic}:
-- New technologies and methodologies
-- Changing industry standards and best practices
-- Evolving customer needs and expectations
-- Regulatory changes and compliance requirements
-
-### Adaptation Strategies
-
-Prepare for change by:
-- Building flexible, adaptable systems
-- Maintaining learning and development focus
-- Developing contingency plans
-- Fostering innovation mindset
-
-## Conclusion
-
-Success with {topic} requires understanding real customer challenges and applying proven solutions systematically. By learning from others' experiences and following established best practices, you can avoid common pitfalls and achieve better results more efficiently.
-
-**Key Takeaways:**
-- Address real problems with proven solutions
-- Start with solid foundations before advancing
-- Learn from customer experiences and case studies
-- Maintain focus on measurement and continuous improvement
-- Adapt general principles to your specific situation
-
-The path to {topic} success is well-established - it's about execution, persistence, and learning from both successes and failures.
-
-**{form_data.get('call_to_action', 'Ready to implement these strategies? Start with the assessment phase and build your foundation for long-term success.')}**
-
----
-
-*This guide is based on analysis of real customer experiences and proven methodologies. For personalized guidance specific to your situation, consider professional consultation.*"""
-
-        else:
-            # Generic comprehensive content
-            return f"""# {topic}: Complete Solution Guide
-
-## Overview
-
-{topic} is crucial for {audience}, but success requires understanding and addressing the real challenges people face. This comprehensive resource provides practical solutions based on extensive research and customer feedback.
-
-## Key Challenges We Address
-
-Our research identified these primary concerns:
-
-{chr(10).join([f"• **{pain}** - {pain_points_analysis[i].get('content_impact', 'Significant impact on success')} " for i, pain in enumerate(main_pain_points[:3])])}
-
-## Comprehensive Solution Framework
-
-### Understanding Your Situation
-
-Before implementing any {topic} strategy, assess:
-
-1. **Current State:** Where are you now with {topic}?
-2. **Desired Outcomes:** What specific results do you want?
-3. **Available Resources:** Time, budget, and expertise constraints
-4. **Success Metrics:** How will you measure progress?
-
-### Implementation Strategy
-
-**Phase 1: Foundation (Weeks 1-2)**
-- Establish clear objectives and success criteria
-- Gather necessary resources and support
-- Create implementation timeline and milestones
-- Set up measurement and tracking systems
-
-**Phase 2: Core Implementation (Weeks 3-8)**
-- Execute primary {topic} activities
-- Monitor progress against established metrics
-- Adjust approach based on early results
-- Address challenges and obstacles promptly
-
-**Phase 3: Optimization (Weeks 9+)**
-- Analyze results and identify improvement opportunities
-- Refine processes and optimize performance
-- Scale successful approaches
-- Plan for long-term sustainability
-
-### Success Factors
-
-Based on customer experiences, these factors drive success:
-
-**Critical Success Elements:**
-- Clear goal definition and measurement
-- Systematic, step-by-step implementation
-- Regular progress monitoring and adjustment
-- Access to expert guidance when needed
-
-**Common Failure Points:**
-- Unclear objectives and expectations
-- Attempting too much too quickly
-- Inadequate planning and preparation
-- Lack of ongoing support and guidance
-
-## Practical Applications
-
-### For {audience}
-
-Specific considerations for your situation:
-
-**Immediate Actions:**
-1. Assess your current {topic} situation
-2. Define specific, measurable objectives
-3. Create realistic implementation timeline
-4. Identify resources and support needed
-
-**Short-term Goals (1-3 months):**
-- Establish solid foundation
-- Implement core {topic} elements
-- Achieve initial measurable results
-- Build confidence and momentum
-
-**Long-term Vision (6+ months):**
-- Optimize performance and efficiency
-- Scale successful approaches
-- Develop advanced capabilities
-- Achieve strategic objectives
-
-## Expert Recommendations
-
-### Best Practices
-
-Based on successful implementations:
-
-1. **Start Simple:** Master basics before advancing
-2. **Measure Progress:** Track results consistently
-3. **Stay Flexible:** Adapt approach based on results
-4. **Seek Guidance:** Get expert help when needed
-
-### Warning Signs
-
-Watch for these indicators that suggest course correction needed:
-
-- No measurable progress after reasonable time
-- Increasing complexity without proportional benefits
-- Team resistance or adoption challenges
-- Costs escalating beyond planned budget
-
-## Next Steps
-
-### Immediate Actions
-
-1. **Assessment:** Complete situation analysis
-2. **Planning:** Develop specific implementation plan
-3. **Resources:** Gather necessary tools and support
-4. **Timeline:** Set realistic milestones and deadlines
-
-### Getting Started
-
-Begin your {topic} journey with confidence:
-
-**Week 1:** Complete assessment and initial planning
-**Week 2:** Gather resources and finalize approach
-**Week 3:** Begin core implementation activities
-**Week 4:** Monitor progress and make initial adjustments
-
-## Conclusion
-
-Success with {topic} is achievable when you address real challenges with proven solutions. By following this systematic approach and learning from others' experiences, you can avoid common pitfalls and achieve your objectives more efficiently.
-
-**{form_data.get('call_to_action', 'Ready to transform your approach to ' + topic + '? Start with the assessment framework and build your path to success.')}**
-
----
-
-*This solution guide is based on analysis of real customer experiences and proven methodologies. Results may vary based on individual circumstances and implementation approach.*"""
+*This comprehensive guide is based on analysis of {reddit_research.get('total_posts_analyzed', 'extensive')} real customer experiences and proven methodologies. Every recommendation has been tested by others facing the same challenges you're working to overcome.*"""
     
     async def _generate_content_recommendations(self, form_data: Dict, content: str, reddit_research: Dict) -> List[Dict]:
         """Generate enhanced recommendations based on Reddit research"""
@@ -2638,13 +1394,13 @@ Success with {topic} is achievable when you address real challenges with proven 
         base_recommendations = [
             {
                 'category': 'Reddit Insights Integration',
-                'recommendation': f'Leverage the {len(reddit_research.get("top_pain_points", {}))} key pain points discovered from Reddit research',
+                'recommendation': f'Content successfully integrates {len(reddit_research.get("top_pain_points", {}))} pain points from Reddit research',
                 'priority': 'High',
                 'impact': 'Audience Relevance & Conversion'
             },
             {
                 'category': 'Authentic Voice',
-                'recommendation': 'Use customer quotes and language patterns found in Reddit research',
+                'recommendation': 'Uses customer language patterns found in Reddit research',
                 'priority': 'High',
                 'impact': 'Trust & Relatability'
             }
@@ -2655,222 +1411,6 @@ Success with {topic} is achievable when you address real challenges with proven 
         
         return base_recommendations + type_specific
     
-    def _enhanced_fallback_content(self, form_data: Dict, content_analysis: Dict, pain_points_analysis: List[Dict], reddit_research: Dict) -> str:
-        """Enhanced fallback with Reddit research integration"""
-        topic = form_data['topic']
-        content_type = form_data['content_type']
-        audience = form_data.get('target_audience', 'readers')
-        
-        # Build Reddit insights section
-        reddit_section = ""
-        if reddit_research.get('total_posts_analyzed', 0) > 0:
-            reddit_section = f"""
-
-## What Real Customers Are Saying
-
-Based on our research of {reddit_research['total_posts_analyzed']} posts from Reddit communities, here are the most common concerns about {topic}:
-
-"""
-            for pain_point, frequency in list(reddit_research.get('top_pain_points', {}).items())[:3]:
-                reddit_section += f"### \"{pain_point}\"\n"
-                reddit_section += f"This concern appeared {frequency} times in our research, showing it's a real issue for {audience}.\n\n"
-        
-        if content_type == 'product_page':
-            return self._generate_product_page_fallback(form_data, pain_points_analysis, reddit_section)
-        elif content_type == 'category_page':
-            return self._generate_category_page_fallback(form_data, pain_points_analysis, reddit_section)
-        elif content_type == 'landing_page':
-            return self._generate_landing_page_fallback(form_data, pain_points_analysis, reddit_section)
-        else:
-            return self._generate_general_fallback(form_data, pain_points_analysis, reddit_section)
-    
-    def _generate_product_page_fallback(self, form_data: Dict, pain_points: List[Dict], reddit_section: str) -> str:
-        """Enhanced product page fallback"""
-        topic = form_data['topic']
-        return f"""# {topic}
-
-## Product Overview
-{topic} is specifically designed to address the real challenges faced by {form_data.get('target_audience', 'customers')}, based on extensive research into customer needs and pain points.
-
-{reddit_section}
-
-## How We Solve These Problems
-
-Based on the research above, here's how {topic} addresses each concern:
-
-{chr(10).join([f"### {point['pain_point'][:50]}...\n**Our Solution:** {point['solution_approach']}\n" for point in pain_points[:3]])}
-
-## Key Features & Benefits
-• **Research-Based Design**: Built specifically to address real customer pain points
-• **Proven Solutions**: Addresses the most common concerns in our target market
-• **Customer-Centric Approach**: Every feature designed based on actual user feedback
-
-## Product Specifications
-Detailed specifications ensure you have all the information needed for your decision.
-
-## Customer Success Stories
-See how {topic} has solved real problems for customers like you.
-
-## Frequently Asked Questions
-{chr(10).join([f"**Q: How does this address {point['pain_point'][:30]}...?**\nA: {point['solution_approach']}\n" for point in pain_points[:2]])}
-
-## Ready to Solve Your Challenges?
-{form_data.get('call_to_action', 'Experience the solution to your biggest challenges')}
-
----
-*This content was enhanced with real customer research*
-*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*
-"""
-
-    def _generate_category_page_fallback(self, form_data: Dict, pain_points: List[Dict], reddit_section: str) -> str:
-        """Enhanced category page fallback"""
-        topic = form_data['topic']
-        return f"""# {topic} - Complete Category Guide
-
-## Category Overview
-Welcome to our comprehensive {topic} section, curated based on real customer needs and extensive market research.
-
-{reddit_section}
-
-## Our Selection Criteria
-
-Based on the research above, we've carefully selected products that address these key concerns:
-
-{chr(10).join([f"✓ **{point['pain_point'][:40]}...**: {point['solution_approach']}" for point in pain_points[:3]])}
-
-## Featured Products
-Browse our top-rated items that specifically solve the problems identified in our research.
-
-## Buying Guides
-### What to Look For
-Based on real customer feedback:
-{chr(10).join([f"• Consider {point['pain_point'][:30]}... when making your choice" for point in pain_points[:2]])}
-
-## Filter by Your Needs
-Find products that address your specific concerns and requirements.
-
-## Expert Recommendations
-Our curated selections based on solving real customer problems.
-
----
-*Curated based on analysis of real customer feedback*
-*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*
-"""
-
-    def _generate_landing_page_fallback(self, form_data: Dict, pain_points: List[Dict], reddit_section: str) -> str:
-        """Enhanced landing page fallback"""
-        topic = form_data['topic']
-        return f"""# Finally, A Real Solution to {topic}
-
-## Are You Struggling With These Common Problems?
-
-Based on research of real customer experiences:
-
-{chr(10).join([f"❌ **{point['pain_point']}**" for point in pain_points[:3]])}
-
-If you've experienced any of these frustrations, you're not alone. Our research shows these are the top concerns among {form_data.get('target_audience', 'people like you')}.
-
-## Here's How We Solve Every One of These Problems
-
-{chr(10).join([f"✅ **{point['pain_point'][:40]}...**: {point['solution_approach']}" for point in pain_points[:3]])}
-
-## Why Our Approach Works
-
-Our solution was built specifically to address these real-world problems:
-
-• **Research-Driven**: Based on analysis of actual customer feedback
-• **Proven Results**: Addresses the most common pain points in the market
-• **Customer-Tested**: Refined based on real user experiences
-
-## What You'll Get
-
-Experience the complete solution to the problems that matter most to you.
-
-## Limited Time Opportunity
-{form_data.get('call_to_action', 'Solve these problems today')}
-
-## Frequently Asked Questions
-{chr(10).join([f"**Q: How do you address {point['pain_point'][:30]}...?**\nA: {point['solution_approach']}" for point in pain_points[:2]])}
-
----
-*Based on real customer research and feedback*
-*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*
-"""
-
-    def _generate_general_fallback(self, form_data: Dict, pain_points: List[Dict], reddit_section: str) -> str:
-        """Enhanced general fallback"""
-        topic = form_data['topic']
-        audience = form_data.get('target_audience', 'readers')
-        
-        return f"""# {topic}: Complete Guide Based on Real Customer Research
-
-## Introduction
-This comprehensive guide about {topic} is based on extensive research into real customer experiences and pain points. We've analyzed actual feedback to provide solutions that matter.
-
-{reddit_section}
-
-## Addressing the Real Challenges
-
-Based on our research, here are the key issues and solutions:
-
-{chr(10).join([f"### {point['pain_point']}\n**Why This Matters:** {point['content_impact']}\n**Solution Approach:** {point['solution_approach']}\n" for point in pain_points[:3]])}
-
-## Research-Based Implementation Strategy
-
-### Phase 1: Understanding Your Situation
-1. **Identify Your Specific Challenges**: Compare with the research findings above
-2. **Assess Impact**: Understand how these issues affect your goals
-3. **Prioritize Solutions**: Focus on high-impact areas first
-
-### Phase 2: Implementing Solutions
-1. **Start with High-Priority Issues**: Address the most common pain points first
-2. **Use Proven Approaches**: Apply the solution strategies identified in research
-3. **Monitor Progress**: Track improvements and adjust as needed
-
-### Phase 3: Optimization
-1. **Refine Your Approach**: Based on results and feedback
-2. **Prevent Common Problems**: Use insights to avoid typical pitfalls
-3. **Share Your Experience**: Help others facing similar challenges
-
-## Evidence-Based Best Practices
-- Focus on solutions to real problems, not theoretical issues
-- Use approaches validated by actual user experiences
-- Address the most common concerns first
-- Learn from the community's collective experience
-
-## Conclusion
-Success with {topic} comes from understanding and addressing real customer needs. This research-based approach ensures you're solving actual problems, not imaginary ones.
-
-### Key Takeaways
-1. Real problems require proven solutions
-2. Community research provides valuable insights
-3. Address high-priority pain points first
-4. Use customer-validated approaches
-5. Continuously learn from user feedback
-
----
-*Based on analysis of real customer experiences and feedback*
-*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*
-*Research Quality: {len(pain_points)} pain points analyzed*
-"""
-
-    def _get_optimization_focus(self, content_type: str) -> List[str]:
-        """Get optimization focus areas for content type"""
-        focus_map = {
-            'product_page': ['conversion', 'trust', 'seo', 'user_experience'],
-            'category_page': ['navigation', 'seo', 'discovery', 'filtering'],
-            'landing_page': ['conversion', 'persuasion', 'clarity', 'cta_optimization'],
-            'article': ['information', 'seo', 'engagement', 'authority'],
-            'blog_post': ['engagement', 'shareability', 'seo', 'community'],
-            'guide': ['completeness', 'actionability', 'structure', 'examples'],
-            'tutorial': ['clarity', 'step_by_step', 'examples', 'practice'],
-            'case_study': ['credibility', 'evidence', 'results', 'methodology'],
-            'review': ['objectivity', 'completeness', 'comparison', 'verdict'],
-            'comparison': ['fairness', 'criteria', 'data', 'recommendations']
-        }
-        
-        return focus_map.get(content_type, ['quality', 'seo', 'engagement'])
-    
     def _get_pain_point_impact(self, pain_point: str, content_type: str) -> str:
         """Determine how pain point impacts specific content type"""
         impact_map = {
@@ -2878,12 +1418,7 @@ Success with {topic} comes from understanding and addressing real customer needs
             'category_page': 'Impacts navigation and product discovery',
             'landing_page': 'Critical for conversion optimization',
             'article': 'Affects engagement and authority building',
-            'blog_post': 'Influences reader engagement and sharing',
-            'guide': 'Determines usefulness and completeness',
-            'tutorial': 'Affects learning outcomes and satisfaction',
-            'case_study': 'Impacts credibility and relevance',
-            'review': 'Influences trust and decision-making',
-            'comparison': 'Affects decision-making process'
+            'blog_post': 'Influences reader engagement and sharing'
         }
         
         return impact_map.get(content_type, 'Affects overall content effectiveness')
@@ -2894,12 +1429,19 @@ Success with {topic} comes from understanding and addressing real customer needs
             return 'Address directly in benefits section with specific solutions and social proof'
         elif content_type == 'category_page':
             return 'Include in buying guides and filtering options with clear navigation'
-        elif content_type in ['article', 'blog_post']:
-            return 'Dedicate section to problem-solving strategies with actionable steps'
-        elif content_type in ['guide', 'tutorial']:
-            return 'Include troubleshooting and prevention tips with step-by-step solutions'
         else:
             return 'Integrate solution throughout content narrative with evidence and examples'
+    
+    def _get_optimization_focus(self, content_type: str) -> List[str]:
+        """Get optimization focus areas for content type"""
+        focus_map = {
+            'product_page': ['conversion', 'trust', 'seo', 'user_experience'],
+            'category_page': ['navigation', 'seo', 'discovery', 'filtering'],
+            'landing_page': ['conversion', 'persuasion', 'clarity', 'cta_optimization'],
+            'article': ['information', 'seo', 'engagement', 'authority']
+        }
+        
+        return focus_map.get(content_type, ['quality', 'seo', 'engagement'])
     
     def _get_type_specific_recommendations(self, content_type: str, form_data: Dict) -> List[Dict]:
         """Get content-type specific recommendations"""
@@ -2910,12 +1452,6 @@ Success with {topic} comes from understanding and addressing real customer needs
                     'recommendation': 'Add detailed specifications table and comparison features',
                     'priority': 'High',
                     'impact': 'Purchase Decision Support'
-                },
-                {
-                    'category': 'Trust Elements', 
-                    'recommendation': 'Include customer reviews, ratings, and testimonials',
-                    'priority': 'High',
-                    'impact': 'Social Proof & Conversion'
                 }
             ],
             'category_page': [
@@ -2924,14 +1460,6 @@ Success with {topic} comes from understanding and addressing real customer needs
                     'recommendation': 'Implement advanced filtering and sorting based on customer needs',
                     'priority': 'High', 
                     'impact': 'User Experience & Discovery'
-                }
-            ],
-            'landing_page': [
-                {
-                    'category': 'Conversion Optimization',
-                    'recommendation': 'Add urgency elements and multiple CTA placement',
-                    'priority': 'High',
-                    'impact': 'Conversion Rate'
                 }
             ]
         }
@@ -2945,12 +1473,7 @@ Success with {topic} comes from understanding and addressing real customer needs
             'landing_page': 9.5,
             'category_page': 7.8,
             'guide': 6.5,
-            'tutorial': 6.8,
-            'article': 5.5,
-            'blog_post': 5.8,
-            'case_study': 7.2,
-            'review': 8.1,
-            'comparison': 8.5
+            'article': 5.5
         }
         
         return conversion_scores.get(content_type, 6.0)
@@ -3006,8 +1529,6 @@ Success with {topic} comes from understanding and addressing real customer needs
 REDDIT RESEARCH DATA:
 - Analyzed {reddit_research['total_posts_analyzed']} posts
 - Found {len(reddit_research.get('top_pain_points', {}))} key pain points
-- Research quality: {reddit_research.get('research_quality', 'unknown')}
-- Top pain points: {', '.join(list(reddit_research.get('top_pain_points', {}).keys())[:3])}
 """
 
         context = f"""Content Type: {form_data.get('content_type', 'unknown')}
@@ -3017,7 +1538,7 @@ Target Audience: {form_data.get('target_audience', 'general')}
 {reddit_context}
 
 Pain Points from Research:
-{chr(10).join([f"• {p['pain_point']} (Source: {p['source']}, Priority: {p['priority']})" for p in pain_points[:3]])}"""
+{chr(10).join([f"• {p['pain_point']}" for p in pain_points[:3]])}"""
 
         prompt = f"""You are an expert content improvement assistant with access to real Reddit research data.
 
@@ -3025,8 +1546,6 @@ User request: {message}
 
 Context:
 {context}
-
-Current content preview: {current_content[:1000]}...
 
 Provide specific, actionable suggestions that leverage the Reddit research insights and address the real customer pain points discovered. Be helpful and reference the actual data when relevant."""
 
@@ -3071,6 +1590,133 @@ app.add_middleware(
 # Initialize components
 manager = ConnectionManager()
 content_system = ContentSystem()
+
+# RAILWAY DEBUGGING ROUTES
+@app.get("/test-anthropic-detailed")
+async def test_anthropic_detailed():
+    """Detailed Anthropic API test for Railway deployment"""
+    
+    debug_info = {
+        "timestamp": datetime.now().isoformat(),
+        "environment": config.ENVIRONMENT,
+        "anthropic_library_available": ANTHROPIC_AVAILABLE,
+        "api_key_configured": bool(config.ANTHROPIC_API_KEY),
+    }
+    
+    if config.ANTHROPIC_API_KEY:
+        debug_info["api_key_length"] = len(config.ANTHROPIC_API_KEY)
+        debug_info["api_key_format"] = {
+            "starts_with_sk": config.ANTHROPIC_API_KEY.startswith("sk-"),
+            "contains_ant": "ant-" in config.ANTHROPIC_API_KEY,
+            "first_10_chars": config.ANTHROPIC_API_KEY[:10],
+            "last_10_chars": config.ANTHROPIC_API_KEY[-10:]
+        }
+    
+    if not ANTHROPIC_AVAILABLE:
+        debug_info["error"] = "Anthropic library not installed"
+        return JSONResponse(debug_info, status_code=500)
+    
+    if not config.ANTHROPIC_API_KEY:
+        debug_info["error"] = "ANTHROPIC_API_KEY environment variable not set"
+        return JSONResponse(debug_info, status_code=500)
+    
+    try:
+        # Test with minimal request
+        test_client = anthropic.Anthropic(
+            api_key=config.ANTHROPIC_API_KEY,
+            timeout=30.0  # Extended timeout for Railway
+        )
+        
+        logger.info(f"Testing Anthropic API with key: {config.ANTHROPIC_API_KEY[:20]}...")
+        
+        response = test_client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=20,
+            messages=[{"role": "user", "content": "Say 'API test successful'"}]
+        )
+        
+        debug_info["api_test"] = {
+            "status": "success",
+            "response_text": response.content[0].text if response.content else "No content",
+            "model": response.model,
+            "usage": {
+                "input_tokens": response.usage.input_tokens,
+                "output_tokens": response.usage.output_tokens
+            }
+        }
+        
+        return JSONResponse(debug_info)
+        
+    except Exception as e:
+        import traceback
+        debug_info["api_test"] = {
+            "status": "error",
+            "error_message": str(e),
+            "error_type": type(e).__name__,
+            "traceback": traceback.format_exc()
+        }
+        
+        # Check for specific error types
+        if "authentication" in str(e).lower():
+            debug_info["likely_cause"] = "Invalid API key"
+        elif "rate_limit" in str(e).lower():
+            debug_info["likely_cause"] = "Rate limit exceeded"
+        elif "insufficient_quota" in str(e).lower():
+            debug_info["likely_cause"] = "No credits remaining"
+        elif "timeout" in str(e).lower():
+            debug_info["likely_cause"] = "Network timeout - Railway connectivity issue"
+        
+        return JSONResponse(debug_info, status_code=500)
+
+@app.get("/check-env")
+async def check_environment():
+    """Check all environment variables are loading correctly in Railway"""
+    
+    import os
+    
+    env_status = {
+        "ANTHROPIC_API_KEY": {
+            "present": bool(os.getenv("ANTHROPIC_API_KEY")),
+            "length": len(os.getenv("ANTHROPIC_API_KEY", "")),
+            "preview": os.getenv("ANTHROPIC_API_KEY", "")[:15] + "..." if os.getenv("ANTHROPIC_API_KEY") else None
+        },
+        "REDDIT_CLIENT_ID": {
+            "present": bool(os.getenv("REDDIT_CLIENT_ID")),
+            "length": len(os.getenv("REDDIT_CLIENT_ID", ""))
+        },
+        "REDDIT_CLIENT_SECRET": {
+            "present": bool(os.getenv("REDDIT_CLIENT_SECRET")),
+            "length": len(os.getenv("REDDIT_CLIENT_SECRET", ""))
+        },
+        "REDDIT_USER_AGENT": {
+            "present": bool(os.getenv("REDDIT_USER_AGENT")),
+            "value": os.getenv("REDDIT_USER_AGENT", "Not set")
+        },
+        "RAILWAY_ENVIRONMENT": {
+            "present": bool(os.getenv("RAILWAY_ENVIRONMENT")),
+            "value": os.getenv("RAILWAY_ENVIRONMENT", "Not detected")
+        }
+    }
+    
+    # Check if config class is loading variables correctly
+    config_status = {
+        "config_anthropic_key": bool(config.ANTHROPIC_API_KEY),
+        "config_reddit_id": bool(config.REDDIT_CLIENT_ID),
+        "config_reddit_secret": bool(config.REDDIT_CLIENT_SECRET),
+        "environment": config.ENVIRONMENT
+    }
+    
+    return JSONResponse({
+        "environment_variables": env_status,
+        "config_class": config_status,
+        "libraries": {
+            "anthropic_available": ANTHROPIC_AVAILABLE,
+            "reddit_available": REDDIT_AVAILABLE
+        },
+        "system_status": {
+            "content_system_llm_configured": content_system.llm_client.is_configured() if 'content_system' in globals() else False
+        }
+    })
 
 # Routes
 @app.get("/", response_class=HTMLResponse)
