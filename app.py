@@ -7,6 +7,22 @@ import aiohttp
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 
+# Add this near the top with your other config
+ENABLE_REDIRECT = os.getenv("ENABLE_REDIRECT", "false").lower() == "true"
+REDIRECT_URL = os.getenv("REDIRECT_URL", "https://waqzee.com/marketing-copy-content-creator/")
+
+# Then modify your routes:
+@app.get("/", response_class=HTMLResponse)
+async def home():
+    if ENABLE_REDIRECT:
+        return RedirectResponse(url=REDIRECT_URL, status_code=301)
+    return HTMLResponse(content=generate_enhanced_form_html())
+
+@app.get("/generate", response_class=HTMLResponse)
+async def generate_page():
+    if ENABLE_REDIRECT:
+        return RedirectResponse(url=REDIRECT_URL, status_code=301)
+    return HTMLResponse(content=generate_enhanced_generator_html())
 # FastAPI and WebSocket imports
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
