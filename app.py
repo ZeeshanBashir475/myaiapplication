@@ -7,10 +7,9 @@ import aiohttp
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 
-
 # FastAPI and WebSocket imports
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
@@ -42,8 +41,6 @@ class Config:
     PORT = int(os.getenv("PORT", 8002))
     HOST = os.getenv("HOST", "0.0.0.0")
     ENVIRONMENT = os.getenv("RAILWAY_ENVIRONMENT", "development")
-    ENABLE_REDIRECT = os.getenv("ENABLE_REDIRECT", "false").lower() == "true"
-    REDIRECT_URL = os.getenv("REDIRECT_URL", "https://waqzee.com/marketing-copy-content-creator/")
 
 config = Config()
 
@@ -1724,14 +1721,10 @@ async def check_environment():
 # Routes
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    if config.ENABLE_REDIRECT:
-        return RedirectResponse(url=config.REDIRECT_URL, status_code=301)
     return HTMLResponse(content=generate_enhanced_form_html())
 
 @app.get("/generate", response_class=HTMLResponse)
 async def generate_page():
-    if config.ENABLE_REDIRECT:
-        return RedirectResponse(url=config.REDIRECT_URL, status_code=301)
     return HTMLResponse(content=generate_enhanced_generator_html())
 
 def generate_enhanced_form_html():
