@@ -611,6 +611,8 @@ class RedditResearcher:
         }
 
 # IMPROVED LLM Client for Railway
+# Replace your LLMClient class with this fixed version
+
 class LLMClient:
     def __init__(self):
         self.anthropic_client = None
@@ -627,11 +629,10 @@ class LLMClient:
         
         if self.api_key:
             try:
-                # Initialize with Railway-optimized settings
+                # FIXED: Use only basic supported parameters
                 self.anthropic_client = anthropic.Anthropic(
-                    api_key=self.api_key,
-                    timeout=60.0,  # Longer timeout for Railway
-                    max_retries=3   # Retry failed requests
+                    api_key=self.api_key
+                    # Removed problematic parameters: timeout, max_retries, proxies
                 )
                 logger.info("✅ Anthropic client initialized successfully")
                 
@@ -640,8 +641,7 @@ class LLMClient:
                     test_response = self.anthropic_client.messages.create(
                         model="claude-3-haiku-20240307",
                         max_tokens=10,
-                        messages=[{"role": "user", "content": "Hello"}],
-                        timeout=30.0
+                        messages=[{"role": "user", "content": "Hello"}]
                     )
                     logger.info("✅ Anthropic API test successful")
                 except Exception as test_e:
@@ -653,14 +653,13 @@ class LLMClient:
                 self.anthropic_client = None
         else:
             logger.error("❌ ANTHROPIC_API_KEY not found in environment variables")
-            logger.error(f"❌ Available env vars: {list(os.environ.keys())}")
     
     def is_configured(self):
         """Check if the client is properly configured"""
         return self.anthropic_client is not None and self.api_key is not None
     
     async def generate_streaming(self, prompt: str, max_tokens: int = 3000):
-        """Generate streaming response with Railway-optimized error handling"""
+        """Generate streaming response with fixed error handling"""
         
         # Always try to re-initialize if not configured
         if not self.is_configured():
@@ -676,13 +675,13 @@ class LLMClient:
         try:
             logger.info(f"🤖 Generating content with prompt length: {len(prompt)}")
             
-            # Use Railway-optimized settings
+            # FIXED: Use basic streaming without extra parameters
             stream = self.anthropic_client.messages.create(
                 model="claude-3-haiku-20240307",
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}],
-                stream=True,
-                timeout=120.0  # Extended timeout for Railway
+                stream=True
+                # Removed timeout parameter
             )
             
             chunk_count = 0
@@ -701,22 +700,15 @@ class LLMClient:
             error_msg = f"❌ Anthropic API error: {str(e)}"
             logger.error(error_msg)
             
-            # Provide specific error guidance for Railway
+            # Provide specific error guidance
             if "authentication" in str(e).lower() or "api_key" in str(e).lower():
-                yield "❌ Authentication error. Your Anthropic API key may be invalid. Please check your Railway environment variables."
+                yield "❌ Authentication error. Your Anthropic API key may be invalid."
             elif "rate_limit" in str(e).lower():
                 yield "❌ Rate limit exceeded. Please wait a moment and try again."
             elif "insufficient_quota" in str(e).lower() or "quota" in str(e).lower():
-                yield "❌ No credits remaining. Please add credits to your Anthropic account at console.anthropic.com"
+                yield "❌ No credits remaining. Please add credits to your Anthropic account."
             elif "timeout" in str(e).lower():
-                yield "❌ Request timeout. This may be a Railway connectivity issue. Trying shorter content..."
-                # Retry with shorter max_tokens
-                if max_tokens > 1000:
-                    async for chunk in self.generate_streaming(prompt, max_tokens // 2):
-                        yield chunk
-                    return
-            elif "model" in str(e).lower():
-                yield "❌ Model error. The AI model might be temporarily unavailable."
+                yield "❌ Request timeout. Please try again."
             else:
                 yield f"❌ AI Generation Error: {str(e)}"
                 
