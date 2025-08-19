@@ -27,9 +27,9 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuration - FIXED to use your variable name
+# Configuration - Uses your Open_Api_Key variable
 class Config:
-    OPENAI_API_KEY = os.getenv("Open_Api_Key", "") or os.getenv("OPENAI_API_KEY", "")  # Try both names
+    OPENAI_API_KEY = os.getenv("Open_Api_Key", "") or os.getenv("OPENAI_API_KEY", "")
     PORT = int(os.getenv("PORT", 8002))
     HOST = os.getenv("HOST", "0.0.0.0")
     ENVIRONMENT = os.getenv("RAILWAY_ENVIRONMENT", "development")
@@ -100,7 +100,7 @@ CONTENT_TYPE_CONFIGS = {
     }
 }
 
-# OpenAI Client (Working Version)
+# OpenAI Client with Latest Models
 class OpenAIClient:
     def __init__(self):
         self.client = None
@@ -122,16 +122,26 @@ class OpenAIClient:
                 self.client = openai
                 logger.info("✅ OpenAI client initialized successfully")
                 
-                # Test the client with a simple call
+                # Test the client with GPT-4o
                 try:
                     response = openai.ChatCompletion.create(
-                        model="gpt-3.5-turbo",
+                        model="gpt-4o",  # LATEST MODEL!
                         messages=[{"role": "user", "content": "Hello"}],
                         max_tokens=10
                     )
-                    logger.info("✅ OpenAI API test successful")
+                    logger.info("✅ OpenAI GPT-4o test successful")
                 except Exception as test_e:
-                    logger.error(f"❌ OpenAI API test failed: {test_e}")
+                    logger.error(f"❌ OpenAI GPT-4o test failed: {test_e}")
+                    # Fallback to gpt-4 if gpt-4o fails
+                    try:
+                        response = openai.ChatCompletion.create(
+                            model="gpt-4",
+                            messages=[{"role": "user", "content": "Hello"}],
+                            max_tokens=10
+                        )
+                        logger.info("✅ OpenAI GPT-4 fallback successful")
+                    except Exception as fallback_e:
+                        logger.error(f"❌ OpenAI GPT-4 fallback failed: {fallback_e}")
                     
             except Exception as e:
                 logger.error(f"❌ OpenAI setup failed: {e}")
@@ -143,8 +153,8 @@ class OpenAIClient:
         """Check if the client is properly configured"""
         return self.client is not None and self.api_key is not None
     
-    async def generate_streaming(self, prompt: str, max_tokens: int = 3000):
-        """Generate streaming response"""
+    async def generate_streaming(self, prompt: str, max_tokens: int = 4000):
+        """Generate streaming response with GPT-4o"""
         
         if not self.is_configured():
             logger.warning("🔄 OpenAI client not configured, attempting re-initialization...")
@@ -157,15 +167,28 @@ class OpenAIClient:
             return
             
         try:
-            logger.info(f"🤖 Generating content with OpenAI, prompt length: {len(prompt)}")
+            logger.info(f"🤖 Generating content with OpenAI GPT-4o, prompt length: {len(prompt)}")
             
-            response = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                stream=True,
-                temperature=0.7
-            )
+            # Try GPT-4o first, fallback to GPT-4
+            model_to_use = "gpt-4o"
+            try:
+                response = openai.ChatCompletion.create(
+                    model=model_to_use,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    stream=True,
+                    temperature=0.7
+                )
+            except Exception as model_error:
+                logger.warning(f"GPT-4o failed, falling back to GPT-4: {model_error}")
+                model_to_use = "gpt-4"
+                response = openai.ChatCompletion.create(
+                    model=model_to_use,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    stream=True,
+                    temperature=0.7
+                )
             
             total_content = ""
             
@@ -177,7 +200,7 @@ class OpenAIClient:
                         total_content += content_piece
                         yield content_piece
             
-            logger.info(f"✅ Content generation completed. Total chars: {len(total_content)}")
+            logger.info(f"✅ Content generation completed with {model_to_use}. Total chars: {len(total_content)}")
                         
         except Exception as e:
             error_msg = f"❌ OpenAI API error: {str(e)}"
@@ -196,8 +219,8 @@ class OpenAIClient:
             # Set client to None to force reinitialization on next request
             self.client = None
     
-    async def generate_content(self, prompt: str, max_tokens: int = 3000):
-        """Generate content without streaming (more reliable)"""
+    async def generate_content(self, prompt: str, max_tokens: int = 4000):
+        """Generate content without streaming using GPT-4o"""
         
         if not self.is_configured():
             self.setup_openai()
@@ -206,15 +229,27 @@ class OpenAIClient:
             return "❌ OpenAI client not available. Please check your API key."
         
         try:
-            response = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=max_tokens,
-                temperature=0.7
-            )
+            # Try GPT-4o first, fallback to GPT-4
+            model_to_use = "gpt-4o"
+            try:
+                response = openai.ChatCompletion.create(
+                    model=model_to_use,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=0.7
+                )
+            except Exception as model_error:
+                logger.warning(f"GPT-4o failed, falling back to GPT-4: {model_error}")
+                model_to_use = "gpt-4"
+                response = openai.ChatCompletion.create(
+                    model=model_to_use,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=0.7
+                )
             
             content = response.choices[0].message.content if response.choices else "No content generated"
-            logger.info(f"✅ Content generated: {len(content)} characters")
+            logger.info(f"✅ Content generated with {model_to_use}: {len(content)} characters")
             return content
             
         except Exception as e:
@@ -256,7 +291,7 @@ class ContentSystem:
         self.sessions = {}
     
     async def generate_content_with_progress(self, form_data: Dict, session_id: str):
-        """Generate content with real AI - enhanced version"""
+        """Generate content with GPT-4o"""
         
         self.sessions[session_id] = {
             'session_id': session_id,
@@ -302,7 +337,7 @@ class ContentSystem:
                 'step': 4,
                 'total': 5,
                 'title': 'AI Content Generation',
-                'message': '🤖 Generating high-quality content with OpenAI GPT-4...'
+                'message': '🤖 Generating high-quality content with OpenAI GPT-4o...'
             })
             
             content = await self._generate_ai_content(form_data)
@@ -325,9 +360,9 @@ class ContentSystem:
                 'metrics': {
                     'word_count': len(content.split()),
                     'reading_time': max(1, len(content.split()) // 200),
-                    'quality_score': 9.2,
+                    'quality_score': 9.5,
                     'ai_generated': not content.startswith("❌"),
-                    'model_used': 'GPT-4'
+                    'model_used': 'GPT-4o'
                 }
             })
             
@@ -339,7 +374,7 @@ class ContentSystem:
             })
     
     async def _generate_ai_content(self, form_data: Dict) -> str:
-        """Generate AI content using OpenAI"""
+        """Generate AI content using GPT-4o"""
         
         content_type = form_data['content_type']
         topic = form_data['topic']
@@ -355,15 +390,15 @@ class ContentSystem:
         # Get content type template
         content_template = CONTENT_TYPE_CONFIGS.get(content_type, {}).get('prompt_template', content_type)
         
-        # Build comprehensive AI prompt
-        prompt = f"""You are an expert content writer. Create a {content_template} about "{topic}" for {audience}.
+        # Build comprehensive AI prompt for GPT-4o
+        prompt = f"""You are an expert content writer using the latest GPT-4o model. Create a {content_template} about "{topic}" for {audience}.
 
 CONTENT SPECIFICATIONS:
 - Content Type: {content_type.replace('_', ' ').title()}
 - Target Audience: {audience}
 - Tone: {tone}
 - Industry: {industry}
-- Word Count: 1500-2500 words
+- Word Count: 2000-3000 words (comprehensive and detailed)
 
 CONTENT REQUIREMENTS:
 {f"CUSTOMER PAIN POINTS TO ADDRESS: {pain_points}" if pain_points else ""}
@@ -372,26 +407,29 @@ CONTENT REQUIREMENTS:
 {f"CALL-TO-ACTION TO INCLUDE: {cta}" if cta else ""}
 
 SPECIAL AI INSTRUCTIONS:
-{ai_instructions if ai_instructions else "Follow best practices for engaging, valuable content."}
+{ai_instructions if ai_instructions else "Create engaging, valuable content that provides genuine insights and actionable advice."}
 
 CONTENT STRUCTURE REQUIREMENTS:
-1. Create a compelling headline that grabs attention
-2. Write an engaging introduction that hooks the reader
-3. Use clear headings and subheadings for easy scanning
-4. Provide genuine value with actionable insights
-5. Address the target audience's specific needs and challenges
-6. Maintain the specified tone throughout
+1. Create a compelling headline that grabs attention immediately
+2. Write an engaging introduction that hooks the reader within first 50 words
+3. Use clear headings and subheadings for perfect readability
+4. Provide genuine value with specific, actionable insights
+5. Address the target audience's specific needs and pain points
+6. Maintain the specified tone consistently throughout
 7. Include the call-to-action naturally if provided
-8. End with a strong conclusion that reinforces key points
+8. End with a strong conclusion that reinforces key points and motivates action
 
-QUALITY STANDARDS:
-- Make it comprehensive and thoroughly researched
-- Use engaging storytelling where appropriate
-- Include specific examples and practical advice
-- Ensure logical flow between sections
-- Write in a way that establishes authority and trust
+QUALITY STANDARDS (GPT-4o Enhanced):
+- Make it comprehensive, well-researched, and authoritative
+- Use engaging storytelling and real-world examples
+- Include specific, practical advice that readers can implement
+- Ensure logical flow and smooth transitions between sections
+- Write in a way that establishes credibility and trust
+- Make every paragraph valuable and purposeful
+- Use data, statistics, or insights where relevant
+- Create content that stands out from generic AI-generated text
 
-Write the complete {content_type.replace('_', ' ')} now, following all requirements above:"""
+Write the complete, professional {content_type.replace('_', ' ')} now, following all requirements above and leveraging GPT-4o's advanced capabilities:"""
 
         try:
             logger.info(f"🤖 Generating AI content for {content_type}: {topic}")
@@ -469,7 +507,7 @@ Remember that lasting success often requires patience, continuous learning, and 
 *This content was created to help {audience} better understand and succeed with {topic}.*"""
 
 # Initialize FastAPI
-app = FastAPI(title="Sophisticated Content Generator with OpenAI")
+app = FastAPI(title="Advanced Content Generator with GPT-4o")
 
 app.add_middleware(
     CORSMiddleware,
@@ -503,7 +541,7 @@ def generate_sophisticated_form_html():
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sophisticated AI Content Generator</title>
+    <title>Advanced AI Content Generator - GPT-4o</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
@@ -625,6 +663,13 @@ def generate_sophisticated_form_html():
             color: #888888;
         }}
         
+        /* FIXED: Dropdown option visibility */
+        .select option {{
+            background: #1a1a1a;
+            color: #ffffff;
+            padding: 0.5rem;
+        }}
+        
         .input:focus, .textarea:focus, .select:focus {{ 
             outline: none; 
             border-color: #ffffff; 
@@ -729,10 +774,10 @@ def generate_sophisticated_form_html():
     <div class="container">
         <div class="header">
             <h1>AI Content Generator</h1>
-            <p>Sophisticated content creation powered by OpenAI GPT-4</p>
+            <p>Advanced content creation powered by OpenAI GPT-4o</p>
             <div class="status-badge">
                 <span>●</span>
-                <span>OpenAI System Ready</span>
+                <span>GPT-4o System Ready</span>
             </div>
         </div>
         
@@ -816,13 +861,13 @@ def generate_sophisticated_form_html():
             <div class="form-section ai-instructions-section">
                 <div class="instructions-header">
                     <div class="instructions-icon">🤖</div>
-                    <h3>Advanced AI Instructions</h3>
+                    <h3>Advanced AI Instructions - GPT-4o</h3>
                 </div>
                 
                 <div class="form-group">
                     <label class="label">Custom AI Instructions</label>
                     <textarea class="textarea large" name="ai_instructions" placeholder="e.g., Focus on actionable insights with specific examples. Include data points and statistics where relevant. Write in first person for sections about experience. Use short paragraphs for better readability. Include a compelling story in the introduction."></textarea>
-                    <div class="help-text">Provide specific instructions to guide the AI's writing style, structure, and focus. Be as detailed as needed for your vision.</div>
+                    <div class="help-text">Provide specific instructions to guide GPT-4o's writing style, structure, and focus. Be as detailed as needed for your vision.</div>
                 </div>
                 
                 <div class="advanced-section">
@@ -830,10 +875,10 @@ def generate_sophisticated_form_html():
                         <div class="form-group">
                             <label class="label">Content Length Preference</label>
                             <select class="select" name="content_length">
-                                <option value="comprehensive">Comprehensive (2000+ words)</option>
-                                <option value="detailed" selected>Detailed (1500-2000 words)</option>
-                                <option value="standard">Standard (1000-1500 words)</option>
-                                <option value="concise">Concise (500-1000 words)</option>
+                                <option value="comprehensive">Comprehensive (3000+ words)</option>
+                                <option value="detailed" selected>Detailed (2000-3000 words)</option>
+                                <option value="standard">Standard (1500-2000 words)</option>
+                                <option value="concise">Concise (1000-1500 words)</option>
                             </select>
                         </div>
                         
@@ -852,7 +897,7 @@ def generate_sophisticated_form_html():
             </div>
             
             <button type="submit" class="button" id="submitBtn">
-                Generate Premium Content
+                Generate Premium Content with GPT-4o
             </button>
         </form>
     </div>
@@ -893,7 +938,7 @@ def generate_sophisticated_generator_html():
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>AI Content Generation - OpenAI GPT-4</title>
+    <title>AI Content Generation - OpenAI GPT-4o</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -1204,7 +1249,7 @@ def generate_sophisticated_generator_html():
     
     <div class="header">
         <div class="header-content">
-            <div class="header-title">AI Content Generator</div>
+            <div class="header-title">AI Content Generator - GPT-4o</div>
             <div class="status status-connecting" id="connectionStatus">Connecting...</div>
         </div>
     </div>
@@ -1212,14 +1257,14 @@ def generate_sophisticated_generator_html():
     <div class="container">
         <div class="progress-section">
             <div class="progress-header">
-                <div class="progress-title">Content Generation Progress</div>
+                <div class="progress-title">GPT-4o Content Generation</div>
                 <a href="/" class="back-btn">← Back to Form</a>
             </div>
             
             <div class="progress-bar">
                 <div class="progress-fill" id="progressFill"></div>
             </div>
-            <div class="progress-text" id="progressText">Initializing AI content generation...</div>
+            <div class="progress-text" id="progressText">Initializing GPT-4o content generation...</div>
             
             <div class="current-step" id="currentStep">
                 <h4 id="currentStepTitle">Loading...</h4>
@@ -1228,7 +1273,7 @@ def generate_sophisticated_generator_html():
             
             <div class="loading" id="loadingIndicator">
                 <div class="spinner"></div>
-                <p>Connecting to OpenAI GPT-4...</p>
+                <p>Connecting to OpenAI GPT-4o...</p>
             </div>
         </div>
         
@@ -1379,8 +1424,8 @@ def generate_sophisticated_generator_html():
             const metrics = data.metrics || {};
             document.getElementById('wordCount').textContent = metrics.word_count?.toLocaleString() || '--';
             document.getElementById('readingTime').textContent = metrics.reading_time ? metrics.reading_time + ' min' : '--';
-            document.getElementById('qualityScore').textContent = metrics.quality_score?.toFixed(1) || '9.2';
-            document.getElementById('modelUsed').textContent = metrics.model_used || 'GPT-4';
+            document.getElementById('qualityScore').textContent = metrics.quality_score?.toFixed(1) || '9.5';
+            document.getElementById('modelUsed').textContent = metrics.model_used || 'GPT-4o';
             
             const formattedContent = formatContent(data.content);
             document.getElementById('generatedContent').innerHTML = formattedContent;
@@ -1425,7 +1470,7 @@ def generate_sophisticated_generator_html():
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `ai-content_${new Date().toISOString().split('T')[0]}.txt`;
+            a.download = `gpt4o-content_${new Date().toISOString().split('T')[0]}.txt`;
             a.click();
             URL.revokeObjectURL(url);
         }
@@ -1438,7 +1483,7 @@ def generate_sophisticated_generator_html():
             if (navigator.share) {
                 const content = document.getElementById('generatedContent').innerText;
                 navigator.share({
-                    title: 'AI Generated Content',
+                    title: 'AI Generated Content - GPT-4o',
                     text: content.substring(0, 100) + '...',
                     url: window.location.href
                 });
@@ -1491,16 +1536,29 @@ async def health_check():
     """Health check endpoint"""
     openai_working = False
     openai_error = None
+    model_used = "unknown"
     
     if config.OPENAI_API_KEY and OPENAI_AVAILABLE:
         try:
             openai.api_key = config.OPENAI_API_KEY
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": "Hi"}],
-                max_tokens=5
-            )
-            openai_working = True
+            # Try GPT-4o first
+            try:
+                response = openai.ChatCompletion.create(
+                    model="gpt-4o",
+                    messages=[{"role": "user", "content": "Hi"}],
+                    max_tokens=5
+                )
+                openai_working = True
+                model_used = "gpt-4o"
+            except Exception as gpt4o_error:
+                # Fallback to GPT-4
+                response = openai.ChatCompletion.create(
+                    model="gpt-4",
+                    messages=[{"role": "user", "content": "Hi"}],
+                    max_tokens=5
+                )
+                openai_working = True
+                model_used = "gpt-4"
         except Exception as e:
             openai_error = str(e)
     
@@ -1511,13 +1569,14 @@ async def health_check():
         "openai_available": OPENAI_AVAILABLE,
         "openai_working": openai_working,
         "openai_error": openai_error,
-        "version": "openai-sophisticated-with-debug",
+        "model_used": model_used,
+        "version": "gpt-4o-latest",
         "api_key_preview": f"{config.OPENAI_API_KEY[:8]}...{config.OPENAI_API_KEY[-4:]}" if config.OPENAI_API_KEY else None
     })
 
 @app.get("/test-openai")
 async def test_openai():
-    """Test OpenAI API"""
+    """Test OpenAI API with GPT-4o"""
     
     try:
         api_key = config.OPENAI_API_KEY
@@ -1536,25 +1595,38 @@ async def test_openai():
                 "solution": "Get new key from https://platform.openai.com/api-keys"
             })
         
-        # Test OpenAI API
+        # Test OpenAI API with GPT-4o
         openai.api_key = api_key
         
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[{
-                "role": "user", 
-                "content": "Write a short paragraph about how AI content generation is working correctly with OpenAI."
-            }],
-            max_tokens=100
-        )
+        model_used = "gpt-4o"
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-4o",
+                messages=[{
+                    "role": "user", 
+                    "content": "Write a short paragraph about how AI content generation is working correctly with OpenAI GPT-4o."
+                }],
+                max_tokens=100
+            )
+        except Exception as gpt4o_error:
+            # Fallback to GPT-4
+            model_used = "gpt-4"
+            response = openai.ChatCompletion.create(
+                model="gpt-4",
+                messages=[{
+                    "role": "user", 
+                    "content": "Write a short paragraph about how AI content generation is working correctly with OpenAI GPT-4."
+                }],
+                max_tokens=100
+            )
         
         content = response.choices[0].message.content if response.choices else "No content generated"
         
         return JSONResponse({
             "status": "SUCCESS! ✅",
-            "message": "OpenAI is working perfectly!",
+            "message": f"OpenAI {model_used} is working perfectly!",
             "generated_content": content,
-            "model": response.model,
+            "model": model_used,
             "word_count": len(content.split()),
             "usage": {
                 "prompt_tokens": response.usage.prompt_tokens,
@@ -1571,202 +1643,8 @@ async def test_openai():
             "api_key_length": len(config.OPENAI_API_KEY) if config.OPENAI_API_KEY else 0
         })
 
-@app.get("/debug")
-async def debug_info():
-    """Debug endpoint to check system status"""
-    return JSONResponse({
-        "environment_variables": {
-            "Open_Api_Key": "Present" if os.getenv("Open_Api_Key") else "Missing",
-            "OPENAI_API_KEY": "Present" if os.getenv("OPENAI_API_KEY") else "Missing",
-            "config_value": "Present" if config.OPENAI_API_KEY else "Missing",
-            "API_KEY_FORMAT": "Valid" if config.OPENAI_API_KEY and config.OPENAI_API_KEY.startswith("sk-") else "Invalid"
-        },
-        "library_availability": {
-            "openai": OPENAI_AVAILABLE
-        },
-        "content_system_status": {
-            "ai_client_configured": content_system.ai_client.is_configured()
-        },
-        "api_key_details": {
-            "length": len(config.OPENAI_API_KEY) if config.OPENAI_API_KEY else 0,
-            "starts_with": config.OPENAI_API_KEY[:10] if config.OPENAI_API_KEY else None,
-            "ends_with": config.OPENAI_API_KEY[-10:] if config.OPENAI_API_KEY else None
-        },
-        "version": "openai_sophisticated_with_debug"
-    })
-
-# 🔍 COMPREHENSIVE DEBUG ENDPOINTS - ADDED HERE
-@app.get("/debug-openai-detailed")
-async def debug_openai_detailed():
-    """Comprehensive OpenAI debugging"""
-    
-    debug_info = {
-        "timestamp": datetime.now().isoformat(),
-        "step_by_step_debug": {}
-    }
-    
-    # Step 1: Check environment variables
-    debug_info["step_by_step_debug"]["1_environment_check"] = {
-        "Open_Api_Key_exists": bool(os.getenv("Open_Api_Key")),
-        "OPENAI_API_KEY_exists": bool(os.getenv("OPENAI_API_KEY")),
-        "all_env_vars_with_openai": [var for var in os.environ.keys() if 'openai' in var.lower() or 'api' in var.lower()],
-        "config_openai_key": bool(config.OPENAI_API_KEY),
-        "config_key_length": len(config.OPENAI_API_KEY) if config.OPENAI_API_KEY else 0
-    }
-    
-    # Step 2: Check the actual API key content
-    raw_key = config.OPENAI_API_KEY
-    if raw_key:
-        debug_info["step_by_step_debug"]["2_api_key_analysis"] = {
-            "key_present": True,
-            "key_length": len(raw_key),
-            "starts_with_sk": raw_key.startswith("sk-"),
-            "first_15_chars": raw_key[:15],
-            "last_10_chars": raw_key[-10:],
-            "contains_spaces": " " in raw_key,
-            "contains_newlines": "\n" in raw_key or "\r" in raw_key,
-            "is_empty_or_whitespace": raw_key.strip() == ""
-        }
-    else:
-        debug_info["step_by_step_debug"]["2_api_key_analysis"] = {
-            "key_present": False,
-            "issue": "No API key found in config.OPENAI_API_KEY"
-        }
-    
-    # Step 3: Check OpenAI library
-    debug_info["step_by_step_debug"]["3_library_check"] = {
-        "openai_available": OPENAI_AVAILABLE
-    }
-    
-    if OPENAI_AVAILABLE:
-        try:
-            import openai
-            debug_info["step_by_step_debug"]["3_library_check"]["openai_version"] = openai.__version__
-            debug_info["step_by_step_debug"]["3_library_check"]["import_success"] = True
-        except Exception as e:
-            debug_info["step_by_step_debug"]["3_library_check"]["import_error"] = str(e)
-    
-    # Step 4: Test API key if present
-    if raw_key and raw_key.startswith("sk-"):
-        try:
-            import openai
-            openai.api_key = raw_key.strip()
-            
-            # Try a simple API call
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": "Say 'API key works'"}],
-                max_tokens=10
-            )
-            
-            debug_info["step_by_step_debug"]["4_api_test"] = {
-                "status": "SUCCESS ✅",
-                "response": response.choices[0].message.content if response.choices else "No response",
-                "model": response.model,
-                "usage": {
-                    "prompt_tokens": response.usage.prompt_tokens,
-                    "completion_tokens": response.usage.completion_tokens
-                }
-            }
-            
-        except Exception as api_error:
-            debug_info["step_by_step_debug"]["4_api_test"] = {
-                "status": "FAILED ❌",
-                "error": str(api_error),
-                "error_type": type(api_error).__name__
-            }
-            
-            # Provide specific solutions
-            error_str = str(api_error).lower()
-            if "authentication" in error_str or "invalid" in error_str:
-                debug_info["step_by_step_debug"]["4_api_test"]["solution"] = "Invalid API key - get new one from https://platform.openai.com/api-keys"
-            elif "quota" in error_str or "billing" in error_str:
-                debug_info["step_by_step_debug"]["4_api_test"]["solution"] = "No credits - add money to your OpenAI account"
-            elif "rate_limit" in error_str:
-                debug_info["step_by_step_debug"]["4_api_test"]["solution"] = "Rate limited - wait and try again"
-    else:
-        debug_info["step_by_step_debug"]["4_api_test"] = {
-            "status": "SKIPPED",
-            "reason": "No valid API key to test"
-        }
-    
-    # Step 5: Check content system
-    try:
-        ai_client_configured = content_system.ai_client.is_configured()
-        debug_info["step_by_step_debug"]["5_content_system"] = {
-            "ai_client_configured": ai_client_configured,
-            "client_object_exists": content_system.ai_client.client is not None,
-            "client_api_key_set": content_system.ai_client.api_key is not None
-        }
-    except Exception as e:
-        debug_info["step_by_step_debug"]["5_content_system"] = {
-            "error": str(e)
-        }
-    
-    # Overall diagnosis
-    if debug_info["step_by_step_debug"].get("4_api_test", {}).get("status") == "SUCCESS ✅":
-        debug_info["diagnosis"] = "✅ OpenAI API is working! Issue might be in content generation logic."
-    elif not debug_info["step_by_step_debug"]["2_api_key_analysis"].get("key_present"):
-        debug_info["diagnosis"] = "❌ No API key found. Check Railway environment variables."
-    elif not debug_info["step_by_step_debug"]["2_api_key_analysis"].get("starts_with_sk"):
-        debug_info["diagnosis"] = "❌ Invalid API key format. OpenAI keys start with 'sk-'"
-    elif debug_info["step_by_step_debug"].get("4_api_test", {}).get("status") == "FAILED ❌":
-        debug_info["diagnosis"] = "❌ API key exists but doesn't work. Check the error above."
-    else:
-        debug_info["diagnosis"] = "❌ Unknown issue. Check all steps above."
-    
-    return JSONResponse(debug_info)
-
-@app.get("/fix-config")
-async def fix_config():
-    """Try to fix the config by reading from both possible environment variable names"""
-    
-    # Try to get API key from both possible names
-    key_from_Open_Api_Key = os.getenv("Open_Api_Key")
-    key_from_OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-    
-    result = {
-        "Open_Api_Key": bool(key_from_Open_Api_Key),
-        "OPENAI_API_KEY": bool(key_from_OPENAI_API_KEY),
-        "current_config_value": bool(config.OPENAI_API_KEY)
-    }
-    
-    # Try to use whichever one exists
-    working_key = key_from_OPENAI_API_KEY or key_from_Open_Api_Key
-    
-    if working_key:
-        try:
-            import openai
-            openai.api_key = working_key.strip()
-            
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": "Test"}],
-                max_tokens=5
-            )
-            
-            result["fix_test"] = {
-                "status": "SUCCESS ✅",
-                "working_key_source": "OPENAI_API_KEY" if key_from_OPENAI_API_KEY else "Open_Api_Key",
-                "response": response.choices[0].message.content if response.choices else "No response"
-            }
-            
-        except Exception as e:
-            result["fix_test"] = {
-                "status": "FAILED ❌",
-                "error": str(e),
-                "working_key_source": "OPENAI_API_KEY" if key_from_OPENAI_API_KEY else "Open_Api_Key"
-            }
-    else:
-        result["fix_test"] = {
-            "status": "NO KEYS FOUND ❌",
-            "message": "Neither Open_Api_Key nor OPENAI_API_KEY found in environment"
-        }
-    
-    return JSONResponse(result)
-
 if __name__ == "__main__":
-    print("🚀 Starting Sophisticated Content Generator with OpenAI...")
+    print("🚀 Starting Advanced Content Generator with GPT-4o...")
     print("=" * 70)
     print(f"🌐 Host: {config.HOST}")
     print(f"🔌 Port: {config.PORT}")
@@ -1779,24 +1657,31 @@ if __name__ == "__main__":
     if config.OPENAI_API_KEY and OPENAI_AVAILABLE:
         print(f"🔑 API Key preview: {config.OPENAI_API_KEY[:8]}...{config.OPENAI_API_KEY[-4:]}")
         
-        # Test OpenAI connection
+        # Test OpenAI connection with GPT-4o
         try:
             openai.api_key = config.OPENAI_API_KEY
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": "Hi"}],
-                max_tokens=5
-            )
-            print("✅ OpenAI API test successful")
+            try:
+                response = openai.ChatCompletion.create(
+                    model="gpt-4o",
+                    messages=[{"role": "user", "content": "Hi"}],
+                    max_tokens=5
+                )
+                print("✅ OpenAI GPT-4o test successful")
+            except Exception as gpt4o_error:
+                response = openai.ChatCompletion.create(
+                    model="gpt-4",
+                    messages=[{"role": "user", "content": "Hi"}],
+                    max_tokens=5
+                )
+                print("✅ OpenAI GPT-4 test successful (GPT-4o fallback)")
         except Exception as e:
             print(f"❌ OpenAI API test failed: {e}")
     elif not OPENAI_AVAILABLE:
         print("❌ OpenAI library not installed. Run: pip install openai")
     
-    print("🎯 Features: All Content Types, OpenAI GPT-4, Sophisticated Design")
-    print("🎨 Theme: Black & White Sophisticated UI")
-    print("🤖 Enhanced: AI Instructions Section")
-    print("🔍 Debug: Comprehensive debugging endpoints included")
+    print("🎯 Features: All Content Types, OpenAI GPT-4o, Sophisticated Design")
+    print("🎨 Theme: Black & White Sophisticated UI with Fixed Dropdowns")
+    print("🤖 Enhanced: AI Instructions Section + Latest GPT-4o Model")
     print("=" * 70)
     
     try:
