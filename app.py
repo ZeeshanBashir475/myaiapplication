@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 class Config:
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+    OPENAI_API_KEY = os.getenv("Open_Api_Key", "")
     PORT = int(os.getenv("PORT", 8002))
     HOST = os.getenv("HOST", "0.0.0.0")
     ENVIRONMENT = os.getenv("RAILWAY_ENVIRONMENT", "development")
