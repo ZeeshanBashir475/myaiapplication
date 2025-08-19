@@ -27,9 +27,9 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuration
+# Configuration - FIXED to use your variable name
 class Config:
-    OPENAI_API_KEY = os.getenv("Open_Api_Key", "")
+    OPENAI_API_KEY = os.getenv("Open_Api_Key", "") or os.getenv("OPENAI_API_KEY", "")  # Try both names
     PORT = int(os.getenv("PORT", 8002))
     HOST = os.getenv("HOST", "0.0.0.0")
     ENVIRONMENT = os.getenv("RAILWAY_ENVIRONMENT", "development")
@@ -1511,7 +1511,7 @@ async def health_check():
         "openai_available": OPENAI_AVAILABLE,
         "openai_working": openai_working,
         "openai_error": openai_error,
-        "version": "openai-sophisticated",
+        "version": "openai-sophisticated-with-debug",
         "api_key_preview": f"{config.OPENAI_API_KEY[:8]}...{config.OPENAI_API_KEY[-4:]}" if config.OPENAI_API_KEY else None
     })
 
@@ -1526,7 +1526,7 @@ async def test_openai():
             return JSONResponse({
                 "status": "error",
                 "message": "❌ No OpenAI API key found in environment",
-                "solution": "Set OPENAI_API_KEY in Railway environment variables"
+                "solution": "Set Open_Api_Key in Railway environment variables"
             })
         
         if not api_key.startswith("sk-"):
@@ -1576,7 +1576,9 @@ async def debug_info():
     """Debug endpoint to check system status"""
     return JSONResponse({
         "environment_variables": {
-            "OPENAI_API_KEY": "Present" if config.OPENAI_API_KEY else "Missing",
+            "Open_Api_Key": "Present" if os.getenv("Open_Api_Key") else "Missing",
+            "OPENAI_API_KEY": "Present" if os.getenv("OPENAI_API_KEY") else "Missing",
+            "config_value": "Present" if config.OPENAI_API_KEY else "Missing",
             "API_KEY_FORMAT": "Valid" if config.OPENAI_API_KEY and config.OPENAI_API_KEY.startswith("sk-") else "Invalid"
         },
         "library_availability": {
@@ -1590,8 +1592,178 @@ async def debug_info():
             "starts_with": config.OPENAI_API_KEY[:10] if config.OPENAI_API_KEY else None,
             "ends_with": config.OPENAI_API_KEY[-10:] if config.OPENAI_API_KEY else None
         },
-        "version": "openai_sophisticated"
+        "version": "openai_sophisticated_with_debug"
     })
+
+# 🔍 COMPREHENSIVE DEBUG ENDPOINTS - ADDED HERE
+@app.get("/debug-openai-detailed")
+async def debug_openai_detailed():
+    """Comprehensive OpenAI debugging"""
+    
+    debug_info = {
+        "timestamp": datetime.now().isoformat(),
+        "step_by_step_debug": {}
+    }
+    
+    # Step 1: Check environment variables
+    debug_info["step_by_step_debug"]["1_environment_check"] = {
+        "Open_Api_Key_exists": bool(os.getenv("Open_Api_Key")),
+        "OPENAI_API_KEY_exists": bool(os.getenv("OPENAI_API_KEY")),
+        "all_env_vars_with_openai": [var for var in os.environ.keys() if 'openai' in var.lower() or 'api' in var.lower()],
+        "config_openai_key": bool(config.OPENAI_API_KEY),
+        "config_key_length": len(config.OPENAI_API_KEY) if config.OPENAI_API_KEY else 0
+    }
+    
+    # Step 2: Check the actual API key content
+    raw_key = config.OPENAI_API_KEY
+    if raw_key:
+        debug_info["step_by_step_debug"]["2_api_key_analysis"] = {
+            "key_present": True,
+            "key_length": len(raw_key),
+            "starts_with_sk": raw_key.startswith("sk-"),
+            "first_15_chars": raw_key[:15],
+            "last_10_chars": raw_key[-10:],
+            "contains_spaces": " " in raw_key,
+            "contains_newlines": "\n" in raw_key or "\r" in raw_key,
+            "is_empty_or_whitespace": raw_key.strip() == ""
+        }
+    else:
+        debug_info["step_by_step_debug"]["2_api_key_analysis"] = {
+            "key_present": False,
+            "issue": "No API key found in config.OPENAI_API_KEY"
+        }
+    
+    # Step 3: Check OpenAI library
+    debug_info["step_by_step_debug"]["3_library_check"] = {
+        "openai_available": OPENAI_AVAILABLE
+    }
+    
+    if OPENAI_AVAILABLE:
+        try:
+            import openai
+            debug_info["step_by_step_debug"]["3_library_check"]["openai_version"] = openai.__version__
+            debug_info["step_by_step_debug"]["3_library_check"]["import_success"] = True
+        except Exception as e:
+            debug_info["step_by_step_debug"]["3_library_check"]["import_error"] = str(e)
+    
+    # Step 4: Test API key if present
+    if raw_key and raw_key.startswith("sk-"):
+        try:
+            import openai
+            openai.api_key = raw_key.strip()
+            
+            # Try a simple API call
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": "Say 'API key works'"}],
+                max_tokens=10
+            )
+            
+            debug_info["step_by_step_debug"]["4_api_test"] = {
+                "status": "SUCCESS ✅",
+                "response": response.choices[0].message.content if response.choices else "No response",
+                "model": response.model,
+                "usage": {
+                    "prompt_tokens": response.usage.prompt_tokens,
+                    "completion_tokens": response.usage.completion_tokens
+                }
+            }
+            
+        except Exception as api_error:
+            debug_info["step_by_step_debug"]["4_api_test"] = {
+                "status": "FAILED ❌",
+                "error": str(api_error),
+                "error_type": type(api_error).__name__
+            }
+            
+            # Provide specific solutions
+            error_str = str(api_error).lower()
+            if "authentication" in error_str or "invalid" in error_str:
+                debug_info["step_by_step_debug"]["4_api_test"]["solution"] = "Invalid API key - get new one from https://platform.openai.com/api-keys"
+            elif "quota" in error_str or "billing" in error_str:
+                debug_info["step_by_step_debug"]["4_api_test"]["solution"] = "No credits - add money to your OpenAI account"
+            elif "rate_limit" in error_str:
+                debug_info["step_by_step_debug"]["4_api_test"]["solution"] = "Rate limited - wait and try again"
+    else:
+        debug_info["step_by_step_debug"]["4_api_test"] = {
+            "status": "SKIPPED",
+            "reason": "No valid API key to test"
+        }
+    
+    # Step 5: Check content system
+    try:
+        ai_client_configured = content_system.ai_client.is_configured()
+        debug_info["step_by_step_debug"]["5_content_system"] = {
+            "ai_client_configured": ai_client_configured,
+            "client_object_exists": content_system.ai_client.client is not None,
+            "client_api_key_set": content_system.ai_client.api_key is not None
+        }
+    except Exception as e:
+        debug_info["step_by_step_debug"]["5_content_system"] = {
+            "error": str(e)
+        }
+    
+    # Overall diagnosis
+    if debug_info["step_by_step_debug"].get("4_api_test", {}).get("status") == "SUCCESS ✅":
+        debug_info["diagnosis"] = "✅ OpenAI API is working! Issue might be in content generation logic."
+    elif not debug_info["step_by_step_debug"]["2_api_key_analysis"].get("key_present"):
+        debug_info["diagnosis"] = "❌ No API key found. Check Railway environment variables."
+    elif not debug_info["step_by_step_debug"]["2_api_key_analysis"].get("starts_with_sk"):
+        debug_info["diagnosis"] = "❌ Invalid API key format. OpenAI keys start with 'sk-'"
+    elif debug_info["step_by_step_debug"].get("4_api_test", {}).get("status") == "FAILED ❌":
+        debug_info["diagnosis"] = "❌ API key exists but doesn't work. Check the error above."
+    else:
+        debug_info["diagnosis"] = "❌ Unknown issue. Check all steps above."
+    
+    return JSONResponse(debug_info)
+
+@app.get("/fix-config")
+async def fix_config():
+    """Try to fix the config by reading from both possible environment variable names"""
+    
+    # Try to get API key from both possible names
+    key_from_Open_Api_Key = os.getenv("Open_Api_Key")
+    key_from_OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    
+    result = {
+        "Open_Api_Key": bool(key_from_Open_Api_Key),
+        "OPENAI_API_KEY": bool(key_from_OPENAI_API_KEY),
+        "current_config_value": bool(config.OPENAI_API_KEY)
+    }
+    
+    # Try to use whichever one exists
+    working_key = key_from_OPENAI_API_KEY or key_from_Open_Api_Key
+    
+    if working_key:
+        try:
+            import openai
+            openai.api_key = working_key.strip()
+            
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": "Test"}],
+                max_tokens=5
+            )
+            
+            result["fix_test"] = {
+                "status": "SUCCESS ✅",
+                "working_key_source": "OPENAI_API_KEY" if key_from_OPENAI_API_KEY else "Open_Api_Key",
+                "response": response.choices[0].message.content if response.choices else "No response"
+            }
+            
+        except Exception as e:
+            result["fix_test"] = {
+                "status": "FAILED ❌",
+                "error": str(e),
+                "working_key_source": "OPENAI_API_KEY" if key_from_OPENAI_API_KEY else "Open_Api_Key"
+            }
+    else:
+        result["fix_test"] = {
+            "status": "NO KEYS FOUND ❌",
+            "message": "Neither Open_Api_Key nor OPENAI_API_KEY found in environment"
+        }
+    
+    return JSONResponse(result)
 
 if __name__ == "__main__":
     print("🚀 Starting Sophisticated Content Generator with OpenAI...")
@@ -1624,6 +1796,7 @@ if __name__ == "__main__":
     print("🎯 Features: All Content Types, OpenAI GPT-4, Sophisticated Design")
     print("🎨 Theme: Black & White Sophisticated UI")
     print("🤖 Enhanced: AI Instructions Section")
+    print("🔍 Debug: Comprehensive debugging endpoints included")
     print("=" * 70)
     
     try:
