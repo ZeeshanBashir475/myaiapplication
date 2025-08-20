@@ -1,6 +1,7 @@
 import re
 import json
 import logging
+import requests
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 import asyncio
@@ -10,7 +11,7 @@ logger = logging.getLogger(__name__)
 class ContentEvaluationAgent:
     """
     Advanced content evaluation agent based on Google's E-E-A-T principles
-    and SEO best practices for rigorous content assessment.
+    and SEO best practices for rigorous content assessment using GPT-5.
     """
     
     def __init__(self, openai_client):
@@ -78,10 +79,10 @@ class ContentEvaluationAgent:
     
     async def evaluate_content(self, content: str, topic: str, content_type: str, target_audience: str) -> Dict:
         """
-        Comprehensive content evaluation using multiple assessment frameworks
+        Comprehensive content evaluation using multiple assessment frameworks with GPT-5
         """
         try:
-            logger.info(f"Starting comprehensive evaluation for: {topic}")
+            logger.info(f"Starting comprehensive GPT-5 evaluation for: {topic}")
             
             # Parallel evaluation tasks
             evaluation_tasks = [
@@ -107,16 +108,18 @@ class ContentEvaluationAgent:
                 "recommendations": [],
                 "entity_clusters": {},
                 "content_gaps": [],
-                "optimization_suggestions": []
+                "optimization_suggestions": [],
+                "gpt5_enhanced": True,
+                "evaluation_timestamp": datetime.now().isoformat()
             }
             
             # Calculate overall score
             evaluation_report["overall_score"] = self._calculate_overall_score(evaluation_report)
             
-            # Generate recommendations
+            # Generate GPT-5 enhanced recommendations
             evaluation_report["recommendations"] = await self._generate_recommendations(evaluation_report, content, topic)
             
-            logger.info(f"Evaluation completed. Overall score: {evaluation_report['overall_score']}")
+            logger.info(f"GPT-5 evaluation completed. Overall score: {evaluation_report['overall_score']}")
             return evaluation_report
             
         except Exception as e:
@@ -124,10 +127,10 @@ class ContentEvaluationAgent:
             return {"error": str(e), "overall_score": 0}
     
     async def _evaluate_eeat(self, content: str, topic: str, target_audience: str) -> Dict:
-        """Evaluate E-E-A-T factors using AI analysis"""
+        """Evaluate E-E-A-T factors using GPT-5 analysis"""
         
         eeat_prompt = f"""
-        Evaluate this content for E-E-A-T (Experience, Expertise, Authoritativeness, Trustworthiness) factors:
+        You are an expert content evaluator using GPT-5's advanced reasoning capabilities. Evaluate this content for Google's E-E-A-T (Experience, Expertise, Authoritativeness, Trustworthiness) factors:
 
         CONTENT TO EVALUATE:
         {content[:3000]}...
@@ -135,252 +138,294 @@ class ContentEvaluationAgent:
         TOPIC: {topic}
         TARGET AUDIENCE: {target_audience}
 
-        Rate each E-E-A-T factor (1-10) and provide specific evidence:
+        Use your reasoning to analyze each E-E-A-T factor (rate 1-10) and provide specific evidence:
 
         EXPERIENCE (Does content show first-hand experience?):
         - Personal anecdotes or case studies present?
         - Practical examples from real usage?
         - Behind-the-scenes insights?
+        - Evidence of hands-on knowledge?
         
         EXPERTISE (Does content demonstrate deep knowledge?):
         - Technical accuracy and depth?
-        - Industry-specific knowledge?
+        - Industry-specific knowledge displayed?
         - Advanced concepts explained clearly?
+        - Professional terminology used correctly?
         
         AUTHORITATIVENESS (Does content establish authority?):
-        - Author credentials mentioned?
-        - Quality external sources cited?
+        - Author credentials mentioned or implied?
+        - Quality external sources referenced?
         - Recognition indicators present?
+        - Industry leadership demonstrated?
         
         TRUSTWORTHINESS (Is content trustworthy?):
-        - Transparent sourcing?
-        - Balanced perspective?
-        - Fact-checking evidence?
+        - Transparent sourcing and citations?
+        - Balanced perspective shown?
+        - Fact-checking evidence present?
+        - Clear and honest communication?
 
-        Provide scores and specific evidence for each factor in JSON format.
+        Provide scores (1-10) and specific evidence for each factor. Be thorough in your reasoning.
         """
         
         try:
-            response = await self.openai_client.generate_content(eeat_prompt, max_tokens=1000)
-            # Parse AI response to extract structured E-E-A-T analysis
+            response = await self.openai_client.generate_content(eeat_prompt, max_tokens=1200)
             return self._parse_eeat_response(response)
         except Exception as e:
             logger.error(f"E-E-A-T evaluation error: {e}")
-            return {"experience": 5, "expertise": 5, "authoritativeness": 5, "trustworthiness": 5}
+            return {"experience": 6, "expertise": 6, "authoritativeness": 6, "trustworthiness": 6}
     
     async def _evaluate_content_quality(self, content: str, topic: str, content_type: str) -> Dict:
-        """Evaluate content quality based on Google's guidelines"""
+        """Evaluate content quality using GPT-5's reasoning capabilities"""
         
         quality_prompt = f"""
-        Evaluate this {content_type} content about "{topic}" for quality factors:
+        Using GPT-5's advanced reasoning, evaluate this {content_type} content about "{topic}" for quality factors:
 
         CONTENT:
-        {content[:2000]}...
+        {content[:2500]}...
 
-        Rate each factor (1-10) and provide evidence:
+        Rate each factor (1-10) with detailed reasoning and evidence:
 
-        ORIGINALITY:
-        - Unique insights or perspective?
-        - Original research or analysis?
+        ORIGINALITY (Is the content unique and fresh?):
+        - Unique insights or perspective present?
+        - Original research or analysis included?
         - Novel angle on the topic?
+        - Avoids generic or recycled information?
 
-        COMPREHENSIVENESS:
-        - Complete topic coverage?
-        - Multiple angles addressed?
-        - Actionable and practical?
+        COMPREHENSIVENESS (Does it cover the topic thoroughly?):
+        - Complete topic coverage achieved?
+        - Multiple angles and perspectives addressed?
+        - Actionable and practical information provided?
+        - Important subtopics included?
 
-        USER VALUE:
-        - Solves real user problems?
-        - Provides actionable advice?
-        - Clear takeaways for readers?
+        USER VALUE (Does it genuinely help readers?):
+        - Solves real user problems effectively?
+        - Provides actionable advice readers can use?
+        - Clear takeaways and benefits outlined?
+        - Addresses user intent and needs?
 
-        READABILITY:
-        - Clear structure with headings?
-        - Appropriate language for audience?
-        - Logical information flow?
+        READABILITY (Is it well-structured and clear?):
+        - Clear structure with proper headings?
+        - Appropriate language for target audience?
+        - Logical information flow and transitions?
+        - Scannable format with good formatting?
 
-        Return scores and evidence in JSON format.
+        Use your reasoning to provide thorough analysis and scores (1-10) for each factor.
         """
         
         try:
-            response = await self.openai_client.generate_content(quality_prompt, max_tokens=800)
+            response = await self.openai_client.generate_content(quality_prompt, max_tokens=1000)
             return self._parse_quality_response(response)
         except Exception as e:
             logger.error(f"Quality evaluation error: {e}")
-            return {"originality": 5, "comprehensiveness": 5, "user_value": 5, "readability": 5}
+            return {"originality": 6, "comprehensiveness": 6, "user_value": 6, "readability": 6}
     
     async def _evaluate_seo_factors(self, content: str, topic: str) -> Dict:
-        """Evaluate SEO factors and search intent alignment"""
+        """Evaluate SEO factors using GPT-5 analysis"""
         
         seo_prompt = f"""
-        Analyze this content for SEO quality and search intent alignment:
+        Use GPT-5's reasoning to analyze this content for SEO quality and search intent alignment:
 
         TOPIC: {topic}
-        CONTENT: {content[:2000]}...
+        CONTENT: {content[:2500]}...
 
-        Evaluate these SEO factors (1-10):
+        Evaluate these SEO factors (1-10) with reasoning:
 
         SEARCH INTENT ALIGNMENT:
-        - Does content match what users search for?
-        - Are user questions answered?
-        - Related topics covered?
+        - Does content match what users search for when looking for "{topic}"?
+        - Are user questions and concerns answered?
+        - Related search topics covered adequately?
+        - Satisfies different types of search intent (informational, commercial, etc.)?
 
         CONTENT STRUCTURE:
-        - Proper heading hierarchy?
-        - Scannable format with lists/bullets?
-        - Logical content organization?
+        - Proper heading hierarchy (H1, H2, H3) used?
+        - Scannable format with lists and bullet points?
+        - Logical content organization and flow?
+        - Internal linking opportunities present?
 
         KEYWORD OPTIMIZATION:
-        - Natural keyword usage?
-        - Semantic relevance maintained?
-        - Long-tail keyword coverage?
+        - Natural keyword usage throughout content?
+        - Semantic relevance and related terms included?
+        - Long-tail keyword coverage appropriate?
+        - Keyword density balanced and natural?
 
-        TECHNICAL SEO:
-        - Appropriate content length?
-        - Internal linking opportunities?
-        - Meta description worthy?
+        TECHNICAL SEO READINESS:
+        - Appropriate content length for topic?
+        - Meta description worthy content?
+        - Featured snippet optimization potential?
+        - Mobile-friendly content structure?
 
-        Return structured analysis in JSON format.
+        Provide detailed reasoning and scores (1-10) for each factor.
         """
         
         try:
-            response = await self.openai_client.generate_content(seo_prompt, max_tokens=800)
+            response = await self.openai_client.generate_content(seo_prompt, max_tokens=1000)
             return self._parse_seo_response(response)
         except Exception as e:
             logger.error(f"SEO evaluation error: {e}")
-            return {"search_intent": 5, "content_structure": 5, "keyword_optimization": 5}
+            return {"search_intent": 6, "content_structure": 6, "keyword_optimization": 6}
     
     async def _analyze_entities_and_clusters(self, content: str, topic: str) -> Dict:
-        """Analyze entities and suggest content clusters"""
+        """Analyze entities and suggest content clusters using GPT-5"""
         
         entity_prompt = f"""
-        Analyze this content to identify entities and suggest content clusters:
+        Use GPT-5's advanced reasoning to analyze this content for entities and content clustering opportunities:
 
         MAIN TOPIC: {topic}
-        CONTENT: {content[:2000]}...
+        CONTENT: {content[:2500]}...
 
-        Identify and analyze:
+        Identify and analyze with detailed reasoning:
 
         PRIMARY ENTITIES:
-        - Main concepts, people, places, products mentioned
-        - Industry terms and jargon
-        - Brand names and companies
+        - Main concepts, people, places, products mentioned in content
+        - Industry terms and important jargon used
+        - Brand names and companies referenced
+        - Key technologies or methodologies discussed
 
         RELATED ENTITIES:
-        - Connected concepts that could be explored
-        - Subtopics that deserve dedicated content
+        - Connected concepts that could be explored in separate content
+        - Subtopics that deserve dedicated content pieces
         - Adjacent topics in the same domain
+        - Supporting concepts that enhance understanding
 
         CONTENT CLUSTERS:
-        - What pillar page topics could this support?
-        - What cluster topics are missing?
-        - How does this connect to other content?
+        - What pillar page topics could this content support?
+        - What cluster topics are missing from this content area?
+        - How does this connect to other potential content pieces?
+        - What content hub could this be part of?
 
         ENTITY GAPS:
-        - Important entities not covered
+        - Important entities not covered but should be
         - Missing connections or relationships
         - Opportunities for internal linking
+        - Content areas that need expansion
 
-        Return detailed entity analysis in JSON format.
+        CLUSTER OPPORTUNITIES:
+        - Specific content pieces that should be created
+        - How to structure a content cluster around this topic
+        - Linking strategy between related pieces
+        - Content calendar suggestions
+
+        Use your reasoning to provide comprehensive entity analysis.
         """
         
         try:
-            response = await self.openai_client.generate_content(entity_prompt, max_tokens=1000)
+            response = await self.openai_client.generate_content(entity_prompt, max_tokens=1200)
             return self._parse_entity_response(response)
         except Exception as e:
             logger.error(f"Entity analysis error: {e}")
             return {"primary_entities": [], "related_entities": [], "cluster_opportunities": []}
     
     async def _find_reddit_insights(self, topic: str) -> Dict:
-        """Use AI to identify relevant Reddit communities and pain points"""
+        """Use GPT-5 to identify relevant Reddit communities and pain points"""
         
         reddit_prompt = f"""
-        For the topic "{topic}", identify relevant Reddit communities and common pain points:
+        Use GPT-5's knowledge and reasoning to identify Reddit communities and pain points for "{topic}":
 
         RELEVANT SUBREDDITS:
-        - Which subreddits would discuss this topic?
-        - What are the most active communities?
-        - Which have the most engaged discussions?
+        - Which subreddits would discuss "{topic}" most actively?
+        - What are the most engaged communities for this topic?
+        - Which communities have high-quality discussions?
+        - Any niche or specialized communities relevant?
 
         COMMON PAIN POINTS:
-        - What problems do people commonly face?
-        - What questions are frequently asked?
-        - What solutions are people seeking?
+        - What problems do people commonly discuss about "{topic}"?
+        - What challenges and frustrations are frequently mentioned?
+        - What solutions are people actively seeking?
+        - What gaps exist in current solutions?
 
         CONTENT OPPORTUNITIES:
-        - What angles are underserved?
-        - What specific problems need addressing?
-        - What would make valuable content?
+        - What angles are underserved in discussions?
+        - What specific problems need better content addressing them?
+        - What would make genuinely valuable content for these communities?
+        - What questions come up repeatedly?
 
         DISCUSSION THEMES:
-        - Common debate topics
-        - Frequently mentioned challenges
-        - Popular success stories or case studies
+        - Common debate topics around "{topic}"
+        - Frequently mentioned challenges or obstacles
+        - Popular success stories or case studies mentioned
+        - Trends in how people approach "{topic}"
 
-        Return structured insights in JSON format.
+        INSIGHT PATTERNS:
+        - What do beginners struggle with most?
+        - What do experienced users wish they knew earlier?
+        - What misconceptions are common?
+        - What tools or resources are highly recommended?
+
+        Use your reasoning to provide detailed, actionable insights based on typical Reddit community discussions.
         """
         
         try:
-            response = await self.openai_client.generate_content(reddit_prompt, max_tokens=800)
+            response = await self.openai_client.generate_content(reddit_prompt, max_tokens=1000)
             return self._parse_reddit_response(response)
         except Exception as e:
             logger.error(f"Reddit insights error: {e}")
             return {"subreddits": [], "pain_points": [], "content_opportunities": []}
     
     async def _evaluate_ymyl_factors(self, content: str, topic: str) -> Dict:
-        """Evaluate Your Money or Your Life content factors"""
+        """Evaluate Your Money or Your Life content factors using GPT-5"""
         
         # Determine if this is YMYL content
         ymyl_keywords = [
             'health', 'medical', 'finance', 'investment', 'legal', 'safety', 
             'nutrition', 'medication', 'treatment', 'money', 'insurance',
-            'security', 'privacy', 'parenting', 'emergency'
+            'security', 'privacy', 'parenting', 'emergency', 'tax', 'loan',
+            'mortgage', 'credit', 'debt', 'retirement', 'savings'
         ]
         
         is_ymyl = any(keyword in topic.lower() for keyword in ymyl_keywords)
         
         if not is_ymyl:
-            return {"is_ymyl": False, "assessment": "Not YMYL content"}
+            return {"is_ymyl": False, "assessment": "Not YMYL content", "compliance_score": 10}
         
         ymyl_prompt = f"""
         This appears to be YMYL (Your Money or Your Life) content about "{topic}".
-        Evaluate for YMYL compliance:
+        Use GPT-5's reasoning to evaluate for YMYL compliance and safety:
 
-        CONTENT: {content[:2000]}...
+        CONTENT: {content[:2500]}...
 
-        YMYL ASSESSMENT:
-        - Are appropriate disclaimers present?
+        YMYL ASSESSMENT (Rate 1-10 for compliance):
+        - Are appropriate disclaimers present where needed?
         - Are sources credible and authoritative?
         - Are potential risks clearly stated?
         - Is expert consultation recommended where appropriate?
+        - Does content avoid making definitive claims without evidence?
 
         HEALTH/MEDICAL (if applicable):
-        - Medical disclaimers present?
-        - Professional consultation recommended?
-        - Sources from medical authorities?
+        - Medical disclaimers present where needed?
+        - Professional consultation recommended appropriately?
+        - Sources from medical authorities referenced?
+        - Avoids diagnosing or prescribing?
 
         FINANCIAL (if applicable):
-        - Financial risk warnings?
-        - Professional advice disclaimers?
-        - Regulatory compliance?
+        - Financial risk warnings included where appropriate?
+        - Professional advice disclaimers present?
+        - Regulatory compliance considerations addressed?
+        - Avoids guaranteeing financial outcomes?
 
         SAFETY (if applicable):
-        - Safety warnings clear?
-        - Risk mitigation addressed?
-        - Emergency procedures mentioned?
+        - Safety warnings clear and prominent?
+        - Risk mitigation strategies addressed?
+        - Emergency procedures mentioned when relevant?
+        - Professional help recommended when needed?
 
-        Return YMYL compliance assessment in JSON format.
+        LEGAL COMPLIANCE:
+        - Appropriate legal disclaimers included?
+        - Avoids providing specific legal advice?
+        - Recommends professional consultation?
+        - Complies with content regulations?
+
+        Use reasoning to assess YMYL compliance comprehensively.
         """
         
         try:
-            response = await self.openai_client.generate_content(ymyl_prompt, max_tokens=600)
+            response = await self.openai_client.generate_content(ymyl_prompt, max_tokens=800)
             return self._parse_ymyl_response(response, is_ymyl)
         except Exception as e:
             logger.error(f"YMYL evaluation error: {e}")
-            return {"is_ymyl": is_ymyl, "compliance_score": 5}
+            return {"is_ymyl": is_ymyl, "compliance_score": 6}
     
     def _calculate_overall_score(self, evaluation: Dict) -> float:
-        """Calculate weighted overall content score"""
+        """Calculate weighted overall content score with GPT-5 enhancements"""
         try:
             scores = []
             weights = []
@@ -389,10 +434,10 @@ class ContentEvaluationAgent:
             eeat = evaluation.get("eeat_analysis", {})
             if eeat:
                 eeat_score = (
-                    eeat.get("experience", 5) * 0.25 +
-                    eeat.get("expertise", 5) * 0.25 +
-                    eeat.get("authoritativeness", 5) * 0.25 +
-                    eeat.get("trustworthiness", 5) * 0.25
+                    eeat.get("experience", 6) * 0.25 +
+                    eeat.get("expertise", 6) * 0.25 +
+                    eeat.get("authoritativeness", 6) * 0.25 +
+                    eeat.get("trustworthiness", 6) * 0.25
                 )
                 scores.append(eeat_score)
                 weights.append(0.4)
@@ -401,10 +446,10 @@ class ContentEvaluationAgent:
             quality = evaluation.get("content_quality", {})
             if quality:
                 quality_score = (
-                    quality.get("originality", 5) * 0.25 +
-                    quality.get("comprehensiveness", 5) * 0.25 +
-                    quality.get("user_value", 5) * 0.25 +
-                    quality.get("readability", 5) * 0.25
+                    quality.get("originality", 6) * 0.25 +
+                    quality.get("comprehensiveness", 6) * 0.25 +
+                    quality.get("user_value", 6) * 0.25 +
+                    quality.get("readability", 6) * 0.25
                 )
                 scores.append(quality_score)
                 weights.append(0.3)
@@ -413,9 +458,9 @@ class ContentEvaluationAgent:
             seo = evaluation.get("seo_analysis", {})
             if seo:
                 seo_score = (
-                    seo.get("search_intent", 5) * 0.4 +
-                    seo.get("content_structure", 5) * 0.3 +
-                    seo.get("keyword_optimization", 5) * 0.3
+                    seo.get("search_intent", 6) * 0.4 +
+                    seo.get("content_structure", 6) * 0.3 +
+                    seo.get("keyword_optimization", 6) * 0.3
                 )
                 scores.append(seo_score)
                 weights.append(0.2)
@@ -423,12 +468,12 @@ class ContentEvaluationAgent:
             # YMYL compliance (10% weight if applicable)
             ymyl = evaluation.get("ymyl_assessment", {})
             if ymyl.get("is_ymyl", False):
-                ymyl_score = ymyl.get("compliance_score", 5)
+                ymyl_score = ymyl.get("compliance_score", 6)
                 scores.append(ymyl_score)
                 weights.append(0.1)
             
             if not scores:
-                return 5.0
+                return 6.0
             
             # Calculate weighted average
             total_weight = sum(weights)
@@ -436,166 +481,245 @@ class ContentEvaluationAgent:
                 weighted_score = sum(score * weight for score, weight in zip(scores, weights)) / total_weight
                 return round(weighted_score, 1)
             
-            return 5.0
+            return 6.0
             
         except Exception as e:
             logger.error(f"Score calculation error: {e}")
-            return 5.0
+            return 6.0
     
     async def _generate_recommendations(self, evaluation: Dict, content: str, topic: str) -> List[str]:
-        """Generate actionable recommendations based on evaluation"""
+        """Generate actionable recommendations using GPT-5's reasoning"""
         
         recommendations_prompt = f"""
-        Based on this content evaluation, generate specific, actionable recommendations:
+        Use GPT-5's advanced reasoning to generate specific, actionable recommendations based on this content evaluation:
 
         TOPIC: {topic}
-        OVERALL SCORE: {evaluation.get('overall_score', 5)}
+        OVERALL SCORE: {evaluation.get('overall_score', 6)}
 
         EVALUATION RESULTS:
         - E-E-A-T Analysis: {evaluation.get('eeat_analysis', {})}
         - Content Quality: {evaluation.get('content_quality', {})}
         - SEO Analysis: {evaluation.get('seo_analysis', {})}
         - Entity Analysis: {evaluation.get('entity_analysis', {})}
+        - Reddit Insights: {evaluation.get('reddit_insights', {})}
 
-        Generate 5-10 specific, actionable recommendations to improve this content.
-        Focus on the lowest-scoring areas and highest-impact improvements.
+        CONTENT PREVIEW: {content[:500]}...
 
-        Format as a numbered list of specific actions.
+        Generate 8-12 specific, actionable recommendations to improve this content:
+
+        PRIORITIZATION:
+        - Focus on the lowest-scoring areas first
+        - Target highest-impact improvements
+        - Consider practical implementation difficulty
+        - Address both content and technical aspects
+
+        RECOMMENDATION CATEGORIES:
+        1. E-E-A-T improvements (experience, expertise, authority, trust)
+        2. Content quality enhancements (originality, comprehensiveness, value)
+        3. SEO optimizations (search intent, structure, keywords)
+        4. User experience improvements (readability, engagement)
+        5. Entity and clustering opportunities
+        6. Pain point addressing based on Reddit insights
+
+        SPECIFICITY REQUIREMENTS:
+        - Each recommendation must be specific and actionable
+        - Include "how to" guidance where possible
+        - Suggest specific additions, changes, or removals
+        - Prioritize recommendations by potential impact
+
+        Use your reasoning to provide recommendations that would genuinely improve content performance.
         """
         
         try:
-            response = await self.openai_client.generate_content(recommendations_prompt, max_tokens=600)
+            response = await self.openai_client.generate_content(recommendations_prompt, max_tokens=800)
             return self._parse_recommendations(response)
         except Exception as e:
             logger.error(f"Recommendations generation error: {e}")
-            return ["Unable to generate recommendations due to technical error"]
+            return ["Unable to generate recommendations due to technical error - check content evaluation results manually"]
     
     def _parse_eeat_response(self, response: str) -> Dict:
-        """Parse AI response for E-E-A-T scores"""
+        """Parse GPT-5 response for E-E-A-T scores"""
         try:
-            # Extract numerical scores from response
             scores = {}
             factors = ["experience", "expertise", "authoritativeness", "trustworthiness"]
             
             for factor in factors:
-                pattern = rf"{factor}.*?(\d+(?:\.\d+)?)"
-                match = re.search(pattern, response, re.IGNORECASE)
-                if match:
-                    scores[factor] = float(match.group(1))
-                else:
-                    scores[factor] = 5.0  # Default score
+                # Multiple patterns to catch different score formats
+                patterns = [
+                    rf"{factor}.*?(\d+(?:\.\d+)?)/10",
+                    rf"{factor}.*?(\d+(?:\.\d+)?)\s*out\s*of\s*10",
+                    rf"{factor}.*?score.*?(\d+(?:\.\d+)?)",
+                    rf"{factor}.*?(\d+(?:\.\d+)?)"
+                ]
+                
+                score_found = False
+                for pattern in patterns:
+                    match = re.search(pattern, response, re.IGNORECASE)
+                    if match:
+                        score = float(match.group(1))
+                        # Ensure score is in valid range
+                        scores[factor] = max(1.0, min(10.0, score))
+                        score_found = True
+                        break
+                
+                if not score_found:
+                    scores[factor] = 6.0  # Default score
             
             return scores
         except Exception as e:
             logger.error(f"E-E-A-T parsing error: {e}")
-            return {"experience": 5, "expertise": 5, "authoritativeness": 5, "trustworthiness": 5}
+            return {"experience": 6, "expertise": 6, "authoritativeness": 6, "trustworthiness": 6}
     
     def _parse_quality_response(self, response: str) -> Dict:
-        """Parse AI response for quality scores"""
+        """Parse GPT-5 response for quality scores"""
         try:
             scores = {}
             factors = ["originality", "comprehensiveness", "user_value", "readability"]
             
             for factor in factors:
-                pattern = rf"{factor}.*?(\d+(?:\.\d+)?)"
-                match = re.search(pattern, response, re.IGNORECASE)
-                if match:
-                    scores[factor] = float(match.group(1))
-                else:
-                    scores[factor] = 5.0
+                patterns = [
+                    rf"{factor}.*?(\d+(?:\.\d+)?)/10",
+                    rf"{factor}.*?(\d+(?:\.\d+)?)\s*out\s*of\s*10",
+                    rf"{factor}.*?score.*?(\d+(?:\.\d+)?)",
+                    rf"{factor}.*?(\d+(?:\.\d+)?)"
+                ]
+                
+                score_found = False
+                for pattern in patterns:
+                    match = re.search(pattern, response, re.IGNORECASE)
+                    if match:
+                        score = float(match.group(1))
+                        scores[factor] = max(1.0, min(10.0, score))
+                        score_found = True
+                        break
+                
+                if not score_found:
+                    scores[factor] = 6.0
             
             return scores
         except Exception as e:
             logger.error(f"Quality parsing error: {e}")
-            return {"originality": 5, "comprehensiveness": 5, "user_value": 5, "readability": 5}
+            return {"originality": 6, "comprehensiveness": 6, "user_value": 6, "readability": 6}
     
     def _parse_seo_response(self, response: str) -> Dict:
-        """Parse AI response for SEO scores"""
+        """Parse GPT-5 response for SEO scores"""
         try:
             scores = {}
             factors = ["search_intent", "content_structure", "keyword_optimization"]
             
             for factor in factors:
-                pattern = rf"{factor.replace('_', '[ _]')}.*?(\d+(?:\.\d+)?)"
-                match = re.search(pattern, response, re.IGNORECASE)
-                if match:
-                    scores[factor] = float(match.group(1))
-                else:
-                    scores[factor] = 5.0
+                factor_clean = factor.replace('_', '[ _-]')
+                patterns = [
+                    rf"{factor_clean}.*?(\d+(?:\.\d+)?)/10",
+                    rf"{factor_clean}.*?(\d+(?:\.\d+)?)\s*out\s*of\s*10",
+                    rf"{factor_clean}.*?score.*?(\d+(?:\.\d+)?)",
+                    rf"{factor_clean}.*?(\d+(?:\.\d+)?)"
+                ]
+                
+                score_found = False
+                for pattern in patterns:
+                    match = re.search(pattern, response, re.IGNORECASE)
+                    if match:
+                        score = float(match.group(1))
+                        scores[factor] = max(1.0, min(10.0, score))
+                        score_found = True
+                        break
+                
+                if not score_found:
+                    scores[factor] = 6.0
             
             return scores
         except Exception as e:
             logger.error(f"SEO parsing error: {e}")
-            return {"search_intent": 5, "content_structure": 5, "keyword_optimization": 5}
+            return {"search_intent": 6, "content_structure": 6, "keyword_optimization": 6}
     
     def _parse_entity_response(self, response: str) -> Dict:
-        """Parse AI response for entity analysis"""
+        """Parse GPT-5 response for entity analysis"""
         try:
-            # Extract entities and clusters from response
             return {
                 "primary_entities": self._extract_list_from_response(response, "primary entities"),
                 "related_entities": self._extract_list_from_response(response, "related entities"),
                 "cluster_opportunities": self._extract_list_from_response(response, "content clusters"),
-                "entity_gaps": self._extract_list_from_response(response, "entity gaps")
+                "entity_gaps": self._extract_list_from_response(response, "entity gaps"),
+                "content_calendar": self._extract_list_from_response(response, "cluster opportunities")
             }
         except Exception as e:
             logger.error(f"Entity parsing error: {e}")
             return {"primary_entities": [], "related_entities": [], "cluster_opportunities": []}
     
     def _parse_reddit_response(self, response: str) -> Dict:
-        """Parse AI response for Reddit insights"""
+        """Parse GPT-5 response for Reddit insights"""
         try:
             return {
                 "subreddits": self._extract_list_from_response(response, "subreddits"),
                 "pain_points": self._extract_list_from_response(response, "pain points"),
                 "content_opportunities": self._extract_list_from_response(response, "content opportunities"),
-                "discussion_themes": self._extract_list_from_response(response, "discussion themes")
+                "discussion_themes": self._extract_list_from_response(response, "discussion themes"),
+                "insight_patterns": self._extract_list_from_response(response, "insight patterns")
             }
         except Exception as e:
             logger.error(f"Reddit parsing error: {e}")
             return {"subreddits": [], "pain_points": [], "content_opportunities": []}
     
     def _parse_ymyl_response(self, response: str, is_ymyl: bool) -> Dict:
-        """Parse AI response for YMYL assessment"""
+        """Parse GPT-5 response for YMYL assessment"""
         try:
             if not is_ymyl:
                 return {"is_ymyl": False, "compliance_score": 10}
             
             # Extract compliance score
-            pattern = r"compliance.*?(\d+(?:\.\d+)?)"
-            match = re.search(pattern, response, re.IGNORECASE)
-            compliance_score = float(match.group(1)) if match else 5.0
+            patterns = [
+                r"compliance.*?(\d+(?:\.\d+)?)/10",
+                r"compliance.*?(\d+(?:\.\d+)?)\s*out\s*of\s*10",
+                r"score.*?(\d+(?:\.\d+)?)",
+                r"rate.*?(\d+(?:\.\d+)?)"
+            ]
+            
+            compliance_score = 6.0
+            for pattern in patterns:
+                match = re.search(pattern, response, re.IGNORECASE)
+                if match:
+                    compliance_score = max(1.0, min(10.0, float(match.group(1))))
+                    break
             
             return {
                 "is_ymyl": True,
                 "compliance_score": compliance_score,
-                "assessment": response[:500] + "..." if len(response) > 500 else response
+                "assessment": response[:800] + "..." if len(response) > 800 else response
             }
         except Exception as e:
             logger.error(f"YMYL parsing error: {e}")
-            return {"is_ymyl": is_ymyl, "compliance_score": 5}
+            return {"is_ymyl": is_ymyl, "compliance_score": 6}
     
     def _parse_recommendations(self, response: str) -> List[str]:
-        """Parse AI response for recommendations"""
+        """Parse GPT-5 response for recommendations"""
         try:
-            # Extract numbered list items
             recommendations = []
             lines = response.split('\n')
             
             for line in lines:
                 line = line.strip()
+                # Match numbered lists, bullet points, or clear recommendation patterns
                 if re.match(r'^\d+\.', line):
                     recommendations.append(line)
-                elif line.startswith('-') or line.startswith('•'):
+                elif line.startswith(('-', '•', '*')):
                     recommendations.append(line[1:].strip())
+                elif len(line) > 20 and any(word in line.lower() for word in ['add', 'include', 'improve', 'enhance', 'optimize', 'create', 'develop', 'expand']):
+                    recommendations.append(line)
             
-            return recommendations[:10]  # Limit to 10 recommendations
+            # Clean up and limit recommendations
+            cleaned_recommendations = []
+            for rec in recommendations[:15]:  # Limit to 15 recommendations
+                if len(rec) > 10:  # Ensure substantial recommendations
+                    cleaned_recommendations.append(rec)
+            
+            return cleaned_recommendations if cleaned_recommendations else ["Review content manually for improvement opportunities"]
         except Exception as e:
             logger.error(f"Recommendations parsing error: {e}")
-            return ["Unable to parse recommendations"]
+            return ["Unable to parse recommendations - review evaluation manually"]
     
     def _extract_list_from_response(self, response: str, section_name: str) -> List[str]:
-        """Extract lists from AI response based on section name"""
+        """Extract lists from GPT-5 response based on section name"""
         try:
             items = []
             lines = response.split('\n')
@@ -608,16 +732,21 @@ class ContentEvaluationAgent:
                     continue
                 
                 if in_section:
-                    if line.startswith('-') or line.startswith('•'):
-                        items.append(line[1:].strip())
+                    if line.startswith(('-', '•', '*')):
+                        item = line[1:].strip()
+                        if item:
+                            items.append(item)
                     elif re.match(r'^\d+\.', line):
-                        items.append(line.split('.', 1)[1].strip())
-                    elif line and not line[0].isalnum():
-                        continue
-                    elif line and len(items) > 0:
-                        break
+                        item = line.split('.', 1)[1].strip()
+                        if item:
+                            items.append(item)
+                    elif line and line[0].isupper() and len(line) > 5:
+                        # Stop if we hit another section header
+                        if ':' in line and len(items) > 0:
+                            break
+                        items.append(line)
             
-            return items[:20]  # Limit to 20 items
+            return items[:25]  # Limit to 25 items
         except Exception as e:
             logger.error(f"List extraction error: {e}")
             return []
@@ -627,22 +756,138 @@ class KnowledgeGraphAgent:
     
     def __init__(self, api_key: str = None):
         self.api_key = api_key
+        self.base_url = "https://kgsearch.googleapis.com/v1/entities:search"
     
     async def get_entity_connections(self, entities: List[str]) -> Dict:
         """Get entity connections from Google Knowledge Graph"""
-        # Placeholder for Google Knowledge Graph API integration
-        # You would implement actual API calls here
-        return {
-            "entity_connections": [],
-            "related_topics": [],
-            "knowledge_panels": []
-        }
+        if not self.api_key:
+            return {
+                "entity_connections": [],
+                "related_topics": [],
+                "knowledge_panels": [],
+                "error": "No Google Knowledge Graph API key provided"
+            }
+        
+        try:
+            all_entities = []
+            for entity in entities[:5]:  # Limit to avoid rate limiting
+                response = await self._search_entity(entity)
+                if response.get('entities'):
+                    all_entities.extend(response['entities'])
+            
+            return {
+                "entity_connections": all_entities,
+                "related_topics": self._extract_related_topics(all_entities),
+                "knowledge_panels": self._extract_knowledge_panels(all_entities)
+            }
+        except Exception as e:
+            logger.error(f"Knowledge Graph error: {e}")
+            return {"entity_connections": [], "error": str(e)}
+    
+    async def _search_entity(self, query: str) -> Dict:
+        """Search for a specific entity in Google Knowledge Graph"""
+        if not self.api_key:
+            return {"entities": []}
+        
+        try:
+            params = {
+                'query': query,
+                'key': self.api_key,
+                'limit': 5,
+                'indent': True
+            }
+            
+            response = requests.get(self.base_url, params=params, timeout=10)
+            response.raise_for_status()
+            
+            data = response.json()
+            entities = []
+            
+            for item in data.get('itemListElement', []):
+                entity = item.get('result', {})
+                entities.append({
+                    'name': entity.get('name', ''),
+                    'description': entity.get('description', ''),
+                    'types': entity.get('@type', []),
+                    'url': entity.get('url', ''),
+                    'score': item.get('resultScore', 0)
+                })
+            
+            return {"entities": entities}
+        except Exception as e:
+            logger.error(f"Entity search error: {e}")
+            return {"entities": []}
+    
+    def _extract_related_topics(self, entities: List[Dict]) -> List[str]:
+        """Extract related topics from entity data"""
+        topics = set()
+        for entity in entities:
+            description = entity.get('description', '')
+            if description:
+                # Simple keyword extraction from descriptions
+                words = description.split()
+                for word in words:
+                    if len(word) > 4 and word.isalpha():
+                        topics.add(word.title())
+        
+        return list(topics)[:20]  # Return top 20 related topics
+    
+    def _extract_knowledge_panels(self, entities: List[Dict]) -> List[Dict]:
+        """Extract knowledge panel information"""
+        panels = []
+        for entity in entities[:10]:  # Limit to 10 panels
+            if entity.get('name'):
+                panels.append({
+                    'title': entity.get('name', ''),
+                    'description': entity.get('description', ''),
+                    'types': entity.get('types', []),
+                    'url': entity.get('url', '')
+                })
+        
+        return panels
     
     async def suggest_topic_clusters(self, main_topic: str) -> Dict:
         """Suggest content clusters based on Knowledge Graph data"""
-        # Placeholder for cluster analysis
-        return {
-            "pillar_topics": [],
-            "cluster_topics": [],
-            "content_gaps": []
-        }
+        try:
+            entity_data = await self._search_entity(main_topic)
+            entities = entity_data.get('entities', [])
+            
+            if not entities:
+                return {
+                    "pillar_topics": [main_topic],
+                    "cluster_topics": [],
+                    "content_gaps": []
+                }
+            
+            # Extract cluster suggestions from entity types and descriptions
+            cluster_topics = []
+            for entity in entities:
+                types = entity.get('types', [])
+                for entity_type in types:
+                    if entity_type not in cluster_topics:
+                        cluster_topics.append(entity_type.replace('Thing', '').replace('/', ' '))
+            
+            return {
+                "pillar_topics": [main_topic],
+                "cluster_topics": cluster_topics[:15],
+                "content_gaps": self._identify_content_gaps(main_topic, cluster_topics)
+            }
+        except Exception as e:
+            logger.error(f"Topic cluster suggestion error: {e}")
+            return {"pillar_topics": [], "cluster_topics": [], "content_gaps": []}
+    
+    def _identify_content_gaps(self, main_topic: str, cluster_topics: List[str]) -> List[str]:
+        """Identify potential content gaps"""
+        gaps = [
+            f"How to get started with {main_topic}",
+            f"{main_topic} best practices and tips",
+            f"Common {main_topic} mistakes to avoid",
+            f"{main_topic} tools and resources",
+            f"Advanced {main_topic} strategies"
+        ]
+        
+        # Add cluster-specific gaps
+        for topic in cluster_topics[:5]:
+            gaps.append(f"{topic} guide for {main_topic}")
+        
+        return gaps[:10]
