@@ -956,7 +956,7 @@ def index():
     return render_template_string(HTML_TEMPLATE)
 
 @app.route('/evaluate', methods=['POST'])
-async def evaluate_content():
+def evaluate_content():
     """Evaluate content with enhanced SEO parameters"""
     try:
         data = request.get_json()
@@ -984,13 +984,13 @@ async def evaluate_content():
         enhanced_topic = f"{topic} (Intent: {search_intent}, Geography: {target_geography}, Goal: {content_goal})"
         enhanced_audience = f"{target_audience} seeking {search_intent} content with {brand_voice} tone"
         
-        # Run evaluation
-        result = await evaluation_agent.evaluate_content(
+        # Run evaluation using sync version
+        result = asyncio.run(evaluation_agent.evaluate_content(
             content=content,
             topic=enhanced_topic,
             content_type=content_type,
             target_audience=enhanced_audience
-        )
+        ))
         
         # Add the additional context to the result
         result['seo_context'] = {
@@ -1016,16 +1016,16 @@ def health_check():
     return jsonify({"status": "healthy", "timestamp": datetime.now().isoformat()})
 
 # Main function for testing
-async def main():
+def main():
     """Test the evaluation agent"""
     evaluation_agent = create_evaluation_agent()
     if evaluation_agent:
-        result = await evaluation_agent.evaluate_content(
+        result = asyncio.run(evaluation_agent.evaluate_content(
             content="Artificial Intelligence is revolutionizing healthcare by enabling more accurate diagnoses, personalized treatment plans, and improved patient outcomes. Medical professionals are leveraging AI-powered tools to analyze medical images, predict disease progression, and optimize treatment protocols.",
             topic="AI in Healthcare 2024",
             content_type="blog post",
             target_audience="healthcare professionals"
-        )
+        ))
         print(json.dumps(result, indent=2))
 
 if __name__ == "__main__":
