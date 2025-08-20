@@ -531,7 +531,8 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <div class="container">
-        <h1>🚀 AI Content Generator & SEO Evaluator</h1>
+        <h1>Pain Point Content Writer</h1>
+       <h3> The professional pain point research & content engine by: Zeeshan Bashir </h3>
         
         <form id="contentForm">
             <div class="form-row">
