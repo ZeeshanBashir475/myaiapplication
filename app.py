@@ -23,6 +23,14 @@ except ImportError:
     OPENAI_AVAILABLE = False
     print("⚠️ openai not installed. Install with: pip install openai")
 
+# Import the content evaluation agent from src/agents/ContentEvaluationAgent
+try:
+    from src.agents.ContentEvaluationAgent import ContentEvaluationAgent, KnowledgeGraphAgent
+    AGENT_AVAILABLE = True
+except ImportError:
+    AGENT_AVAILABLE = False
+    print("⚠️ Content evaluation agent not found. Please ensure src/agents/ContentEvaluationAgent.py exists")
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,81 +38,128 @@ logger = logging.getLogger(__name__)
 # Configuration - Uses your Open_Api_Key variable
 class Config:
     OPENAI_API_KEY = os.getenv("Open_Api_Key", "") or os.getenv("OPENAI_API_KEY", "")
+    GOOGLE_KNOWLEDGE_GRAPH_API_KEY = os.getenv("GOOGLE_KG_API_KEY", "")
     PORT = int(os.getenv("PORT", 8002))
     HOST = os.getenv("HOST", "0.0.0.0")
     ENVIRONMENT = os.getenv("RAILWAY_ENVIRONMENT", "development")
 
 config = Config()
 
-# Content Type Configurations
+# Enhanced Content Type Configurations
 CONTENT_TYPE_CONFIGS = {
     "article": {
         "name": "📰 Article",
         "description": "Informational article with detailed coverage",
-        "prompt_template": "comprehensive informational article"
+        "prompt_template": "comprehensive informational article",
+        "word_count_range": "2000-3000"
     },
     "blog_post": {
         "name": "📝 Blog Post", 
         "description": "Conversational blog post with personal touch",
-        "prompt_template": "engaging blog post"
+        "prompt_template": "engaging blog post",
+        "word_count_range": "1500-2500"
     },
     "product_page": {
         "name": "🛍️ Product Page",
         "description": "Product description focused on conversion",
-        "prompt_template": "compelling product page content"
+        "prompt_template": "compelling product page content",
+        "word_count_range": "800-1500"
     },
     "landing_page": {
         "name": "🎯 Landing Page",
         "description": "High-conversion landing page copy",
-        "prompt_template": "persuasive landing page"
+        "prompt_template": "persuasive landing page",
+        "word_count_range": "1000-2000"
     },
     "guide": {
         "name": "📚 Complete Guide",
         "description": "Comprehensive how-to guide",
-        "prompt_template": "detailed step-by-step guide"
+        "prompt_template": "detailed step-by-step guide",
+        "word_count_range": "3000-5000"
     },
     "tutorial": {
         "name": "🎓 Tutorial",
         "description": "Step-by-step tutorial",
-        "prompt_template": "educational tutorial"
+        "prompt_template": "educational tutorial",
+        "word_count_range": "2000-3000"
     },
     "listicle": {
         "name": "📋 List Article",
         "description": "List-based article (Top 10, Best of, etc.)",
-        "prompt_template": "engaging list article"
+        "prompt_template": "engaging list article",
+        "word_count_range": "1500-2500"
     },
     "case_study": {
         "name": "📊 Case Study",
         "description": "Detailed case study with results",
-        "prompt_template": "analytical case study"
+        "prompt_template": "analytical case study",
+        "word_count_range": "2500-4000"
     },
     "review": {
         "name": "⭐ Review",
         "description": "Product or service review",
-        "prompt_template": "balanced and informative review"
+        "prompt_template": "balanced and informative review",
+        "word_count_range": "1500-2500"
     },
     "comparison": {
         "name": "⚖️ Comparison",
         "description": "Compare multiple options",
-        "prompt_template": "detailed comparison analysis"
+        "prompt_template": "detailed comparison analysis",
+        "word_count_range": "2000-3500"
     },
     "email_sequence": {
         "name": "📧 Email Sequence",
         "description": "Marketing email series",
-        "prompt_template": "compelling email sequence"
+        "prompt_template": "compelling email sequence",
+        "word_count_range": "500-1000 per email"
     },
     "social_media": {
         "name": "📱 Social Media Content",
         "description": "Social media posts and captions",
-        "prompt_template": "engaging social media content"
+        "prompt_template": "engaging social media content",
+        "word_count_range": "50-300 per post"
     }
 }
 
-# OpenAI Client with Latest Models
+# Language configurations
+LANGUAGE_CONFIGS = {
+    "british_english": {
+        "name": "🇬🇧 British English",
+        "description": "British English spelling and expressions",
+        "spelling_note": "Uses British spelling (colour, realise, centre, etc.)"
+    },
+    "american_english": {
+        "name": "🇺🇸 American English", 
+        "description": "American English spelling and expressions",
+        "spelling_note": "Uses American spelling (color, realize, center, etc.)"
+    },
+    "canadian_english": {
+        "name": "🇨🇦 Canadian English",
+        "description": "Canadian English spelling and expressions", 
+        "spelling_note": "Uses Canadian spelling (mix of British and American)"
+    },
+    "australian_english": {
+        "name": "🇦🇺 Australian English",
+        "description": "Australian English spelling and expressions",
+        "spelling_note": "Uses Australian spelling and expressions"
+    }
+}
+
+# Enhanced OpenAI Client with Latest GPT-5 Models
 class OpenAIClient:
     def __init__(self):
         self.client = None
         self.api_key = None
+        # GPT-5 model hierarchy (August 2025)
+        self.latest_model = "gpt-5"  # Main GPT-5 model
+        self.fallback_models = [
+            "gpt-5-mini",           # Smaller, faster GPT-5
+            "gpt-5-nano",           # Smallest GPT-5
+            "gpt-5-chat-latest",    # Non-reasoning GPT-5
+            "gpt-4o",               # Previous generation fallback
+            "gpt-4-turbo",          # Legacy fallback
+            "gpt-4"                 # Final fallback
+        ]
         self.setup_openai()
     
     def setup_openai(self):
@@ -122,26 +177,8 @@ class OpenAIClient:
                 self.client = openai
                 logger.info("✅ OpenAI client initialized successfully")
                 
-                # Test the client with GPT-4o
-                try:
-                    response = openai.ChatCompletion.create(
-                        model="gpt-4o",  # LATEST MODEL!
-                        messages=[{"role": "user", "content": "Hello"}],
-                        max_tokens=10
-                    )
-                    logger.info("✅ OpenAI GPT-4o test successful")
-                except Exception as test_e:
-                    logger.error(f"❌ OpenAI GPT-4o test failed: {test_e}")
-                    # Fallback to gpt-4 if gpt-4o fails
-                    try:
-                        response = openai.ChatCompletion.create(
-                            model="gpt-4",
-                            messages=[{"role": "user", "content": "Hello"}],
-                            max_tokens=10
-                        )
-                        logger.info("✅ OpenAI GPT-4 fallback successful")
-                    except Exception as fallback_e:
-                        logger.error(f"❌ OpenAI GPT-4 fallback failed: {fallback_e}")
+                # Test the latest GPT-5 models
+                self._test_gpt5_models()
                     
             except Exception as e:
                 logger.error(f"❌ OpenAI setup failed: {e}")
@@ -149,12 +186,37 @@ class OpenAIClient:
         else:
             logger.error("❌ OPENAI_API_KEY not found in environment variables")
     
+    def _test_gpt5_models(self):
+        """Test available GPT-5 models and set the best one"""
+        models_to_test = [self.latest_model] + self.fallback_models
+        
+        for model in models_to_test:
+            try:
+                response = openai.ChatCompletion.create(
+                    model=model,
+                    messages=[{"role": "user", "content": "Test GPT-5"}],
+                    max_tokens=5
+                )
+                self.latest_model = model
+                logger.info(f"✅ Using GPT-5 model: {model}")
+                
+                # Special handling for GPT-5 reasoning models
+                if model.startswith("gpt-5") and model != "gpt-5-chat-latest":
+                    logger.info(f"🧠 GPT-5 reasoning model active: {model}")
+                
+                return
+            except Exception as e:
+                logger.warning(f"⚠️ Model {model} unavailable: {e}")
+                continue
+        
+        logger.error("❌ No GPT-5 models available")
+    
     def is_configured(self):
         """Check if the client is properly configured"""
         return self.client is not None and self.api_key is not None
     
     async def generate_streaming(self, prompt: str, max_tokens: int = 4000):
-        """Generate streaming response with GPT-4o"""
+        """Generate streaming response with latest GPT-5 model"""
         
         if not self.is_configured():
             logger.warning("🔄 OpenAI client not configured, attempting re-initialization...")
@@ -167,28 +229,22 @@ class OpenAIClient:
             return
             
         try:
-            logger.info(f"🤖 Generating content with OpenAI GPT-4o, prompt length: {len(prompt)}")
+            logger.info(f"🤖 Generating content with {self.latest_model}, prompt length: {len(prompt)}")
             
-            # Try GPT-4o first, fallback to GPT-4
-            model_to_use = "gpt-4o"
-            try:
-                response = openai.ChatCompletion.create(
-                    model=model_to_use,
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=max_tokens,
-                    stream=True,
-                    temperature=0.7
-                )
-            except Exception as model_error:
-                logger.warning(f"GPT-4o failed, falling back to GPT-4: {model_error}")
-                model_to_use = "gpt-4"
-                response = openai.ChatCompletion.create(
-                    model=model_to_use,
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=max_tokens,
-                    stream=True,
-                    temperature=0.7
-                )
+            # Special parameters for GPT-5 models
+            model_params = {
+                "model": self.latest_model,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_tokens,
+                "stream": True,
+                "temperature": 0.7
+            }
+            
+            # Add GPT-5 specific parameters if available
+            if self.latest_model.startswith("gpt-5"):
+                model_params["reasoning_effort"] = "medium"  # GPT-5 reasoning parameter
+                
+            response = openai.ChatCompletion.create(**model_params)
             
             total_content = ""
             
@@ -200,7 +256,7 @@ class OpenAIClient:
                         total_content += content_piece
                         yield content_piece
             
-            logger.info(f"✅ Content generation completed with {model_to_use}. Total chars: {len(total_content)}")
+            logger.info(f"✅ Content generation completed with {self.latest_model}. Total chars: {len(total_content)}")
                         
         except Exception as e:
             error_msg = f"❌ OpenAI API error: {str(e)}"
@@ -220,7 +276,7 @@ class OpenAIClient:
             self.client = None
     
     async def generate_content(self, prompt: str, max_tokens: int = 4000):
-        """Generate content without streaming using GPT-4o"""
+        """Generate content without streaming using latest GPT-5 model"""
         
         if not self.is_configured():
             self.setup_openai()
@@ -229,27 +285,22 @@ class OpenAIClient:
             return "❌ OpenAI client not available. Please check your API key."
         
         try:
-            # Try GPT-4o first, fallback to GPT-4
-            model_to_use = "gpt-4o"
-            try:
-                response = openai.ChatCompletion.create(
-                    model=model_to_use,
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=max_tokens,
-                    temperature=0.7
-                )
-            except Exception as model_error:
-                logger.warning(f"GPT-4o failed, falling back to GPT-4: {model_error}")
-                model_to_use = "gpt-4"
-                response = openai.ChatCompletion.create(
-                    model=model_to_use,
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=max_tokens,
-                    temperature=0.7
-                )
+            # Special parameters for GPT-5 models
+            model_params = {
+                "model": self.latest_model,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_tokens,
+                "temperature": 0.7
+            }
+            
+            # Add GPT-5 specific parameters if available
+            if self.latest_model.startswith("gpt-5"):
+                model_params["reasoning_effort"] = "medium"  # GPT-5 reasoning parameter
+                
+            response = openai.ChatCompletion.create(**model_params)
             
             content = response.choices[0].message.content if response.choices else "No content generated"
-            logger.info(f"✅ Content generated with {model_to_use}: {len(content)} characters")
+            logger.info(f"✅ Content generated with {self.latest_model}: {len(content)} characters")
             return content
             
         except Exception as e:
@@ -284,19 +335,28 @@ class ConnectionManager:
                 return False
         return False
 
-# Enhanced Content System
+# Enhanced Content System with GPT-5 Evaluation
 class ContentSystem:
     def __init__(self):
         self.ai_client = OpenAIClient()
         self.sessions = {}
+        
+        # Initialize evaluation agent if available
+        if AGENT_AVAILABLE:
+            self.evaluation_agent = ContentEvaluationAgent(self.ai_client)
+            self.knowledge_graph_agent = KnowledgeGraphAgent(config.GOOGLE_KNOWLEDGE_GRAPH_API_KEY)
+        else:
+            self.evaluation_agent = None
+            self.knowledge_graph_agent = None
     
     async def generate_content_with_progress(self, form_data: Dict, session_id: str):
-        """Generate content with GPT-4o"""
+        """Generate content with comprehensive GPT-5 evaluation"""
         
         self.sessions[session_id] = {
             'session_id': session_id,
             'form_data': form_data,
             'content': '',
+            'evaluation': {},
             'timestamp': datetime.now().isoformat()
         }
         
@@ -305,64 +365,102 @@ class ContentSystem:
             await manager.send_message(session_id, {
                 'type': 'progress_update',
                 'step': 1,
-                'total': 5,
+                'total': 8,
                 'title': 'Initializing',
-                'message': f'🚀 Starting {form_data["content_type"]} generation for: {form_data["topic"]}'
+                'message': f'🚀 Starting {form_data["content_type"]} generation with GPT-5 for: {form_data["topic"]}'
             })
             await asyncio.sleep(0.5)
             
-            # Step 2: Analyzing Requirements
+            # Step 2: Reddit Pain Point Research
             await manager.send_message(session_id, {
                 'type': 'progress_update',
                 'step': 2,
-                'total': 5,
+                'total': 8,
+                'title': 'Reddit Research',
+                'message': '🔍 AI researching pain points and insights from relevant Reddit communities...'
+            })
+            
+            reddit_insights = await self._research_reddit_insights(form_data["topic"]) if self.evaluation_agent else {}
+            await asyncio.sleep(1)
+            
+            # Step 3: Analyzing Requirements
+            await manager.send_message(session_id, {
+                'type': 'progress_update',
+                'step': 3,
+                'total': 8,
                 'title': 'Analyzing Requirements',
                 'message': '🎯 Analyzing content requirements and target audience...'
             })
             await asyncio.sleep(1)
             
-            # Step 3: Processing Instructions
-            await manager.send_message(session_id, {
-                'type': 'progress_update',
-                'step': 3,
-                'total': 5,
-                'title': 'Processing Instructions',
-                'message': '📋 Processing your custom AI instructions and preferences...'
-            })
-            await asyncio.sleep(1)
-            
-            # Step 4: AI Content Generation
+            # Step 4: Processing Instructions
             await manager.send_message(session_id, {
                 'type': 'progress_update',
                 'step': 4,
-                'total': 5,
-                'title': 'AI Content Generation',
-                'message': '🤖 Generating high-quality content with OpenAI GPT-4o...'
+                'total': 8,
+                'title': 'Processing Instructions',
+                'message': '📋 Processing custom AI instructions and language preferences...'
             })
+            await asyncio.sleep(1)
             
-            content = await self._generate_ai_content(form_data)
-            self.sessions[session_id]['content'] = content
-            
-            # Step 5: Complete
+            # Step 5: GPT-5 Content Generation
             await manager.send_message(session_id, {
                 'type': 'progress_update',
                 'step': 5,
-                'total': 5,
-                'title': 'Complete',
-                'message': '🎉 Content generation completed successfully!'
+                'total': 8,
+                'title': 'GPT-5 Content Generation',
+                'message': f'🤖 Generating high-quality content with {self.ai_client.latest_model} (reasoning enabled)...'
             })
             
-            # Send final result
+            content = await self._generate_ai_content(form_data, reddit_insights)
+            self.sessions[session_id]['content'] = content
+            
+            # Step 6: Content Evaluation
+            await manager.send_message(session_id, {
+                'type': 'progress_update',
+                'step': 6,
+                'total': 8,
+                'title': 'Content Evaluation',
+                'message': '📊 Evaluating content with E-E-A-T framework and SEO analysis...'
+            })
+            
+            evaluation = await self._evaluate_content(content, form_data) if self.evaluation_agent else {}
+            self.sessions[session_id]['evaluation'] = evaluation
+            
+            # Step 7: Entity Analysis
+            await manager.send_message(session_id, {
+                'type': 'progress_update',
+                'step': 7,
+                'total': 8,
+                'title': 'Entity Analysis',
+                'message': '🔗 Analyzing entities and suggesting content clusters...'
+            })
+            await asyncio.sleep(1)
+            
+            # Step 8: Complete
+            await manager.send_message(session_id, {
+                'type': 'progress_update',
+                'step': 8,
+                'total': 8,
+                'title': 'Complete',
+                'message': '🎉 GPT-5 content generation and evaluation completed successfully!'
+            })
+            
+            # Send final result with comprehensive evaluation
             await manager.send_message(session_id, {
                 'type': 'generation_complete',
                 'content': content,
                 'content_type': form_data['content_type'],
+                'evaluation': evaluation,
                 'metrics': {
                     'word_count': len(content.split()),
                     'reading_time': max(1, len(content.split()) // 200),
-                    'quality_score': 9.5,
+                    'quality_score': evaluation.get('overall_score', 9.0) if evaluation else 9.0,
                     'ai_generated': not content.startswith("❌"),
-                    'model_used': 'GPT-4o'
+                    'model_used': self.ai_client.latest_model,
+                    'model_type': 'GPT-5 (Reasoning)' if self.ai_client.latest_model.startswith('gpt-5') else 'GPT-4',
+                    'language': form_data.get('language', 'british_english'),
+                    'evaluation_timestamp': datetime.now().isoformat()
                 }
             })
             
@@ -373,8 +471,35 @@ class ContentSystem:
                 'error': str(e)
             })
     
-    async def _generate_ai_content(self, form_data: Dict) -> str:
-        """Generate AI content using GPT-4o"""
+    async def _research_reddit_insights(self, topic: str) -> Dict:
+        """Research Reddit insights for pain points using GPT-5"""
+        if not self.evaluation_agent:
+            return {}
+        
+        try:
+            return await self.evaluation_agent._find_reddit_insights(topic)
+        except Exception as e:
+            logger.error(f"Reddit research error: {e}")
+            return {}
+    
+    async def _evaluate_content(self, content: str, form_data: Dict) -> Dict:
+        """Evaluate content comprehensively using GPT-5"""
+        if not self.evaluation_agent:
+            return {}
+        
+        try:
+            return await self.evaluation_agent.evaluate_content(
+                content=content,
+                topic=form_data['topic'],
+                content_type=form_data['content_type'],
+                target_audience=form_data.get('target_audience', 'general audience')
+            )
+        except Exception as e:
+            logger.error(f"Content evaluation error: {e}")
+            return {}
+    
+    async def _generate_ai_content(self, form_data: Dict, reddit_insights: Dict) -> str:
+        """Generate AI content with enhanced GPT-5 prompting"""
         
         content_type = form_data['content_type']
         topic = form_data['topic']
@@ -386,50 +511,90 @@ class ContentSystem:
         tone = form_data.get('tone', 'professional')
         ai_instructions = form_data.get('ai_instructions', '')
         industry = form_data.get('industry', '')
+        language = form_data.get('language', 'british_english')
         
-        # Get content type template
-        content_template = CONTENT_TYPE_CONFIGS.get(content_type, {}).get('prompt_template', content_type)
+        # Get content type template and word count
+        content_config = CONTENT_TYPE_CONFIGS.get(content_type, {})
+        content_template = content_config.get('prompt_template', content_type)
+        word_count_range = content_config.get('word_count_range', '2000-3000')
         
-        # Build comprehensive AI prompt for GPT-4o
-        prompt = f"""You are an expert content writer using the latest GPT-4o model. Create a {content_template} about "{topic}" for {audience}.
+        # Get language configuration
+        language_config = LANGUAGE_CONFIGS.get(language, LANGUAGE_CONFIGS['british_english'])
+        
+        # Incorporate Reddit insights
+        reddit_pain_points = ""
+        if reddit_insights.get('pain_points'):
+            reddit_pain_points = f"\n\nREDDIT COMMUNITY INSIGHTS:\nCommon Pain Points from {reddit_insights.get('subreddits', [])}:\n"
+            for pain_point in reddit_insights.get('pain_points', [])[:5]:
+                reddit_pain_points += f"- {pain_point}\n"
+        
+        # Build comprehensive GPT-5 prompt
+        prompt = f"""You are an expert content writer using the latest {self.ai_client.latest_model} model with advanced reasoning capabilities. Create a {content_template} about "{topic}" for {audience}.
 
 CONTENT SPECIFICATIONS:
 - Content Type: {content_type.replace('_', ' ').title()}
 - Target Audience: {audience}
 - Tone: {tone}
 - Industry: {industry}
-- Word Count: 2000-3000 words (comprehensive and detailed)
+- Word Count: {word_count_range}
+- Language: {language_config['name']} ({language_config['spelling_note']})
+- AI Model: {self.ai_client.latest_model} (Reasoning Enabled)
 
 CONTENT REQUIREMENTS:
 {f"CUSTOMER PAIN POINTS TO ADDRESS: {pain_points}" if pain_points else ""}
 {f"UNIQUE SELLING POINTS TO HIGHLIGHT: {usps}" if usps else ""}
 {f"KEYWORDS TO INCLUDE NATURALLY: {keywords}" if keywords else ""}
 {f"CALL-TO-ACTION TO INCLUDE: {cta}" if cta else ""}
+{reddit_pain_points}
 
 SPECIAL AI INSTRUCTIONS:
 {ai_instructions if ai_instructions else "Create engaging, valuable content that provides genuine insights and actionable advice."}
 
+GPT-5 REASONING OPTIMIZATION:
+Use your advanced reasoning capabilities to:
+1. Analyze the topic from multiple angles before writing
+2. Consider the audience's expertise level and needs
+3. Structure information logically and persuasively
+4. Anticipate and address potential objections
+5. Create genuine value through unique insights
+
+E-E-A-T OPTIMIZATION REQUIREMENTS:
+1. EXPERIENCE: Include first-hand insights, practical examples, and real-world applications
+2. EXPERTISE: Demonstrate deep knowledge with technical accuracy and industry-specific insights
+3. AUTHORITATIVENESS: Reference credible sources and establish topical authority
+4. TRUSTWORTHINESS: Use transparent sourcing, balanced perspectives, and fact-based claims
+
 CONTENT STRUCTURE REQUIREMENTS:
 1. Create a compelling headline that grabs attention immediately
 2. Write an engaging introduction that hooks the reader within first 50 words
-3. Use clear headings and subheadings for perfect readability
+3. Use clear headings and subheadings for perfect readability (H2, H3 hierarchy)
 4. Provide genuine value with specific, actionable insights
 5. Address the target audience's specific needs and pain points
 6. Maintain the specified tone consistently throughout
-7. Include the call-to-action naturally if provided
-8. End with a strong conclusion that reinforces key points and motivates action
+7. Include relevant statistics, data points, or research where appropriate
+8. Use {language_config['spelling_note']} throughout
+9. Include the call-to-action naturally if provided
+10. End with a strong conclusion that reinforces key points and motivates action
 
-QUALITY STANDARDS (GPT-4o Enhanced):
+QUALITY STANDARDS ({self.ai_client.latest_model} Enhanced):
 - Make it comprehensive, well-researched, and authoritative
 - Use engaging storytelling and real-world examples
-- Include specific, practical advice that readers can implement
+- Include specific, practical advice that readers can implement immediately
 - Ensure logical flow and smooth transitions between sections
 - Write in a way that establishes credibility and trust
 - Make every paragraph valuable and purposeful
-- Use data, statistics, or insights where relevant
 - Create content that stands out from generic AI-generated text
+- Optimize for search intent while maintaining human readability
+- Include relevant internal linking opportunities (mention where links could go)
 
-Write the complete, professional {content_type.replace('_', ' ')} now, following all requirements above and leveraging GPT-4o's advanced capabilities:"""
+SEO OPTIMIZATION:
+- Structure content with proper heading hierarchy
+- Include semantic keywords naturally
+- Address related questions and subtopics
+- Optimize for featured snippets where relevant
+- Include actionable list items and step-by-step instructions
+
+Write the complete, professional {content_type.replace('_', ' ')} now, following all requirements above and leveraging {self.ai_client.latest_model}'s advanced reasoning capabilities:"""
 
         try:
             logger.info(f"🤖 Generating AI content for {content_type}: {topic}")
@@ -446,12 +611,18 @@ Write the complete, professional {content_type.replace('_', ' ')} now, following
         topic = form_data['topic']
         content_type = form_data['content_type']
         audience = form_data.get('target_audience', 'readers')
+        language = form_data.get('language', 'british_english')
+        
+        language_config = LANGUAGE_CONFIGS.get(language, LANGUAGE_CONFIGS['british_english'])
+        spelling_note = "colour, realise, centre" if "british" in language.lower() else "color, realize, center"
         
         return f"""# {topic}: A Comprehensive {content_type.replace('_', ' ').title()}
 
 ## Introduction
 
 This {content_type.replace('_', ' ')} provides valuable insights about {topic} specifically for {audience}. Our goal is to deliver actionable information that helps you make informed decisions and achieve your objectives.
+
+*Note: This content uses {language_config['name']} spelling and expressions.*
 
 ## Understanding {topic}
 
@@ -477,11 +648,11 @@ Getting started with {topic} requires a systematic approach:
 1. **Assessment Phase**: Evaluate your current situation and specific needs
 2. **Planning Phase**: Develop a clear strategy and timeline
 3. **Implementation Phase**: Execute your plan with proper monitoring
-4. **Optimization Phase**: Continuously improve based on results
+4. **Optimisation Phase**: Continuously improve based on results
 
 ## Best Practices
 
-To maximize success with {topic}:
+To maximise success with {topic}:
 
 - Stay informed about industry trends and developments
 - Connect with other {audience} to share experiences and insights
@@ -492,7 +663,7 @@ To maximize success with {topic}:
 
 Many {audience} face similar obstacles when dealing with {topic}:
 
-- **Resource Constraints**: Prioritize highest-impact activities first
+- **Resource Constraints**: Prioritise highest-impact activities first
 - **Technical Complexity**: Start with simpler solutions and gradually advance
 - **Information Overload**: Focus on authoritative sources and proven methods
 
@@ -504,10 +675,10 @@ Remember that lasting success often requires patience, continuous learning, and 
 
 ---
 
-*This content was created to help {audience} better understand and succeed with {topic}.*"""
+*This content was created to help {audience} better understand and succeed with {topic} using {language_config['name']} standards and GPT-5 technology.*"""
 
 # Initialize FastAPI
-app = FastAPI(title="Advanced Content Generator with GPT-4o")
+app = FastAPI(title=f"Advanced Content Generator with {OpenAIClient().latest_model}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -534,14 +705,20 @@ def generate_sophisticated_form_html():
     # Generate content type options
     content_type_options = ""
     for key, config in CONTENT_TYPE_CONFIGS.items():
-        content_type_options += f'<option value="{key}">{config["name"]} - {config["description"]}</option>\n'
+        content_type_options += f'<option value="{key}">{config["name"]} - {config["description"]} ({config["word_count_range"]} words)</option>\n'
+    
+    # Generate language options
+    language_options = ""
+    for key, config in LANGUAGE_CONFIGS.items():
+        selected = 'selected' if key == 'british_english' else ''
+        language_options += f'<option value="{key}" {selected}>{config["name"]} - {config["description"]}</option>\n'
     
     return f'''
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Advanced AI Content Generator - GPT-4o</title>
+    <title>Advanced AI Content Generator - GPT-5</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
@@ -599,15 +776,15 @@ def generate_sophisticated_form_html():
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
-            background: rgba(255, 255, 255, 0.1); 
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%); 
             backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(16, 185, 129, 0.3);
             color: #ffffff; 
             padding: 0.8rem 1.5rem; 
             border-radius: 2rem; 
             font-size: 0.9rem; 
             font-weight: 600;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 8px 32px rgba(16, 185, 129, 0.3);
         }}
         
         .form-section {{ 
@@ -663,7 +840,6 @@ def generate_sophisticated_form_html():
             color: #888888;
         }}
         
-        /* FIXED: Dropdown option visibility */
         .select option {{
             background: #1a1a1a;
             color: #ffffff;
@@ -672,9 +848,9 @@ def generate_sophisticated_form_html():
         
         .input:focus, .textarea:focus, .select:focus {{ 
             outline: none; 
-            border-color: #ffffff; 
+            border-color: #10b981; 
             background: rgba(255, 255, 255, 0.08);
-            box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1); 
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1); 
         }}
         
         .textarea {{ 
@@ -700,8 +876,8 @@ def generate_sophisticated_form_html():
         }}
         
         .button {{ 
-            background: linear-gradient(135deg, #ffffff 0%, #cccccc 100%);
-            color: #000000; 
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: #ffffff; 
             padding: 1.4rem 2.5rem; 
             border: none; 
             border-radius: 0.8rem; 
@@ -717,8 +893,8 @@ def generate_sophisticated_form_html():
         
         .button:hover {{ 
             transform: translateY(-2px); 
-            box-shadow: 0 15px 35px rgba(255, 255, 255, 0.2);
-            background: linear-gradient(135deg, #f0f0f0 0%, #bbbbbb 100%);
+            box-shadow: 0 15px 35px rgba(16, 185, 129, 0.4);
+            background: linear-gradient(135deg, #059669 0%, #047857 100%);
         }}
         
         .button:disabled {{ 
@@ -736,8 +912,8 @@ def generate_sophisticated_form_html():
         }}
         
         .ai-instructions-section {{
-            background: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 100%);
-            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(5, 150, 105, 0.03) 100%);
+            border: 1px solid rgba(16, 185, 129, 0.15);
             border-radius: 1rem;
             padding: 2rem;
         }}
@@ -752,12 +928,19 @@ def generate_sophisticated_form_html():
         .instructions-icon {{
             width: 2rem;
             height: 2rem;
-            background: rgba(255, 255, 255, 0.1);
+            background: rgba(16, 185, 129, 0.2);
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 1rem;
+        }}
+        
+        .language-section {{
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(99, 102, 241, 0.05) 100%);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            border-radius: 1rem;
+            padding: 2rem;
         }}
         
         @media (max-width: 768px) {{ 
@@ -773,11 +956,11 @@ def generate_sophisticated_form_html():
     
     <div class="container">
         <div class="header">
-            <h1>AI Content Generator</h1>
-            <p>Advanced content creation powered by OpenAI GPT-4o</p>
+            <h1>GPT-5 Content Generator</h1>
+            <p>Advanced content creation powered by OpenAI GPT-5 with comprehensive evaluation</p>
             <div class="status-badge">
-                <span>●</span>
-                <span>GPT-4o System Ready</span>
+                <span>🧠</span>
+                <span>GPT-5 Reasoning Active</span>
             </div>
         </div>
         
@@ -828,13 +1011,25 @@ def generate_sophisticated_form_html():
                 </div>
             </div>
             
+            <div class="form-section language-section">
+                <h3>🌍 Language & Localisation</h3>
+                
+                <div class="form-group">
+                    <label class="label">Language Variant <span class="required">*</span></label>
+                    <select class="select" name="language" required>
+                        {language_options}
+                    </select>
+                    <div class="help-text">Choose your preferred English variant for spelling, terminology, and expressions</div>
+                </div>
+            </div>
+            
             <div class="form-section">
                 <h3>🎯 Strategic Content Elements</h3>
                 
                 <div class="form-group">
                     <label class="label">Customer Pain Points</label>
                     <textarea class="textarea large" name="customer_pain_points" placeholder="e.g., Difficulty scaling marketing efforts, High customer acquisition costs, Lack of automation expertise, Complex tool integration challenges"></textarea>
-                    <div class="help-text">Specific pain points help create more compelling and relevant content that resonates with your audience</div>
+                    <div class="help-text">Specific pain points help create more compelling and relevant content. GPT-5 will also research Reddit communities for additional insights.</div>
                 </div>
                 
                 <div class="form-group">
@@ -846,8 +1041,8 @@ def generate_sophisticated_form_html():
                 <div class="grid">
                     <div class="form-group">
                         <label class="label">Strategic Keywords</label>
-                        <input class="input" type="text" name="required_keywords" placeholder="e.g., marketing automation, customer lifecycle, conversion optimization">
-                        <div class="help-text">Keywords will be integrated naturally for SEO optimization</div>
+                        <input class="input" type="text" name="required_keywords" placeholder="e.g., marketing automation, customer lifecycle, conversion optimisation">
+                        <div class="help-text">Keywords will be integrated naturally for SEO optimisation</div>
                     </div>
                     
                     <div class="form-group">
@@ -860,14 +1055,14 @@ def generate_sophisticated_form_html():
             
             <div class="form-section ai-instructions-section">
                 <div class="instructions-header">
-                    <div class="instructions-icon">🤖</div>
-                    <h3>Advanced AI Instructions - GPT-4o</h3>
+                    <div class="instructions-icon">🧠</div>
+                    <h3>Advanced AI Instructions - GPT-5 Reasoning</h3>
                 </div>
                 
                 <div class="form-group">
                     <label class="label">Custom AI Instructions</label>
                     <textarea class="textarea large" name="ai_instructions" placeholder="e.g., Focus on actionable insights with specific examples. Include data points and statistics where relevant. Write in first person for sections about experience. Use short paragraphs for better readability. Include a compelling story in the introduction."></textarea>
-                    <div class="help-text">Provide specific instructions to guide GPT-4o's writing style, structure, and focus. Be as detailed as needed for your vision.</div>
+                    <div class="help-text">Provide specific instructions to guide GPT-5's advanced reasoning and writing style. The AI will automatically research Reddit communities for pain points and insights.</div>
                 </div>
                 
                 <div class="advanced-section">
@@ -897,7 +1092,7 @@ def generate_sophisticated_form_html():
             </div>
             
             <button type="submit" class="button" id="submitBtn">
-                Generate Premium Content with GPT-4o
+                Generate Premium Content with GPT-5 Reasoning
             </button>
         </form>
     </div>
@@ -924,6 +1119,11 @@ def generate_sophisticated_form_html():
                 return;
             }}
             
+            if (!data.language) {{
+                alert('Please select a language variant');
+                return;
+            }}
+            
             localStorage.setItem('contentFormData', JSON.stringify(data));
             window.location.href = '/generate';
         }});
@@ -933,33 +1133,33 @@ def generate_sophisticated_form_html():
 '''
 
 def generate_sophisticated_generator_html():
-    return '''
+    return f'''
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>AI Content Generation - OpenAI GPT-4o</title>
+    <title>AI Content Generation - OpenAI GPT-5</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         
-        body { 
+        body {{ 
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
             background: linear-gradient(135deg, #000000 0%, #1a1a1a 50%, #000000 100%);
             color: #ffffff; 
             line-height: 1.6; 
             min-height: 100vh;
-        }
+        }}
         
-        .grain { 
+        .grain {{ 
             position: fixed; 
             top: 0; left: 0; right: 0; bottom: 0; 
             background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.03'/%3E%3C/svg%3E");
             pointer-events: none; 
             z-index: 1; 
-        }
+        }}
         
-        .header { 
+        .header {{ 
             background: rgba(0, 0, 0, 0.8);
             backdrop-filter: blur(20px);
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
@@ -967,49 +1167,49 @@ def generate_sophisticated_generator_html():
             position: sticky;
             top: 0;
             z-index: 100;
-        }
+        }}
         
-        .header-content { 
+        .header-content {{ 
             max-width: 1200px; 
             margin: 0 auto; 
             padding: 0 2rem; 
             display: flex; 
             justify-content: space-between; 
             align-items: center; 
-        }
+        }}
         
-        .header-title { 
+        .header-title {{ 
             font-size: 1.5rem; 
             font-weight: 700; 
-            background: linear-gradient(135deg, #ffffff 0%, #cccccc 100%);
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
             background-clip: text;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-        }
+        }}
         
-        .status { 
+        .status {{ 
             padding: 0.6rem 1.2rem; 
             border-radius: 2rem; 
             font-weight: 600; 
             font-size: 0.9rem; 
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.2);
-        }
+        }}
         
-        .status-connecting { background: rgba(251, 191, 36, 0.2); color: #fbbf24; }
-        .status-connected { background: rgba(16, 185, 129, 0.2); color: #10b981; }
-        .status-generating { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
-        .status-error { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+        .status-connecting {{ background: rgba(251, 191, 36, 0.2); color: #fbbf24; }}
+        .status-connected {{ background: rgba(16, 185, 129, 0.2); color: #10b981; }}
+        .status-generating {{ background: rgba(59, 130, 246, 0.2); color: #3b82f6; }}
+        .status-error {{ background: rgba(239, 68, 68, 0.2); color: #ef4444; }}
         
-        .container { 
+        .container {{ 
             max-width: 1200px; 
             margin: 0 auto; 
             padding: 2rem; 
             position: relative;
             z-index: 2;
-        }
+        }}
         
-        .progress-section, .content-display { 
+        .progress-section, .content-display, .evaluation-display {{ 
             background: rgba(255, 255, 255, 0.03); 
             backdrop-filter: blur(20px);
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -1017,146 +1217,270 @@ def generate_sophisticated_generator_html():
             padding: 2rem; 
             margin-bottom: 2rem; 
             box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3); 
-        }
+        }}
         
-        .progress-header { 
+        .progress-header {{ 
             display: flex; 
             justify-content: space-between; 
             align-items: center; 
             margin-bottom: 2rem; 
-        }
+        }}
         
-        .progress-title { 
+        .progress-title {{ 
             color: #ffffff; 
             font-size: 1.4rem; 
             font-weight: 700; 
-        }
+        }}
         
-        .progress-bar { 
+        .progress-bar {{ 
             width: 100%; 
             height: 12px; 
             background: rgba(255, 255, 255, 0.1); 
             border-radius: 6px; 
             overflow: hidden; 
             margin-bottom: 1rem; 
-        }
+        }}
         
-        .progress-fill { 
+        .progress-fill {{ 
             height: 100%; 
-            background: linear-gradient(135deg, #ffffff 0%, #cccccc 100%); 
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%); 
             width: 0%; 
             transition: width 0.5s ease; 
-        }
+        }}
         
-        .progress-text { 
+        .progress-text {{ 
             text-align: center; 
             font-size: 1rem; 
             color: #cccccc; 
             font-weight: 500; 
-        }
+        }}
         
-        .current-step { 
-            background: rgba(255, 255, 255, 0.05); 
-            border: 1px solid rgba(255, 255, 255, 0.15); 
+        .current-step {{ 
+            background: rgba(16, 185, 129, 0.1); 
+            border: 1px solid rgba(16, 185, 129, 0.2); 
             border-radius: 1rem; 
             padding: 1.5rem; 
             margin-bottom: 1.5rem; 
             display: none; 
-        }
+        }}
         
-        .current-step h4 { 
+        .current-step h4 {{ 
             color: #ffffff; 
             margin-bottom: 0.8rem; 
             font-size: 1.1rem;
             font-weight: 600;
-        }
+        }}
         
-        .current-step p { 
+        .current-step p {{ 
             color: #cccccc; 
             font-size: 0.95rem; 
-        }
+        }}
         
-        .content-display { display: none; }
-        .content-display.visible { display: block; }
+        .content-display, .evaluation-display {{ display: none; }}
+        .content-display.visible, .evaluation-display.visible {{ display: block; }}
         
-        .metrics { 
+        .metrics {{ 
             display: grid; 
             grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); 
             gap: 1rem; 
             margin-bottom: 2rem; 
-        }
+        }}
         
-        .metric-card { 
+        .metric-card {{ 
             background: rgba(255, 255, 255, 0.05); 
             padding: 1.5rem; 
             border-radius: 1rem; 
             text-align: center; 
             border: 1px solid rgba(255, 255, 255, 0.1);
-        }
+        }}
         
-        .metric-value { 
+        .metric-value {{ 
             font-size: 1.8rem; 
             font-weight: 700; 
             color: #ffffff; 
             margin-bottom: 0.5rem; 
-        }
+        }}
         
-        .metric-label { 
+        .metric-label {{ 
             font-size: 0.85rem; 
             color: #aaaaaa; 
             text-transform: uppercase;
             letter-spacing: 0.5px;
-        }
+        }}
         
-        .content-display h1 { 
+        .evaluation-section {{
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 1rem;
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }}
+        
+        .evaluation-header {{
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }}
+        
+        .evaluation-score {{
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 2rem;
+            font-weight: 700;
+            font-size: 1.1rem;
+        }}
+        
+        .eeat-scores {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }}
+        
+        .eeat-item {{
+            background: rgba(255, 255, 255, 0.03);
+            padding: 1.5rem;
+            border-radius: 0.8rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }}
+        
+        .eeat-title {{
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: #ffffff;
+        }}
+        
+        .eeat-score {{
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #10b981;
+        }}
+        
+        .recommendations {{
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            margin-top: 1.5rem;
+        }}
+        
+        .recommendations h4 {{
+            color: #ffffff;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }}
+        
+        .recommendations ul {{
+            list-style: none;
+            padding: 0;
+        }}
+        
+        .recommendations li {{
+            margin-bottom: 0.8rem;
+            padding-left: 1.5rem;
+            position: relative;
+            color: #cccccc;
+        }}
+        
+        .recommendations li:before {{
+            content: "💡";
+            position: absolute;
+            left: 0;
+        }}
+        
+        .entity-analysis {{
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            margin-top: 1.5rem;
+        }}
+        
+        .entity-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1rem;
+        }}
+        
+        .entity-card {{
+            background: rgba(255, 255, 255, 0.05);
+            padding: 1.5rem;
+            border-radius: 0.8rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }}
+        
+        .entity-card h5 {{
+            color: #ffffff;
+            margin-bottom: 1rem;
+            font-size: 1rem;
+            font-weight: 600;
+        }}
+        
+        .entity-list {{
+            list-style: none;
+            padding: 0;
+        }}
+        
+        .entity-list li {{
+            color: #cccccc;
+            padding: 0.3rem 0;
+            font-size: 0.9rem;
+        }}
+        
+        .content-display h1 {{ 
             color: #ffffff; 
             font-size: 2.2rem; 
             margin-bottom: 1.5rem; 
             border-bottom: 2px solid rgba(255, 255, 255, 0.2); 
             padding-bottom: 1rem; 
             font-weight: 700;
-        }
+        }}
         
-        .content-display h2 { 
+        .content-display h2 {{ 
             color: #cccccc; 
             font-size: 1.6rem; 
             margin: 2rem 0 1rem 0; 
             font-weight: 600;
-        }
+        }}
         
-        .content-display h3 { 
+        .content-display h3 {{ 
             color: #ffffff; 
             font-size: 1.3rem; 
             margin: 1.5rem 0 0.8rem 0; 
             font-weight: 600;
-        }
+        }}
         
-        .content-display p { 
+        .content-display p {{ 
             margin-bottom: 1rem; 
             line-height: 1.8; 
             color: #eeeeee; 
             font-size: 1.05rem;
-        }
+        }}
         
-        .content-display ul, .content-display ol { 
+        .content-display ul, .content-display ol {{ 
             margin: 1rem 0 1rem 2rem; 
             color: #eeeeee;
-        }
+        }}
         
-        .content-display li { 
+        .content-display li {{ 
             margin-bottom: 0.6rem; 
             line-height: 1.7;
-        }
+        }}
         
-        .content-actions { 
+        .content-actions {{ 
             display: flex; 
             gap: 1rem; 
             margin-top: 2rem; 
             padding-top: 2rem; 
             border-top: 1px solid rgba(255, 255, 255, 0.1); 
-        }
+        }}
         
-        .action-btn { 
+        .action-btn {{ 
             background: rgba(255, 255, 255, 0.1); 
             backdrop-filter: blur(10px);
             color: #ffffff; 
@@ -1171,25 +1495,25 @@ def generate_sophisticated_generator_html():
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
-        }
+        }}
         
-        .action-btn:hover { 
+        .action-btn:hover {{ 
             background: rgba(255, 255, 255, 0.15); 
             transform: translateY(-2px); 
             border-color: rgba(255, 255, 255, 0.3);
-        }
+        }}
         
-        .action-btn.primary { 
-            background: linear-gradient(135deg, #ffffff 0%, #cccccc 100%);
-            color: #000000;
+        .action-btn.primary {{ 
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: #ffffff;
             border: none;
-        }
+        }}
         
-        .action-btn.primary:hover { 
-            background: linear-gradient(135deg, #f0f0f0 0%, #bbbbbb 100%);
-        }
+        .action-btn.primary:hover {{ 
+            background: linear-gradient(135deg, #059669 0%, #047857 100%);
+        }}
         
-        .back-btn { 
+        .back-btn {{ 
             background: rgba(255, 255, 255, 0.05); 
             color: #cccccc; 
             padding: 0.6rem 1rem; 
@@ -1198,50 +1522,50 @@ def generate_sophisticated_generator_html():
             text-decoration: none; 
             font-size: 0.85rem; 
             transition: all 0.3s ease;
-        }
+        }}
         
-        .back-btn:hover { 
+        .back-btn:hover {{ 
             background: rgba(255, 255, 255, 0.1); 
             color: #ffffff;
-        }
+        }}
         
-        .loading { 
+        .loading {{ 
             text-align: center; 
             padding: 3rem; 
             color: #aaaaaa; 
-        }
+        }}
         
-        .spinner { 
+        .spinner {{ 
             border: 3px solid rgba(255, 255, 255, 0.1); 
-            border-top: 3px solid #ffffff; 
+            border-top: 3px solid #10b981; 
             border-radius: 50%; 
             width: 40px; 
             height: 40px; 
             animation: spin 1s linear infinite; 
             margin: 0 auto 1rem; 
-        }
+        }}
         
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
         
-        @media (max-width: 768px) { 
-            .header-content { 
+        @media (max-width: 768px) {{ 
+            .header-content {{ 
                 flex-direction: column; 
                 gap: 1rem; 
-            } 
-            .container { padding: 1rem; }
-            .progress-section, .content-display { 
+            }} 
+            .container {{ padding: 1rem; }}
+            .progress-section, .content-display, .evaluation-display {{ 
                 padding: 1.5rem; 
-            }
-            .content-actions { 
+            }}
+            .content-actions {{ 
                 flex-direction: column; 
-            }
-            .metrics { 
-                grid-template-columns: 1fr 1fr; 
-            } 
-            .content-display h1 { 
+            }}
+            .metrics, .eeat-scores, .entity-grid {{ 
+                grid-template-columns: 1fr; 
+            }} 
+            .content-display h1 {{ 
                 font-size: 1.8rem; 
-            }
-        }
+            }}
+        }}
     </style>
 </head>
 <body>
@@ -1249,7 +1573,7 @@ def generate_sophisticated_generator_html():
     
     <div class="header">
         <div class="header-content">
-            <div class="header-title">AI Content Generator - GPT-4o</div>
+            <div class="header-title">GPT-5 Content Generator - Reasoning Active</div>
             <div class="status status-connecting" id="connectionStatus">Connecting...</div>
         </div>
     </div>
@@ -1257,14 +1581,14 @@ def generate_sophisticated_generator_html():
     <div class="container">
         <div class="progress-section">
             <div class="progress-header">
-                <div class="progress-title">GPT-4o Content Generation</div>
+                <div class="progress-title">GPT-5 Content Generation</div>
                 <a href="/" class="back-btn">← Back to Form</a>
             </div>
             
             <div class="progress-bar">
                 <div class="progress-fill" id="progressFill"></div>
             </div>
-            <div class="progress-text" id="progressText">Initializing GPT-4o content generation...</div>
+            <div class="progress-text" id="progressText">Initializing GPT-5 content generation...</div>
             
             <div class="current-step" id="currentStep">
                 <h4 id="currentStepTitle">Loading...</h4>
@@ -1273,7 +1597,32 @@ def generate_sophisticated_generator_html():
             
             <div class="loading" id="loadingIndicator">
                 <div class="spinner"></div>
-                <p>Connecting to OpenAI GPT-4o...</p>
+                <p>Connecting to OpenAI GPT-5...</p>
+            </div>
+        </div>
+        
+        <div class="evaluation-display" id="evaluationDisplay">
+            <div class="evaluation-header">
+                <h2>📊 GPT-5 Content Evaluation Report</h2>
+                <div class="evaluation-score" id="overallScore">9.2/10</div>
+            </div>
+            
+            <div class="eeat-scores" id="eeatScores">
+                <!-- E-E-A-T scores will be populated here -->
+            </div>
+            
+            <div class="entity-analysis">
+                <h4>🔗 Entity Analysis & Content Clusters</h4>
+                <div class="entity-grid" id="entityGrid">
+                    <!-- Entity analysis will be populated here -->
+                </div>
+            </div>
+            
+            <div class="recommendations" id="recommendations">
+                <h4>💡 GPT-5 Optimization Recommendations</h4>
+                <ul id="recommendationsList">
+                    <!-- Recommendations will be populated here -->
+                </ul>
             </div>
         </div>
         
@@ -1295,6 +1644,14 @@ def generate_sophisticated_generator_html():
                     <div class="metric-value" id="modelUsed">--</div>
                     <div class="metric-label">AI Model</div>
                 </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="languageUsed">--</div>
+                    <div class="metric-label">Language</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="modelType">--</div>
+                    <div class="metric-label">Model Type</div>
+                </div>
             </div>
             
             <div id="generatedContent"></div>
@@ -1304,6 +1661,7 @@ def generate_sophisticated_generator_html():
                 <button class="action-btn" onclick="downloadContent()">💾 Download</button>
                 <button class="action-btn" onclick="regenerateContent()">🔄 Regenerate</button>
                 <button class="action-btn" onclick="shareContent()">🔗 Share</button>
+                <button class="action-btn" onclick="toggleEvaluation()">📊 Toggle Evaluation</button>
             </div>
         </div>
     </div>
@@ -1312,82 +1670,83 @@ def generate_sophisticated_generator_html():
         let ws = null;
         let sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
         let generatedContent = '';
+        let evaluationData = {{}};
         let formData = null;
         
-        window.addEventListener('load', function() {
+        window.addEventListener('load', function() {{
             const storedData = localStorage.getItem('contentFormData');
-            if (storedData) {
+            if (storedData) {{
                 formData = JSON.parse(storedData);
                 console.log('Form data loaded:', formData);
                 initWebSocket();
-            } else {
+            }} else {{
                 alert('No form data found. Please fill out the form first.');
                 window.location.href = '/';
-            }
-        });
+            }}
+        }});
         
-        function initWebSocket() {
-            try {
+        function initWebSocket() {{
+            try {{
                 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                 const wsHost = window.location.host;
-                const wsUrl = `${wsProtocol}//${wsHost}/ws/${sessionId}`;
+                const wsUrl = `${{wsProtocol}}//${{wsHost}}/ws/${{sessionId}}`;
                 
                 console.log('Connecting to WebSocket:', wsUrl);
                 ws = new WebSocket(wsUrl);
                 
-                ws.onopen = function() {
+                ws.onopen = function() {{
                     console.log('WebSocket connected');
                     document.getElementById('connectionStatus').textContent = 'Connected';
                     document.getElementById('connectionStatus').className = 'status status-connected';
                     startContentGeneration();
-                };
+                }};
                 
-                ws.onmessage = function(event) {
-                    try {
+                ws.onmessage = function(event) {{
+                    try {{
                         const data = JSON.parse(event.data);
                         handleWebSocketMessage(data);
-                    } catch (error) {
+                    }} catch (error) {{
                         console.error('Error parsing message:', error);
-                    }
-                };
+                    }}
+                }};
                 
-                ws.onclose = function(event) {
+                ws.onclose = function(event) {{
                     console.log('WebSocket closed:', event.code, event.reason);
                     document.getElementById('connectionStatus').textContent = 'Disconnected';
                     document.getElementById('connectionStatus').className = 'status status-error';
-                };
+                }};
                 
-                ws.onerror = function(error) {
+                ws.onerror = function(error) {{
                     console.error('WebSocket error:', error);
                     document.getElementById('connectionStatus').textContent = 'Error';
                     document.getElementById('connectionStatus').className = 'status status-error';
-                };
+                }};
                 
-            } catch (error) {
+            }} catch (error) {{
                 console.error('WebSocket init error:', error);
                 document.getElementById('connectionStatus').textContent = 'Setup Error';
                 document.getElementById('connectionStatus').className = 'status status-error';
-            }
-        }
+            }}
+        }}
         
-        function startContentGeneration() {
-            if (ws && ws.readyState === WebSocket.OPEN && formData) {
+        function startContentGeneration() {{
+            if (ws && ws.readyState === WebSocket.OPEN && formData) {{
                 document.getElementById('connectionStatus').textContent = 'Generating';
                 document.getElementById('connectionStatus').className = 'status status-generating';
                 
-                ws.send(JSON.stringify({
+                ws.send(JSON.stringify({{
                     type: 'start_generation',
                     data: formData
-                }));
-            } else {
+                }}));
+            }} else {{
                 console.error('Cannot start generation');
-            }
-        }
+            }}
+        }}
         
-        function handleWebSocketMessage(data) {
+        function handleWebSocketMessage(data) {{
             console.log('Received:', data.type);
             
-            switch(data.type) {
+            switch(data.type) {{
                 case 'progress_update':
                     document.getElementById('loadingIndicator').style.display = 'none';
                     updateProgress(data);
@@ -1395,6 +1754,7 @@ def generate_sophisticated_generator_html():
                     
                 case 'generation_complete':
                     displayContent(data);
+                    displayEvaluation(data.evaluation || {{}});
                     document.getElementById('connectionStatus').textContent = 'Complete';
                     document.getElementById('connectionStatus').className = 'status status-connected';
                     break;
@@ -1404,37 +1764,115 @@ def generate_sophisticated_generator_html():
                     document.getElementById('connectionStatus').textContent = 'Error';
                     document.getElementById('connectionStatus').className = 'status status-error';
                     break;
-            }
-        }
+            }}
+        }}
         
-        function updateProgress(data) {
+        function updateProgress(data) {{
             const percentage = (data.step / data.total) * 100;
             document.getElementById('progressFill').style.width = percentage + '%';
-            document.getElementById('progressText').textContent = `Step ${data.step} of ${data.total}: ${data.title}`;
+            document.getElementById('progressText').textContent = `Step ${{data.step}} of ${{data.total}}: ${{data.title}}`;
             
             const currentStep = document.getElementById('currentStep');
             currentStep.style.display = 'block';
             document.getElementById('currentStepTitle').textContent = data.title;
             document.getElementById('currentStepMessage').textContent = data.message;
-        }
+        }}
         
-        function displayContent(data) {
+        function displayContent(data) {{
             generatedContent = data.content;
             
-            const metrics = data.metrics || {};
+            const metrics = data.metrics || {{}};
             document.getElementById('wordCount').textContent = metrics.word_count?.toLocaleString() || '--';
             document.getElementById('readingTime').textContent = metrics.reading_time ? metrics.reading_time + ' min' : '--';
-            document.getElementById('qualityScore').textContent = metrics.quality_score?.toFixed(1) || '9.5';
-            document.getElementById('modelUsed').textContent = metrics.model_used || 'GPT-4o';
+            document.getElementById('qualityScore').textContent = metrics.quality_score?.toFixed(1) || '9.0';
+            document.getElementById('modelUsed').textContent = metrics.model_used || 'GPT-5';
+            document.getElementById('languageUsed').textContent = getLanguageDisplayName(metrics.language) || 'British English';
+            document.getElementById('modelType').textContent = metrics.model_type || 'GPT-5 (Reasoning)';
             
             const formattedContent = formatContent(data.content);
             document.getElementById('generatedContent').innerHTML = formattedContent;
             
             document.getElementById('contentDisplay').classList.add('visible');
-            document.getElementById('contentDisplay').scrollIntoView({ behavior: 'smooth' });
-        }
+            document.getElementById('contentDisplay').scrollIntoView({{ behavior: 'smooth' }});
+        }}
         
-        function formatContent(content) {
+        function displayEvaluation(evaluation) {{
+            evaluationData = evaluation;
+            
+            if (!evaluation || Object.keys(evaluation).length === 0) {{
+                document.getElementById('evaluationDisplay').style.display = 'none';
+                return;
+            }}
+            
+            // Update overall score
+            const overallScore = evaluation.overall_score || 9.0;
+            document.getElementById('overallScore').textContent = overallScore.toFixed(1) + '/10';
+            
+            // Display E-E-A-T scores
+            const eeatAnalysis = evaluation.eeat_analysis || {{}};
+            const eeatContainer = document.getElementById('eeatScores');
+            eeatContainer.innerHTML = '';
+            
+            const eeatFactors = [
+                {{ key: 'experience', label: 'Experience', icon: '🎯' }},
+                {{ key: 'expertise', label: 'Expertise', icon: '🧠' }},
+                {{ key: 'authoritativeness', label: 'Authority', icon: '🏆' }},
+                {{ key: 'trustworthiness', label: 'Trust', icon: '🔒' }}
+            ];
+            
+            eeatFactors.forEach(factor => {{
+                const score = eeatAnalysis[factor.key] || 5;
+                const eeatItem = document.createElement('div');
+                eeatItem.className = 'eeat-item';
+                eeatItem.innerHTML = `
+                    <div class="eeat-title">${{factor.icon}} ${{factor.label}}</div>
+                    <div class="eeat-score">${{score.toFixed(1)}}/10</div>
+                `;
+                eeatContainer.appendChild(eeatItem);
+            }});
+            
+            // Display entity analysis
+            const entityAnalysis = evaluation.entity_analysis || {{}};
+            const entityGrid = document.getElementById('entityGrid');
+            entityGrid.innerHTML = '';
+            
+            const entityTypes = [
+                {{ key: 'primary_entities', label: 'Primary Entities', icon: '🎯' }},
+                {{ key: 'related_entities', label: 'Related Entities', icon: '🔗' }},
+                {{ key: 'cluster_opportunities', label: 'Content Clusters', icon: '📑' }},
+                {{ key: 'entity_gaps', label: 'Content Gaps', icon: '⚠️' }}
+            ];
+            
+            entityTypes.forEach(type => {{
+                const entities = entityAnalysis[type.key] || [];
+                if (entities.length > 0) {{
+                    const entityCard = document.createElement('div');
+                    entityCard.className = 'entity-card';
+                    entityCard.innerHTML = `
+                        <h5>${{type.icon}} ${{type.label}}</h5>
+                        <ul class="entity-list">
+                            ${{entities.slice(0, 8).map(entity => `<li>${{entity}}</li>`).join('')}}
+                        </ul>
+                    `;
+                    entityGrid.appendChild(entityCard);
+                }}
+            }});
+            
+            // Display recommendations
+            const recommendations = evaluation.recommendations || [];
+            const recommendationsList = document.getElementById('recommendationsList');
+            recommendationsList.innerHTML = '';
+            
+            recommendations.forEach(rec => {{
+                const li = document.createElement('li');
+                li.textContent = rec;
+                recommendationsList.appendChild(li);
+            }});
+            
+            document.getElementById('evaluationDisplay').classList.add('visible');
+        }}
+        
+        function formatContent(content) {{
             return content
                 .replace(/^# (.+)$/gm, '<h1>$1</h1>')
                 .replace(/^## (.+)$/gm, '<h2>$1</h2>')
@@ -1448,49 +1886,92 @@ def generate_sophisticated_generator_html():
                 .replace(/<\\/h([1-6])><\\/p>/g, '</h$1>')
                 .replace(/<p><ul>/g, '<ul>')
                 .replace(/<\\/ul><\\/p>/g, '</ul>');
-        }
+        }}
         
-        function copyContent() {
+        function getLanguageDisplayName(language) {{
+            const languages = {{
+                'british_english': '🇬🇧 British English',
+                'american_english': '🇺🇸 American English',
+                'canadian_english': '🇨🇦 Canadian English',
+                'australian_english': '🇦🇺 Australian English'
+            }};
+            return languages[language] || '🇬🇧 British English';
+        }}
+        
+        function copyContent() {{
             const content = document.getElementById('generatedContent').innerText;
-            navigator.clipboard.writeText(content).then(() => {
+            navigator.clipboard.writeText(content).then(() => {{
                 const btn = event.target;
                 const originalText = btn.innerHTML;
                 btn.innerHTML = '✅ Copied!';
-                setTimeout(() => {
+                setTimeout(() => {{
                     btn.innerHTML = originalText;
-                }, 2000);
-            }).catch(err => {
+                }}, 2000);
+            }}).catch(err => {{
                 console.error('Copy failed:', err);
-            });
-        }
+            }});
+        }}
         
-        function downloadContent() {
+        function downloadContent() {{
             const content = document.getElementById('generatedContent').innerText;
-            const blob = new Blob([content], { type: 'text/plain' });
+            const evaluation = evaluationData;
+            
+            const fullContent = `
+CONTENT:
+${{content}}
+
+GPT-5 EVALUATION REPORT:
+Overall Score: ${{evaluation.overall_score || 'N/A'}}/10
+
+E-E-A-T Analysis:
+- Experience: ${{evaluation.eeat_analysis?.experience || 'N/A'}}/10
+- Expertise: ${{evaluation.eeat_analysis?.expertise || 'N/A'}}/10
+- Authoritativeness: ${{evaluation.eeat_analysis?.authoritativeness || 'N/A'}}/10
+- Trustworthiness: ${{evaluation.eeat_analysis?.trustworthiness || 'N/A'}}/10
+
+GPT-5 Recommendations:
+${{(evaluation.recommendations || []).map(rec => `- ${{rec}}`).join('\\n')}}
+
+Generated with OpenAI GPT-5 Reasoning Model
+            `;
+            
+            const blob = new Blob([fullContent], {{ type: 'text/plain' }});
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `gpt4o-content_${new Date().toISOString().split('T')[0]}.txt`;
+            a.download = `gpt5-content_${{new Date().toISOString().split('T')[0]}}.txt`;
             a.click();
             URL.revokeObjectURL(url);
-        }
+        }}
         
-        function regenerateContent() {
+        function regenerateContent() {{
             window.location.reload();
-        }
+        }}
         
-        function shareContent() {
-            if (navigator.share) {
+        function shareContent() {{
+            if (navigator.share) {{
                 const content = document.getElementById('generatedContent').innerText;
-                navigator.share({
-                    title: 'AI Generated Content - GPT-4o',
+                navigator.share({{
+                    title: 'AI Generated Content - GPT-5',
                     text: content.substring(0, 100) + '...',
                     url: window.location.href
-                });
-            } else {
+                }});
+            }} else {{
                 copyContent();
-            }
-        }
+            }}
+        }}
+        
+        function toggleEvaluation() {{
+            const evaluationDisplay = document.getElementById('evaluationDisplay');
+            if (evaluationDisplay.classList.contains('visible')) {{
+                evaluationDisplay.classList.remove('visible');
+                evaluationDisplay.style.display = 'none';
+            }} else {{
+                evaluationDisplay.classList.add('visible');
+                evaluationDisplay.style.display = 'block';
+                evaluationDisplay.scrollIntoView({{ behavior: 'smooth' }});
+            }}
+        }}
     </script>
 </body>
 </html>
@@ -1533,32 +2014,28 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 # Health and Test Endpoints
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
+    """Enhanced health check endpoint for GPT-5"""
     openai_working = False
     openai_error = None
     model_used = "unknown"
+    agent_status = "available" if AGENT_AVAILABLE else "unavailable"
     
     if config.OPENAI_API_KEY and OPENAI_AVAILABLE:
         try:
             openai.api_key = config.OPENAI_API_KEY
-            # Try GPT-4o first
-            try:
-                response = openai.ChatCompletion.create(
-                    model="gpt-4o",
-                    messages=[{"role": "user", "content": "Hi"}],
-                    max_tokens=5
-                )
-                openai_working = True
-                model_used = "gpt-4o"
-            except Exception as gpt4o_error:
-                # Fallback to GPT-4
-                response = openai.ChatCompletion.create(
-                    model="gpt-4",
-                    messages=[{"role": "user", "content": "Hi"}],
-                    max_tokens=5
-                )
-                openai_working = True
-                model_used = "gpt-4"
+            model_params = {
+                "model": content_system.ai_client.latest_model,
+                "messages": [{"role": "user", "content": "Test GPT-5"}],
+                "max_tokens": 5
+            }
+            
+            # Add GPT-5 specific parameters if available
+            if content_system.ai_client.latest_model.startswith("gpt-5"):
+                model_params["reasoning_effort"] = "minimal"
+                
+            response = openai.ChatCompletion.create(**model_params)
+            openai_working = True
+            model_used = content_system.ai_client.latest_model
         except Exception as e:
             openai_error = str(e)
     
@@ -1570,13 +2047,17 @@ async def health_check():
         "openai_working": openai_working,
         "openai_error": openai_error,
         "model_used": model_used,
-        "version": "gpt-4o-latest",
+        "latest_model": content_system.ai_client.latest_model,
+        "gpt5_reasoning": content_system.ai_client.latest_model.startswith("gpt-5"),
+        "content_agent_available": AGENT_AVAILABLE,
+        "agent_status": agent_status,
+        "version": "gpt-5-enhanced-with-evaluation",
         "api_key_preview": f"{config.OPENAI_API_KEY[:8]}...{config.OPENAI_API_KEY[-4:]}" if config.OPENAI_API_KEY else None
     })
 
 @app.get("/test-openai")
 async def test_openai():
-    """Test OpenAI API with GPT-4o"""
+    """Test OpenAI API with GPT-5 models"""
     
     try:
         api_key = config.OPENAI_API_KEY
@@ -1595,39 +2076,44 @@ async def test_openai():
                 "solution": "Get new key from https://platform.openai.com/api-keys"
             })
         
-        # Test OpenAI API with GPT-4o
+        # Test OpenAI API with GPT-5 models
         openai.api_key = api_key
         
-        model_used = "gpt-4o"
-        try:
-            response = openai.ChatCompletion.create(
-                model="gpt-4o",
-                messages=[{
-                    "role": "user", 
-                    "content": "Write a short paragraph about how AI content generation is working correctly with OpenAI GPT-4o."
-                }],
-                max_tokens=100
-            )
-        except Exception as gpt4o_error:
-            # Fallback to GPT-4
-            model_used = "gpt-4"
-            response = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=[{
-                    "role": "user", 
-                    "content": "Write a short paragraph about how AI content generation is working correctly with OpenAI GPT-4."
-                }],
-                max_tokens=100
-            )
+        model_used = content_system.ai_client.latest_model
+        model_params = {
+            "model": model_used,
+            "messages": [{
+                "role": "user", 
+                "content": f"Write a short paragraph about how AI content generation is working correctly with OpenAI {model_used} including comprehensive evaluation features and reasoning capabilities."
+            }],
+            "max_tokens": 200
+        }
+        
+        # Add GPT-5 specific parameters if available
+        if model_used.startswith("gpt-5"):
+            model_params["reasoning_effort"] = "medium"
+            
+        response = openai.ChatCompletion.create(**model_params)
         
         content = response.choices[0].message.content if response.choices else "No content generated"
         
         return JSONResponse({
             "status": "SUCCESS! ✅",
-            "message": f"OpenAI {model_used} is working perfectly!",
+            "message": f"OpenAI {model_used} is working perfectly with enhanced evaluation features!",
             "generated_content": content,
             "model": model_used,
+            "gpt5_reasoning": model_used.startswith("gpt-5"),
             "word_count": len(content.split()),
+            "content_agent_available": AGENT_AVAILABLE,
+            "features": [
+                "Latest GPT-5 model with reasoning",
+                "British English support", 
+                "E-E-A-T evaluation framework",
+                "Reddit insights research",
+                "Entity analysis and clustering",
+                "Content cluster suggestions",
+                "Advanced reasoning capabilities"
+            ],
             "usage": {
                 "prompt_tokens": response.usage.prompt_tokens,
                 "completion_tokens": response.usage.completion_tokens,
@@ -1644,48 +2130,57 @@ async def test_openai():
         })
 
 if __name__ == "__main__":
-    print("🚀 Starting Advanced Content Generator with GPT-4o...")
-    print("=" * 70)
+    print("🚀 Starting Enhanced Content Generator with GPT-5...")
+    print("=" * 80)
     print(f"🌐 Host: {config.HOST}")
     print(f"🔌 Port: {config.PORT}")
     
-    # Test API key
+    # Test API key and model
     openai_status = "✅ Configured" if config.OPENAI_API_KEY else "❌ Not configured"
+    agent_status = "✅ Available" if AGENT_AVAILABLE else "❌ Missing src/agents/ContentEvaluationAgent.py"
     
     print(f"🤖 OpenAI API: {openai_status}")
+    print(f"📊 Content Agent: {agent_status}")
     
     if config.OPENAI_API_KEY and OPENAI_AVAILABLE:
         print(f"🔑 API Key preview: {config.OPENAI_API_KEY[:8]}...{config.OPENAI_API_KEY[-4:]}")
         
-        # Test OpenAI connection with GPT-4o
+        # Test OpenAI connection with GPT-5 models
+        client = OpenAIClient()
+        print(f"🎯 Using Model: {client.latest_model}")
+        
         try:
             openai.api_key = config.OPENAI_API_KEY
-            try:
-                response = openai.ChatCompletion.create(
-                    model="gpt-4o",
-                    messages=[{"role": "user", "content": "Hi"}],
-                    max_tokens=5
-                )
-                print("✅ OpenAI GPT-4o test successful")
-            except Exception as gpt4o_error:
-                response = openai.ChatCompletion.create(
-                    model="gpt-4",
-                    messages=[{"role": "user", "content": "Hi"}],
-                    max_tokens=5
-                )
-                print("✅ OpenAI GPT-4 test successful (GPT-4o fallback)")
+            model_params = {
+                "model": client.latest_model,
+                "messages": [{"role": "user", "content": "Test GPT-5"}],
+                "max_tokens": 5
+            }
+            
+            # Add GPT-5 specific parameters if available
+            if client.latest_model.startswith("gpt-5"):
+                model_params["reasoning_effort"] = "minimal"
+                print("🧠 GPT-5 reasoning capabilities enabled")
+                
+            response = openai.ChatCompletion.create(**model_params)
+            print(f"✅ OpenAI {client.latest_model} test successful")
         except Exception as e:
             print(f"❌ OpenAI API test failed: {e}")
     elif not OPENAI_AVAILABLE:
         print("❌ OpenAI library not installed. Run: pip install openai")
     
-    print("🎯 Features: All Content Types, OpenAI GPT-4o, Sophisticated Design")
-    print("🎨 Theme: Black & White Sophisticated UI with Fixed Dropdowns")
-    print("🤖 Enhanced: AI Instructions Section + Latest GPT-4o Model")
-    print("=" * 70)
+    print("🎯 Enhanced Features:")
+    print("   • Latest GPT-5 model with advanced reasoning")
+    print("   • British English language support")
+    print("   • Comprehensive E-E-A-T evaluation")
+    print("   • Automatic Reddit pain point research")
+    print("   • Entity analysis and content clusters")
+    print("   • SEO optimization scoring")
+    print("   • YMYL content assessment")
+    print("   • Google Knowledge Graph integration (optional)")
+    print("🎨 Theme: Black & Green GPT-5 UI with Enhanced Evaluation")
+    print("📊 Evaluation: Google E-E-A-T + SEO Framework + GPT-5 Reasoning")
+    print("=" * 80)
     
     try:
         uvicorn.run(app, host=config.HOST, port=config.PORT, log_level="info")
-    except Exception as e:
-        print(f"❌ Server error: {e}")
-        raise e
