@@ -1,1381 +1,1034 @@
-import os
-import sys
+import re
 import json
 import logging
-import asyncio
-from datetime import datetime
+import requests
+import os
+import openai
 from typing import Dict, List, Any, Optional
-
-# FastAPI and WebSocket imports
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-
-# Pydantic for request models
-from pydantic import BaseModel
-
-# OpenAI import with error handling
-try:
-    import openai
-    OPENAI_AVAILABLE = True
-except ImportError:
-    OPENAI_AVAILABLE = False
-    print("⚠️ openai not installed. Install with: pip install openai")
-
-# Import the content evaluation agent from src/agents/ContentEvaluationAgent
-try:
-    from src.agents.ContentEvaluationAgent import ContentEvaluationAgent, KnowledgeGraphAgent
-    AGENT_AVAILABLE = True
-except ImportError:
-    AGENT_AVAILABLE = False
-    print("⚠️ Content evaluation agent not found. Creating basic version...")
+from datetime import datetime
+import asyncio
+from flask import Flask, request, jsonify, render_template_string
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuration
-class Config:
-    OPENAI_API_KEY = os.getenv("Open_Api_Key", "") or os.getenv("OPENAI_API_KEY", "")
-    GOOGLE_KNOWLEDGE_GRAPH_API_KEY = os.getenv("GOOGLE_KG_API_KEY", "")
-    PORT = int(os.getenv("PORT", 8002))
-    HOST = os.getenv("HOST", "0.0.0.0")
-    ENVIRONMENT = os.getenv("RAILWAY_ENVIRONMENT", "development")
+# Initialize Flask app
+app = Flask(__name__)
 
-config = Config()
+class OpenAIClient:
+    """Updated OpenAI client for API v1.0.0+"""
+    
+    def __init__(self, api_key: str = None, model: str = "gpt-4", base_url: str = None):
+        # Get API key from Railway environment variable if not provided
+        if api_key is None:
+            api_key = os.getenv('Open_Api_Key')
+            if not api_key:
+                raise ValueError("OpenAI API key not found. Set Open_Api_Key environment variable.")
+        
+        # Initialize the new OpenAI client
+        self.client = openai.OpenAI(api_key=api_key, base_url=base_url)
+        self.async_client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self.model = model
+    
+    async def generate_content(self, prompt: str, max_tokens: int = 1000, temperature: float = 0.7) -> str:
+        """Generate content using the new OpenAI API format"""
+        try:
+            response = await self.async_client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_tokens,
+                temperature=temperature,
+                timeout=30.0
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            logger.error(f"OpenAI API error: {e}")
+            return "Error generating content"
+    
+    def generate_content_sync(self, prompt: str, max_tokens: int = 1000, temperature: float = 0.7) -> str:
+        """Synchronous version using the new OpenAI API format"""
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=max_tokens,
+                temperature=temperature,
+                timeout=30.0
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            logger.error(f"OpenAI API error: {e}")
+            return "Error generating content"
 
-# Content Type Configurations
-CONTENT_TYPE_CONFIGS = {
-    "article": {
-        "name": "📰 Article",
-        "description": "Informational article with detailed coverage",
-        "prompt_template": "comprehensive informational article",
-        "word_count_range": "2000-3000"
-    },
-    "blog_post": {
-        "name": "📝 Blog Post", 
-        "description": "Conversational blog post with personal touch",
-        "prompt_template": "engaging blog post",
-        "word_count_range": "1500-2500"
-    },
-    "product_page": {
-        "name": "🛍️ Product Page",
-        "description": "Product description focused on conversion",
-        "prompt_template": "compelling product page content",
-        "word_count_range": "800-1500"
-    },
-    "landing_page": {
-        "name": "🎯 Landing Page",
-        "description": "High-conversion landing page copy",
-        "prompt_template": "persuasive landing page",
-        "word_count_range": "1000-2000"
-    },
-    "guide": {
-        "name": "📚 Complete Guide",
-        "description": "Comprehensive how-to guide",
-        "prompt_template": "detailed step-by-step guide",
-        "word_count_range": "3000-5000"
-    },
-    "tutorial": {
-        "name": "🎓 Tutorial",
-        "description": "Step-by-step tutorial",
-        "prompt_template": "educational tutorial",
-        "word_count_range": "2000-3000"
-    },
-    "listicle": {
-        "name": "📋 List Article",
-        "description": "List-based article (Top 10, Best of, etc.)",
-        "prompt_template": "engaging list article",
-        "word_count_range": "1500-2500"
-    },
-    "case_study": {
-        "name": "📊 Case Study",
-        "description": "Detailed case study with results",
-        "prompt_template": "analytical case study",
-        "word_count_range": "2500-4000"
-    },
-    "review": {
-        "name": "⭐ Review",
-        "description": "Product or service review",
-        "prompt_template": "balanced and informative review",
-        "word_count_range": "1500-2500"
-    },
-    "comparison": {
-        "name": "⚖️ Comparison",
-        "description": "Compare multiple options",
-        "prompt_template": "detailed comparison analysis",
-        "word_count_range": "2000-3500"
-    }
-}
-
-# Language configurations
-LANGUAGE_CONFIGS = {
-    "british_english": {
-        "name": "🇬🇧 British English",
-        "description": "British English spelling and expressions",
-        "spelling_note": "Uses British spelling (colour, realise, centre, etc.)"
-    },
-    "american_english": {
-        "name": "🇺🇸 American English", 
-        "description": "American English spelling and expressions",
-        "spelling_note": "Uses American spelling (color, realize, center, etc.)"
-    },
-    "canadian_english": {
-        "name": "🇨🇦 Canadian English",
-        "description": "Canadian English spelling and expressions", 
-        "spelling_note": "Uses Canadian spelling (mix of British and American)"
-    },
-    "australian_english": {
-        "name": "🇦🇺 Australian English",
-        "description": "Australian English spelling and expressions",
-        "spelling_note": "Uses Australian spelling and expressions"
-    }
-}
-
-# Basic Content Evaluation Agent (if full agent not available)
-class BasicContentEvaluationAgent:
+class ContentEvaluationAgent:
+    """GPT-4 Enhanced Content Evaluation Agent"""
+    
     def __init__(self, openai_client):
         self.openai_client = openai_client
     
     async def evaluate_content(self, content: str, topic: str, content_type: str, target_audience: str) -> Dict:
-        return {
-            "overall_score": 8.5,
-            "eeat_analysis": {"experience": 8, "expertise": 8, "authoritativeness": 8, "trustworthiness": 9},
-            "content_quality": {"originality": 8, "comprehensiveness": 9, "user_value": 8, "readability": 9},
-            "seo_analysis": {"search_intent": 8, "content_structure": 9, "keyword_optimization": 8},
-            "entity_analysis": {"primary_entities": ["AI", "Content", "Marketing"], "related_entities": ["SEO", "Writing", "Strategy"]},
-            "reddit_insights": {"subreddits": ["r/marketing", "r/content"], "pain_points": ["Time consuming", "Quality consistency"]},
-            "recommendations": ["Add more examples", "Include case studies", "Improve headings"]
-        }
-    
-    async def _find_reddit_insights(self, topic: str) -> Dict:
-        return {"subreddits": [f"r/{topic.lower()}", "r/marketing"], "pain_points": ["Common challenges", "Implementation issues"]}
-
-class BasicKnowledgeGraphAgent:
-    def __init__(self, api_key: str = None):
-        self.api_key = api_key
-
-# OpenAI Client with GPT-5 Support
-class OpenAIClient:
-    def __init__(self):
-        self.client = None
-        self.api_key = None
-        # GPT-5 model hierarchy
-        self.latest_model = "gpt-5"
-        self.fallback_models = ["gpt-5-mini", "gpt-5-nano", "gpt-4o", "gpt-4-turbo", "gpt-4"]
-        self.setup_openai()
-    
-    def setup_openai(self):
-        self.api_key = config.OPENAI_API_KEY
-        logger.info(f"🔑 OpenAI API Key status: {'✅ Found' if self.api_key else '❌ Missing'}")
-        
-        if not OPENAI_AVAILABLE:
-            logger.error("❌ OpenAI library not available. Install with: pip install openai")
-            return
-        
-        if self.api_key:
-            try:
-                openai.api_key = self.api_key
-                self.client = openai
-                logger.info("✅ OpenAI client initialized successfully")
-                self._test_gpt5_models()
-            except Exception as e:
-                logger.error(f"❌ OpenAI setup failed: {e}")
-                self.client = None
-        else:
-            logger.error("❌ OPENAI_API_KEY not found in environment variables")
-    
-    def _test_gpt5_models(self):
-        """Test available GPT-5 models and set the best one"""
-        models_to_test = [self.latest_model] + self.fallback_models
-        
-        for model in models_to_test:
-            try:
-                response = openai.ChatCompletion.create(
-                    model=model,
-                    messages=[{"role": "user", "content": "Test"}],
-                    max_tokens=5
-                )
-                self.latest_model = model
-                logger.info(f"✅ Using model: {model}")
-                return
-            except Exception as e:
-                logger.warning(f"⚠️ Model {model} unavailable: {e}")
-                continue
-        
-        logger.error("❌ No models available")
-    
-    def is_configured(self):
-        return self.client is not None and self.api_key is not None
-    
-    async def generate_content(self, prompt: str, max_tokens: int = 4000):
-        if not self.is_configured():
-            self.setup_openai()
-        
-        if not self.is_configured():
-            return "❌ OpenAI client not available. Please check your API key."
-        
+        """Comprehensive content evaluation using GPT-4"""
         try:
-            model_params = {
-                "model": self.latest_model,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": max_tokens,
-                "temperature": 0.7
+            logger.info(f"Starting GPT-4 evaluation for: {topic}")
+            
+            # Parallel evaluation tasks
+            evaluation_tasks = [
+                self._evaluate_eeat(content, topic, target_audience),
+                self._evaluate_content_quality(content, topic, content_type),
+                self._evaluate_seo_factors(content, topic),
+                self._analyze_entities_and_clusters(content, topic),
+                self._find_reddit_insights(topic)
+            ]
+            
+            results = await asyncio.gather(*evaluation_tasks, return_exceptions=True)
+            
+            evaluation_report = {
+                "overall_score": 0,
+                "eeat_analysis": results[0] if not isinstance(results[0], Exception) else {},
+                "content_quality": results[1] if not isinstance(results[1], Exception) else {},
+                "seo_analysis": results[2] if not isinstance(results[2], Exception) else {},
+                "entity_analysis": results[3] if not isinstance(results[3], Exception) else {},
+                "reddit_insights": results[4] if not isinstance(results[4], Exception) else {},
+                "recommendations": [],
+                "gpt4_enhanced": True,
+                "evaluation_timestamp": datetime.now().isoformat()
             }
             
-            # Add GPT-5 specific parameters if available
-            if self.latest_model.startswith("gpt-5"):
-                model_params["reasoning_effort"] = "medium"
+            # Calculate overall score
+            evaluation_report["overall_score"] = self._calculate_overall_score(evaluation_report)
+            
+            # Generate recommendations
+            evaluation_report["recommendations"] = await self._generate_recommendations(evaluation_report, content, topic)
+            
+            logger.info(f"GPT-4 evaluation completed. Score: {evaluation_report['overall_score']}")
+            return evaluation_report
+            
+        except Exception as e:
+            logger.error(f"Evaluation error: {e}")
+            return {"error": str(e), "overall_score": 8.0}
+    
+    async def _evaluate_eeat(self, content: str, topic: str, target_audience: str) -> Dict:
+        """Evaluate E-E-A-T factors using GPT-4"""
+        
+        eeat_prompt = f"""
+        Using GPT-4's advanced reasoning, evaluate this content for Google's E-E-A-T factors:
+
+        CONTENT: {content[:2000]}...
+        TOPIC: {topic}
+        AUDIENCE: {target_audience}
+
+        Rate each factor (1-10) with reasoning:
+
+        EXPERIENCE (First-hand knowledge demonstrated):
+        - Personal anecdotes or case studies present?
+        - Practical examples from real usage?
+        - Behind-the-scenes insights shown?
+
+        EXPERTISE (Deep knowledge demonstrated):
+        - Technical accuracy and depth?
+        - Industry-specific knowledge?
+        - Advanced concepts explained clearly?
+
+        AUTHORITATIVENESS (Authority established):
+        - Author credentials mentioned or implied?
+        - Quality sources referenced?
+        - Industry recognition shown?
+
+        TRUSTWORTHINESS (Trust signals present):
+        - Transparent sourcing?
+        - Balanced perspective?
+        - Honest communication?
+
+        Provide scores (1-10) for each factor.
+        """
+        
+        try:
+            response = await self.openai_client.generate_content(eeat_prompt, max_tokens=800)
+            return self._parse_eeat_response(response)
+        except Exception as e:
+            logger.error(f"E-E-A-T evaluation error: {e}")
+            return {"experience": 8, "expertise": 8, "authoritativeness": 8, "trustworthiness": 8}
+    
+    async def _evaluate_content_quality(self, content: str, topic: str, content_type: str) -> Dict:
+        """Evaluate content quality using GPT-4"""
+        
+        quality_prompt = f"""
+        Using GPT-4 reasoning, evaluate this {content_type} about "{topic}" for quality:
+
+        CONTENT: {content[:2000]}...
+
+        Rate each factor (1-10):
+
+        ORIGINALITY:
+        - Unique insights or perspective?
+        - Novel angle on the topic?
+        - Avoids generic information?
+
+        COMPREHENSIVENESS:
+        - Complete topic coverage?
+        - Multiple angles addressed?
+        - Actionable information provided?
+
+        USER VALUE:
+        - Solves real problems?
+        - Provides actionable advice?
+        - Clear takeaways present?
+
+        READABILITY:
+        - Clear structure with headings?
+        - Appropriate language level?
+        - Logical flow and transitions?
+
+        Provide scores (1-10) for each factor.
+        """
+        
+        try:
+            response = await self.openai_client.generate_content(quality_prompt, max_tokens=800)
+            return self._parse_quality_response(response)
+        except Exception as e:
+            logger.error(f"Quality evaluation error: {e}")
+            return {"originality": 8, "comprehensiveness": 8, "user_value": 8, "readability": 8}
+    
+    async def _evaluate_seo_factors(self, content: str, topic: str) -> Dict:
+        """Evaluate SEO factors using GPT-4"""
+        
+        seo_prompt = f"""
+        Use GPT-4 to analyze this content for SEO quality:
+
+        TOPIC: {topic}
+        CONTENT: {content[:2000]}...
+
+        Rate these SEO factors (1-10):
+
+        SEARCH INTENT ALIGNMENT:
+        - Matches what users search for?
+        - Answers user questions?
+        - Covers related topics?
+
+        CONTENT STRUCTURE:
+        - Proper heading hierarchy?
+        - Scannable format?
+        - Logical organization?
+
+        KEYWORD OPTIMIZATION:
+        - Natural keyword usage?
+        - Semantic relevance?
+        - Long-tail coverage?
+
+        Provide scores (1-10) for each factor.
+        """
+        
+        try:
+            response = await self.openai_client.generate_content(seo_prompt, max_tokens=600)
+            return self._parse_seo_response(response)
+        except Exception as e:
+            logger.error(f"SEO evaluation error: {e}")
+            return {"search_intent": 8, "content_structure": 8, "keyword_optimization": 8}
+    
+    async def _analyze_entities_and_clusters(self, content: str, topic: str) -> Dict:
+        """Analyze entities and content clusters using GPT-4"""
+        
+        entity_prompt = f"""
+        Use GPT-4 to analyze entities and content opportunities:
+
+        TOPIC: {topic}
+        CONTENT: {content[:2000]}...
+
+        Identify:
+
+        PRIMARY ENTITIES:
+        - Main concepts, people, products mentioned
+        - Key terms and important concepts
+        - Technologies or methodologies discussed
+
+        RELATED ENTITIES:
+        - Connected concepts for separate content
+        - Subtopics deserving dedicated pieces
+        - Supporting concepts that enhance understanding
+
+        CONTENT CLUSTERS:
+        - What pillar topics could this support?
+        - What cluster topics are missing?
+        - How does this connect to other content?
+
+        CLUSTER OPPORTUNITIES:
+        - Specific content pieces to create
+        - Content calendar suggestions
+        - Linking strategy between pieces
+
+        Provide structured analysis.
+        """
+        
+        try:
+            response = await self.openai_client.generate_content(entity_prompt, max_tokens=1000)
+            return self._parse_entity_response(response)
+        except Exception as e:
+            logger.error(f"Entity analysis error: {e}")
+            return {"primary_entities": [], "related_entities": [], "cluster_opportunities": []}
+    
+    async def _find_reddit_insights(self, topic: str) -> Dict:
+        """Use GPT-4 to identify Reddit communities and pain points"""
+        
+        reddit_prompt = f"""
+        Use GPT-4's knowledge to identify Reddit insights for "{topic}":
+
+        RELEVANT SUBREDDITS:
+        - Which subreddits discuss "{topic}" most actively?
+        - What communities have quality discussions?
+        - Any specialized communities relevant?
+
+        COMMON PAIN POINTS:
+        - What problems do people discuss about "{topic}"?
+        - What challenges are frequently mentioned?
+        - What solutions are people seeking?
+
+        CONTENT OPPORTUNITIES:
+        - What angles are underserved?
+        - What problems need better content?
+        - What questions come up repeatedly?
+
+        DISCUSSION THEMES:
+        - Common debate topics
+        - Frequent challenges mentioned
+        - Popular success stories
+
+        Provide actionable insights.
+        """
+        
+        try:
+            response = await self.openai_client.generate_content(reddit_prompt, max_tokens=800)
+            return self._parse_reddit_response(response)
+        except Exception as e:
+            logger.error(f"Reddit insights error: {e}")
+            return {"subreddits": [], "pain_points": [], "content_opportunities": []}
+    
+    def _calculate_overall_score(self, evaluation: Dict) -> float:
+        """Calculate weighted overall score"""
+        try:
+            scores = []
+            weights = []
+            
+            # E-E-A-T scores (40% weight)
+            eeat = evaluation.get("eeat_analysis", {})
+            if eeat:
+                eeat_score = (
+                    eeat.get("experience", 8) * 0.25 +
+                    eeat.get("expertise", 8) * 0.25 +
+                    eeat.get("authoritativeness", 8) * 0.25 +
+                    eeat.get("trustworthiness", 8) * 0.25
+                )
+                scores.append(eeat_score)
+                weights.append(0.4)
+            
+            # Content quality (35% weight)
+            quality = evaluation.get("content_quality", {})
+            if quality:
+                quality_score = (
+                    quality.get("originality", 8) * 0.25 +
+                    quality.get("comprehensiveness", 8) * 0.25 +
+                    quality.get("user_value", 8) * 0.25 +
+                    quality.get("readability", 8) * 0.25
+                )
+                scores.append(quality_score)
+                weights.append(0.35)
+            
+            # SEO factors (25% weight)
+            seo = evaluation.get("seo_analysis", {})
+            if seo:
+                seo_score = (
+                    seo.get("search_intent", 8) * 0.4 +
+                    seo.get("content_structure", 8) * 0.3 +
+                    seo.get("keyword_optimization", 8) * 0.3
+                )
+                scores.append(seo_score)
+                weights.append(0.25)
+            
+            if not scores:
+                return 8.0
+            
+            # Calculate weighted average
+            total_weight = sum(weights)
+            if total_weight > 0:
+                weighted_score = sum(score * weight for score, weight in zip(scores, weights)) / total_weight
+                return round(weighted_score, 1)
+            
+            return 8.0
+            
+        except Exception as e:
+            logger.error(f"Score calculation error: {e}")
+            return 8.0
+    
+    async def _generate_recommendations(self, evaluation: Dict, content: str, topic: str) -> List[str]:
+        """Generate recommendations using GPT-4"""
+        
+        recommendations_prompt = f"""
+        Use GPT-4 to generate specific recommendations for this content:
+
+        TOPIC: {topic}
+        OVERALL SCORE: {evaluation.get('overall_score', 8)}
+
+        EVALUATION RESULTS:
+        - E-E-A-T: {evaluation.get('eeat_analysis', {})}
+        - Quality: {evaluation.get('content_quality', {})}
+        - SEO: {evaluation.get('seo_analysis', {})}
+
+        Generate 8-10 specific, actionable recommendations to improve this content:
+
+        Focus on:
+        - Lowest-scoring areas first
+        - Highest-impact improvements
+        - Practical implementation
+        - Both content and technical aspects
+
+        Provide specific recommendations.
+        """
+        
+        try:
+            response = await self.openai_client.generate_content(recommendations_prompt, max_tokens=600)
+            return self._parse_recommendations(response)
+        except Exception as e:
+            logger.error(f"Recommendations error: {e}")
+            return ["Add more examples and case studies", "Improve heading structure", "Include more actionable advice"]
+    
+    def _parse_eeat_response(self, response: str) -> Dict:
+        """Parse E-E-A-T scores from response"""
+        try:
+            scores = {}
+            factors = ["experience", "expertise", "authoritativeness", "trustworthiness"]
+            
+            for factor in factors:
+                patterns = [
+                    rf"{factor}.*?(\d+(?:\.\d+)?)",
+                    rf"{factor}.*?score.*?(\d+(?:\.\d+)?)",
+                ]
                 
-            response = openai.ChatCompletion.create(**model_params)
-            content = response.choices[0].message.content if response.choices else "No content generated"
-            logger.info(f"✅ Content generated with {self.latest_model}: {len(content)} characters")
-            return content
+                score_found = False
+                for pattern in patterns:
+                    match = re.search(pattern, response, re.IGNORECASE)
+                    if match:
+                        score = float(match.group(1))
+                        scores[factor] = max(1.0, min(10.0, score))
+                        score_found = True
+                        break
+                
+                if not score_found:
+                    scores[factor] = 8.0
             
+            return scores
         except Exception as e:
-            error_msg = f"❌ AI Generation Error: {str(e)}"
-            logger.error(error_msg)
-            return error_msg
+            logger.error(f"E-E-A-T parsing error: {e}")
+            return {"experience": 8, "expertise": 8, "authoritativeness": 8, "trustworthiness": 8}
+    
+    def _parse_quality_response(self, response: str) -> Dict:
+        """Parse quality scores from response"""
+        try:
+            scores = {}
+            factors = ["originality", "comprehensiveness", "user_value", "readability"]
+            
+            for factor in factors:
+                patterns = [
+                    rf"{factor}.*?(\d+(?:\.\d+)?)",
+                    rf"{factor}.*?score.*?(\d+(?:\.\d+)?)",
+                ]
+                
+                score_found = False
+                for pattern in patterns:
+                    match = re.search(pattern, response, re.IGNORECASE)
+                    if match:
+                        score = float(match.group(1))
+                        scores[factor] = max(1.0, min(10.0, score))
+                        score_found = True
+                        break
+                
+                if not score_found:
+                    scores[factor] = 8.0
+            
+            return scores
+        except Exception as e:
+            logger.error(f"Quality parsing error: {e}")
+            return {"originality": 8, "comprehensiveness": 8, "user_value": 8, "readability": 8}
+    
+    def _parse_seo_response(self, response: str) -> Dict:
+        """Parse SEO scores from response"""
+        try:
+            scores = {}
+            factors = ["search_intent", "content_structure", "keyword_optimization"]
+            
+            for factor in factors:
+                factor_clean = factor.replace('_', '[ _-]')
+                patterns = [
+                    rf"{factor_clean}.*?(\d+(?:\.\d+)?)",
+                    rf"{factor_clean}.*?score.*?(\d+(?:\.\d+)?)",
+                ]
+                
+                score_found = False
+                for pattern in patterns:
+                    match = re.search(pattern, response, re.IGNORECASE)
+                    if match:
+                        score = float(match.group(1))
+                        scores[factor] = max(1.0, min(10.0, score))
+                        score_found = True
+                        break
+                
+                if not score_found:
+                    scores[factor] = 8.0
+            
+            return scores
+        except Exception as e:
+            logger.error(f"SEO parsing error: {e}")
+            return {"search_intent": 8, "content_structure": 8, "keyword_optimization": 8}
+    
+    def _parse_entity_response(self, response: str) -> Dict:
+        """Parse entity analysis from response"""
+        try:
+            return {
+                "primary_entities": self._extract_list_from_response(response, "primary entities"),
+                "related_entities": self._extract_list_from_response(response, "related entities"),
+                "cluster_opportunities": self._extract_list_from_response(response, "cluster opportunities"),
+                "content_calendar": self._extract_list_from_response(response, "content calendar")
+            }
+        except Exception as e:
+            logger.error(f"Entity parsing error: {e}")
+            return {"primary_entities": [], "related_entities": [], "cluster_opportunities": []}
+    
+    def _parse_reddit_response(self, response: str) -> Dict:
+        """Parse Reddit insights from response"""
+        try:
+            return {
+                "subreddits": self._extract_list_from_response(response, "subreddits"),
+                "pain_points": self._extract_list_from_response(response, "pain points"),
+                "content_opportunities": self._extract_list_from_response(response, "content opportunities"),
+                "discussion_themes": self._extract_list_from_response(response, "discussion themes")
+            }
+        except Exception as e:
+            logger.error(f"Reddit parsing error: {e}")
+            return {"subreddits": [], "pain_points": [], "content_opportunities": []}
+    
+    def _parse_recommendations(self, response: str) -> List[str]:
+        """Parse recommendations from response"""
+        try:
+            recommendations = []
+            lines = response.split('\n')
+            
+            for line in lines:
+                line = line.strip()
+                if re.match(r'^\d+\.', line):
+                    recommendations.append(line)
+                elif line.startswith(('-', '•', '*')):
+                    recommendations.append(line[1:].strip())
+                elif len(line) > 20 and any(word in line.lower() for word in ['add', 'include', 'improve', 'enhance', 'optimize']):
+                    recommendations.append(line)
+            
+            cleaned_recommendations = []
+            for rec in recommendations[:10]:
+                if len(rec) > 10:
+                    cleaned_recommendations.append(rec)
+            
+            return cleaned_recommendations if cleaned_recommendations else [
+                "Add more specific examples and case studies",
+                "Improve heading structure and readability", 
+                "Include more actionable advice for readers"
+            ]
+        except Exception as e:
+            logger.error(f"Recommendations parsing error: {e}")
+            return ["Review content for improvement opportunities"]
+    
+    def _extract_list_from_response(self, response: str, section_name: str) -> List[str]:
+        """Extract lists from response based on section name"""
+        try:
+            items = []
+            lines = response.split('\n')
+            in_section = False
+            
+            for line in lines:
+                line = line.strip()
+                if section_name.lower() in line.lower():
+                    in_section = True
+                    continue
+                
+                if in_section:
+                    if line.startswith(('-', '•', '*')):
+                        item = line[1:].strip()
+                        if item:
+                            items.append(item)
+                    elif re.match(r'^\d+\.', line):
+                        item = line.split('.', 1)[1].strip()
+                        if item:
+                            items.append(item)
+                    elif line and line[0].isupper() and len(line) > 5:
+                        if ':' in line and len(items) > 0:
+                            break
+                        items.append(line)
+            
+            return items[:15]  # Limit to 15 items
+        except Exception as e:
+            logger.error(f"List extraction error: {e}")
+            return []
 
-# WebSocket Manager
-class ConnectionManager:
-    def __init__(self):
-        self.active_connections: Dict[str, WebSocket] = {}
+class KnowledgeGraphAgent:
+    """Google Knowledge Graph integration"""
     
-    async def connect(self, websocket: WebSocket, session_id: str):
-        await websocket.accept()
-        self.active_connections[session_id] = websocket
-        logger.info(f"✅ WebSocket connected: {session_id}")
-        return True
+    def __init__(self, api_key: str = None):
+        self.api_key = api_key
+        self.base_url = "https://kgsearch.googleapis.com/v1/entities:search"
     
-    def disconnect(self, session_id: str):
-        if session_id in self.active_connections:
-            del self.active_connections[session_id]
-            logger.info(f"❌ WebSocket disconnected: {session_id}")
-    
-    async def send_message(self, session_id: str, message: dict):
-        if session_id in self.active_connections:
-            try:
-                await self.active_connections[session_id].send_text(json.dumps(message))
-                return True
-            except Exception as e:
-                logger.error(f"❌ Send error: {e}")
-                self.disconnect(session_id)
-                return False
-        return False
-
-# Content System
-class ContentSystem:
-    def __init__(self):
-        self.ai_client = OpenAIClient()
-        self.sessions = {}
-        
-        # Initialize evaluation agent
-        if AGENT_AVAILABLE:
-            self.evaluation_agent = ContentEvaluationAgent(self.ai_client)
-            self.knowledge_graph_agent = KnowledgeGraphAgent(config.GOOGLE_KNOWLEDGE_GRAPH_API_KEY)
-        else:
-            self.evaluation_agent = BasicContentEvaluationAgent(self.ai_client)
-            self.knowledge_graph_agent = BasicKnowledgeGraphAgent(config.GOOGLE_KNOWLEDGE_GRAPH_API_KEY)
-    
-    async def generate_content_with_progress(self, form_data: Dict, session_id: str):
-        self.sessions[session_id] = {
-            'session_id': session_id,
-            'form_data': form_data,
-            'content': '',
-            'evaluation': {},
-            'timestamp': datetime.now().isoformat()
-        }
+    async def get_entity_connections(self, entities: List[str]) -> Dict:
+        """Get entity connections from Google Knowledge Graph"""
+        if not self.api_key:
+            return {
+                "entity_connections": [],
+                "related_topics": [],
+                "error": "No Google Knowledge Graph API key provided"
+            }
         
         try:
-            # Step 1: Initialize
-            await manager.send_message(session_id, {
-                'type': 'progress_update',
-                'step': 1,
-                'total': 6,
-                'title': 'Initializing',
-                'message': f'🚀 Starting {form_data["content_type"]} generation with GPT-5'
-            })
-            await asyncio.sleep(0.5)
+            all_entities = []
+            for entity in entities[:3]:  # Limit to avoid rate limiting
+                response = await self._search_entity(entity)
+                if response.get('entities'):
+                    all_entities.extend(response['entities'])
             
-            # Step 2: Reddit Research
-            await manager.send_message(session_id, {
-                'type': 'progress_update',
-                'step': 2,
-                'total': 6,
-                'title': 'Reddit Research',
-                'message': '🔍 Researching pain points from Reddit communities...'
-            })
-            
-            reddit_insights = await self._research_reddit_insights(form_data["topic"])
-            await asyncio.sleep(1)
-            
-            # Step 3: Content Generation
-            await manager.send_message(session_id, {
-                'type': 'progress_update',
-                'step': 3,
-                'total': 6,
-                'title': 'GPT-5 Generation',
-                'message': f'🤖 Generating content with {self.ai_client.latest_model}...'
-            })
-            
-            content = await self._generate_ai_content(form_data, reddit_insights)
-            self.sessions[session_id]['content'] = content
-            
-            # Step 4: Content Evaluation
-            await manager.send_message(session_id, {
-                'type': 'progress_update',
-                'step': 4,
-                'total': 6,
-                'title': 'Content Evaluation',
-                'message': '📊 Evaluating content with E-E-A-T framework...'
-            })
-            
-            evaluation = await self._evaluate_content(content, form_data)
-            self.sessions[session_id]['evaluation'] = evaluation
-            
-            # Step 5: Entity Analysis
-            await manager.send_message(session_id, {
-                'type': 'progress_update',
-                'step': 5,
-                'total': 6,
-                'title': 'Entity Analysis',
-                'message': '🔗 Analyzing entities and content clusters...'
-            })
-            await asyncio.sleep(1)
-            
-            # Step 6: Complete
-            await manager.send_message(session_id, {
-                'type': 'progress_update',
-                'step': 6,
-                'total': 6,
-                'title': 'Complete',
-                'message': '🎉 GPT-5 content generation completed!'
-            })
-            
-            # Send final result
-            await manager.send_message(session_id, {
-                'type': 'generation_complete',
-                'content': content,
-                'content_type': form_data['content_type'],
-                'evaluation': evaluation,
-                'metrics': {
-                    'word_count': len(content.split()),
-                    'reading_time': max(1, len(content.split()) // 200),
-                    'quality_score': evaluation.get('overall_score', 8.5),
-                    'ai_generated': not content.startswith("❌"),
-                    'model_used': self.ai_client.latest_model,
-                    'language': form_data.get('language', 'british_english'),
-                    'evaluation_timestamp': datetime.now().isoformat()
-                }
-            })
-            
+            return {
+                "entity_connections": all_entities,
+                "related_topics": self._extract_related_topics(all_entities)
+            }
         except Exception as e:
-            logger.error(f"Generation error: {e}")
-            await manager.send_message(session_id, {
-                'type': 'generation_error',
-                'error': str(e)
-            })
+            logger.error(f"Knowledge Graph error: {e}")
+            return {"entity_connections": [], "error": str(e)}
     
-    async def _research_reddit_insights(self, topic: str) -> Dict:
+    async def _search_entity(self, query: str) -> Dict:
+        """Search for entity in Knowledge Graph"""
+        if not self.api_key:
+            return {"entities": []}
+        
         try:
-            return await self.evaluation_agent._find_reddit_insights(topic)
+            params = {
+                'query': query,
+                'key': self.api_key,
+                'limit': 3,
+                'indent': True
+            }
+            
+            response = requests.get(self.base_url, params=params, timeout=10)
+            response.raise_for_status()
+            
+            data = response.json()
+            entities = []
+            
+            for item in data.get('itemListElement', []):
+                entity = item.get('result', {})
+                entities.append({
+                    'name': entity.get('name', ''),
+                    'description': entity.get('description', ''),
+                    'types': entity.get('@type', []),
+                    'score': item.get('resultScore', 0)
+                })
+            
+            return {"entities": entities}
         except Exception as e:
-            logger.error(f"Reddit research error: {e}")
-            return {}
+            logger.error(f"Entity search error: {e}")
+            return {"entities": []}
     
-    async def _evaluate_content(self, content: str, form_data: Dict) -> Dict:
-        try:
-            return await self.evaluation_agent.evaluate_content(
-                content=content,
-                topic=form_data['topic'],
-                content_type=form_data['content_type'],
-                target_audience=form_data.get('target_audience', 'general audience')
-            )
-        except Exception as e:
-            logger.error(f"Content evaluation error: {e}")
-            return {}
-    
-    async def _generate_ai_content(self, form_data: Dict, reddit_insights: Dict) -> str:
-        content_type = form_data['content_type']
-        topic = form_data['topic']
-        audience = form_data.get('target_audience', 'readers')
-        pain_points = form_data.get('customer_pain_points', '')
-        usps = form_data.get('unique_selling_points', '')
-        keywords = form_data.get('required_keywords', '')
-        cta = form_data.get('call_to_action', '')
-        tone = form_data.get('tone', 'professional')
-        ai_instructions = form_data.get('ai_instructions', '')
-        industry = form_data.get('industry', '')
-        language = form_data.get('language', 'british_english')
+    def _extract_related_topics(self, entities: List[Dict]) -> List[str]:
+        """Extract related topics from entity data"""
+        topics = set()
+        for entity in entities:
+            description = entity.get('description', '')
+            if description:
+                words = description.split()
+                for word in words:
+                    if len(word) > 4 and word.isalpha():
+                        topics.add(word.title())
         
-        content_config = CONTENT_TYPE_CONFIGS.get(content_type, {})
-        content_template = content_config.get('prompt_template', content_type)
-        word_count_range = content_config.get('word_count_range', '2000-3000')
+        return list(topics)[:15]
+
+def create_evaluation_agent():
+    """Create and return a ContentEvaluationAgent instance"""
+    try:
+        # Create OpenAI client - automatically uses Open_Api_Key from Railway
+        openai_client = OpenAIClient(model="gpt-4")  # or "gpt-3.5-turbo" for lower cost
         
-        language_config = LANGUAGE_CONFIGS.get(language, LANGUAGE_CONFIGS['british_english'])
+        # Create evaluation agent
+        evaluation_agent = ContentEvaluationAgent(openai_client)
         
-        # Incorporate Reddit insights
-        reddit_pain_points = ""
-        if reddit_insights.get('pain_points'):
-            reddit_pain_points = f"\n\nREDDIT INSIGHTS:\n"
-            for pain_point in reddit_insights.get('pain_points', [])[:3]:
-                reddit_pain_points += f"- {pain_point}\n"
-        
-        prompt = f"""You are an expert content writer using {self.ai_client.latest_model} with advanced reasoning. Create a {content_template} about "{topic}" for {audience}.
+        return evaluation_agent
+    except Exception as e:
+        logger.error(f"Failed to create evaluation agent: {e}")
+        return None
 
-CONTENT SPECIFICATIONS:
-- Content Type: {content_type.replace('_', ' ').title()}
-- Target Audience: {audience}
-- Tone: {tone}
-- Industry: {industry}
-- Word Count: {word_count_range}
-- Language: {language_config['name']} ({language_config['spelling_note']})
-
-CONTENT REQUIREMENTS:
-{f"PAIN POINTS TO ADDRESS: {pain_points}" if pain_points else ""}
-{f"UNIQUE SELLING POINTS: {usps}" if usps else ""}
-{f"KEYWORDS TO INCLUDE: {keywords}" if keywords else ""}
-{f"CALL-TO-ACTION: {cta}" if cta else ""}
-{reddit_pain_points}
-
-AI INSTRUCTIONS:
-{ai_instructions if ai_instructions else "Create engaging, valuable content with actionable insights."}
-
-E-E-A-T OPTIMIZATION:
-1. EXPERIENCE: Include practical examples and real-world applications
-2. EXPERTISE: Demonstrate deep knowledge with accurate information
-3. AUTHORITATIVENESS: Reference credible sources and establish authority
-4. TRUSTWORTHINESS: Use transparent sourcing and balanced perspectives
-
-STRUCTURE REQUIREMENTS:
-1. Compelling headline
-2. Engaging introduction (hook within 50 words)
-3. Clear headings and subheadings
-4. Actionable insights and advice
-5. Address audience pain points
-6. Use {language_config['spelling_note']}
-7. Strong conclusion with clear takeaways
-
-Write the complete {content_type.replace('_', ' ')} now:"""
-
-        try:
-            logger.info(f"🤖 Generating content for {content_type}: {topic}")
-            content = await self.ai_client.generate_content(prompt, max_tokens=4000)
-            logger.info(f"✅ Content generation completed. Length: {len(content)} characters")
-            return content
-        except Exception as e:
-            logger.error(f"AI generation failed: {e}")
-            return self._generate_fallback_content(form_data)
-    
-    def _generate_fallback_content(self, form_data: Dict) -> str:
-        topic = form_data['topic']
-        content_type = form_data['content_type']
-        audience = form_data.get('target_audience', 'readers')
-        
-        return f"""# {topic}: A Comprehensive {content_type.replace('_', ' ').title()}
-
-## Introduction
-
-This {content_type.replace('_', ' ')} provides valuable insights about {topic} for {audience}. Our goal is to deliver actionable information that helps you achieve your objectives.
-
-## Understanding {topic}
-
-{topic} has become increasingly important in today's landscape. Understanding the key aspects can make a significant difference in your success.
-
-## Key Benefits and Considerations
-
-When exploring {topic}, consider these essential factors:
-
-### Quality and Reliability
-Focus on proven solutions with strong track records and positive feedback.
-
-### Implementation Strategy
-Choose approaches that align with your current capabilities and resources.
-
-## Best Practices
-
-To maximise success with {topic}:
-- Stay informed about industry trends
-- Focus on sustainable, long-term approaches
-- Continuously adapt and improve your methods
-
-## Conclusion
-
-Success with {topic} comes from understanding your specific needs and implementing proven strategies. By following the guidance in this {content_type.replace('_', ' ')}, you'll be better positioned to achieve your goals.
-
----
-*Generated with GPT-5 Content Generator*"""
-
-# Initialize FastAPI
-app = FastAPI(title="GPT-5 Content Generator")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"]
-)
-
-# Initialize components
-manager = ConnectionManager()
-content_system = ContentSystem()
-
-# Routes
-@app.get("/", response_class=HTMLResponse)
-async def home():
-    return HTMLResponse(content=generate_form_html())
-
-@app.get("/generate", response_class=HTMLResponse)
-async def generate_page():
-    return HTMLResponse(content=generate_generator_html())
-
-def generate_form_html():
-    # Generate options
-    content_type_options = ""
-    for key, config in CONTENT_TYPE_CONFIGS.items():
-        content_type_options += f'<option value="{key}">{config["name"]} - {config["description"]}</option>\n'
-    
-    language_options = ""
-    for key, config in LANGUAGE_CONFIGS.items():
-        selected = 'selected' if key == 'british_english' else ''
-        language_options += f'<option value="{key}" {selected}>{config["name"]}</option>\n'
-    
-    return f'''
+# HTML Template with Enhanced SEO Input Fields
+HTML_TEMPLATE = """
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>GPT-5 Content Generator</title>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SEO Content Evaluation Tool</title>
     <style>
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{ 
-            font-family: 'Inter', -apple-system, sans-serif; 
-            background: linear-gradient(135deg, #000 0%, #1a1a1a 100%);
-            color: #fff; min-height: 100vh; padding: 2rem;
-        }}
-        .container {{ max-width: 800px; margin: 0 auto; }}
-        .header {{ text-align: center; margin-bottom: 3rem; }}
-        .header h1 {{ font-size: 3rem; font-weight: 800; margin-bottom: 1rem;
-            background: linear-gradient(135deg, #10b981, #059669); 
-            background-clip: text; -webkit-background-clip: text; 
-            -webkit-text-fill-color: transparent; }}
-        .header p {{ font-size: 1.2rem; color: #aaa; margin-bottom: 2rem; }}
-        .badge {{ display: inline-flex; align-items: center; gap: 0.5rem;
-            background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.3);
-            color: #10b981; padding: 0.5rem 1rem; border-radius: 2rem; font-weight: 600; }}
-        .form-section {{ background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 1rem; 
-            padding: 2rem; margin-bottom: 2rem; }}
-        .form-section h3 {{ color: #fff; margin-bottom: 1.5rem; font-size: 1.3rem; 
-            display: flex; align-items: center; gap: 0.5rem; }}
-        .form-group {{ margin-bottom: 1.5rem; }}
-        .label {{ display: block; font-weight: 600; margin-bottom: 0.5rem; color: #fff; }}
-        .required {{ color: #ef4444; }}
-        .input, .textarea, .select {{ width: 100%; padding: 1rem; 
-            background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 0.5rem; font-size: 1rem; color: #fff; font-family: inherit; }}
-        .input::placeholder, .textarea::placeholder {{ color: #888; }}
-        .select option {{ background: #1a1a1a; color: #fff; }}
-        .input:focus, .textarea:focus, .select:focus {{ outline: none; 
-            border-color: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1); }}
-        .textarea {{ resize: vertical; min-height: 100px; }}
-        .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }}
-        .help-text {{ font-size: 0.9rem; color: #aaa; margin-top: 0.5rem; }}
-        .button {{ background: linear-gradient(135deg, #10b981, #059669); color: #fff;
-            padding: 1rem 2rem; border: none; border-radius: 0.5rem; font-size: 1.1rem;
-            font-weight: 700; cursor: pointer; width: 100%; margin-top: 1rem; }}
-        .button:hover {{ transform: translateY(-2px); }}
-        @media (max-width: 768px) {{ .grid {{ grid-template-columns: 1fr; }} }}
+        body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
+        .container { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; text-align: center; margin-bottom: 30px; }
+        .form-group { margin-bottom: 20px; }
+        .form-row { display: flex; gap: 15px; margin-bottom: 20px; }
+        .form-col { flex: 1; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; color: #555; }
+        input, textarea, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px; }
+        textarea { height: 120px; resize: vertical; }
+        #content { height: 200px; }
+        button { background: #007cba; color: white; padding: 12px 24px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; width: 100%; }
+        button:hover { background: #005a87; }
+        .results { margin-top: 30px; padding: 20px; background: #f9f9f9; border-radius: 5px; }
+        .score { font-size: 24px; font-weight: bold; color: #007cba; }
+        .section { margin: 20px 0; padding: 15px; background: white; border-radius: 5px; border-left: 4px solid #007cba; }
+        .loading { display: none; text-align: center; padding: 20px; }
+        .metric { display: inline-block; margin: 10px; padding: 10px; background: #e7f3ff; border-radius: 5px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <h1>GPT-5 Content Generator</h1>
-            <p>Advanced content creation powered by OpenAI GPT-5</p>
-            <div class="badge">
-                <span>🧠</span>
-                <span>GPT-5 Reasoning Active</span>
-            </div>
-        </div>
+        <h1>🚀 Advanced SEO Content Evaluation Tool</h1>
         
-        <form id="contentForm">
-            <div class="form-section">
-                <h3>📝 Content Specifications</h3>
-                
-                <div class="form-group">
-                    <label class="label">Topic <span class="required">*</span></label>
-                    <input class="input" type="text" name="topic" placeholder="e.g., Advanced marketing automation strategies" required>
-                    <div class="help-text">Be specific about your topic</div>
+        <form id="evaluationForm">
+            <div class="form-row">
+                <div class="form-col">
+                    <label for="topic">Primary Topic/Keyword:</label>
+                    <input type="text" id="topic" name="topic" required placeholder="e.g., AI in Healthcare 2024">
                 </div>
-                
-                <div class="grid">
-                    <div class="form-group">
-                        <label class="label">Content Type <span class="required">*</span></label>
-                        <select class="select" name="content_type" required>
-                            {content_type_options}
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="label">Target Audience <span class="required">*</span></label>
-                        <input class="input" type="text" name="target_audience" placeholder="e.g., Marketing directors" required>
-                    </div>
-                </div>
-                
-                <div class="grid">
-                    <div class="form-group">
-                        <label class="label">Tone</label>
-                        <select class="select" name="tone">
-                            <option value="professional">Professional</option>
-                            <option value="conversational">Conversational</option>
-                            <option value="authoritative">Authoritative</option>
-                            <option value="friendly">Friendly</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="label">Language</label>
-                        <select class="select" name="language">
-                            {language_options}
-                        </select>
-                    </div>
+                <div class="form-col">
+                    <label for="content_type">Content Type:</label>
+                    <select id="content_type" name="content_type" required>
+                        <option value="">Select Content Type</option>
+                        <option value="blog post">Blog Post</option>
+                        <option value="landing page">Landing Page</option>
+                        <option value="product page">Product Page</option>
+                        <option value="case study">Case Study</option>
+                        <option value="white paper">White Paper</option>
+                        <option value="email marketing">Email Marketing</option>
+                        <option value="social media post">Social Media Post</option>
+                        <option value="sales copy">Sales Copy</option>
+                        <option value="technical documentation">Technical Documentation</option>
+                    </select>
                 </div>
             </div>
-            
-            <div class="form-section">
-                <h3>🎯 Content Elements</h3>
-                
-                <div class="form-group">
-                    <label class="label">Customer Pain Points</label>
-                    <textarea class="textarea" name="customer_pain_points" placeholder="e.g., High costs, complex implementation"></textarea>
-                    <div class="help-text">GPT-5 will research additional pain points from Reddit</div>
+
+            <div class="form-row">
+                <div class="form-col">
+                    <label for="target_audience">Target Audience:</label>
+                    <select id="target_audience" name="target_audience" required>
+                        <option value="">Select Target Audience</option>
+                        <option value="business executives">Business Executives</option>
+                        <option value="marketing professionals">Marketing Professionals</option>
+                        <option value="technical professionals">Technical Professionals</option>
+                        <option value="small business owners">Small Business Owners</option>
+                        <option value="consumers">General Consumers</option>
+                        <option value="students">Students/Academics</option>
+                        <option value="healthcare professionals">Healthcare Professionals</option>
+                        <option value="financial professionals">Financial Professionals</option>
+                        <option value="entrepreneurs">Entrepreneurs</option>
+                        <option value="developers">Developers/Engineers</option>
+                    </select>
                 </div>
-                
-                <div class="form-group">
-                    <label class="label">Unique Value Propositions</label>
-                    <textarea class="textarea" name="unique_selling_points" placeholder="e.g., 10+ years experience, proven results"></textarea>
-                </div>
-                
-                <div class="grid">
-                    <div class="form-group">
-                        <label class="label">Keywords</label>
-                        <input class="input" type="text" name="required_keywords" placeholder="e.g., automation, efficiency">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="label">Call-to-Action</label>
-                        <input class="input" type="text" name="call_to_action" placeholder="e.g., Schedule consultation">
-                    </div>
-                </div>
-            </div>
-            
-            <div class="form-section">
-                <h3>🤖 AI Instructions</h3>
-                
-                <div class="form-group">
-                    <label class="label">Custom Instructions</label>
-                    <textarea class="textarea" name="ai_instructions" placeholder="e.g., Include specific examples, use data points, write in first person"></textarea>
-                    <div class="help-text">Guide GPT-5's reasoning and writing style</div>
+                <div class="form-col">
+                    <label for="search_intent">Primary Search Intent:</label>
+                    <select id="search_intent" name="search_intent" required>
+                        <option value="">Select Search Intent</option>
+                        <option value="informational">Informational (Learn/Research)</option>
+                        <option value="navigational">Navigational (Find Specific Site)</option>
+                        <option value="commercial">Commercial Investigation (Compare/Review)</option>
+                        <option value="transactional">Transactional (Buy/Download)</option>
+                        <option value="local">Local (Find Near Me)</option>
+                    </select>
                 </div>
             </div>
-            
-            <button type="submit" class="button">
-                Generate Premium Content with GPT-5
-            </button>
+
+            <div class="form-row">
+                <div class="form-col">
+                    <label for="primary_keywords">Primary Keywords (comma separated):</label>
+                    <input type="text" id="primary_keywords" name="primary_keywords" placeholder="e.g., AI healthcare, medical AI, healthcare automation">
+                </div>
+                <div class="form-col">
+                    <label for="secondary_keywords">Secondary Keywords (comma separated):</label>
+                    <input type="text" id="secondary_keywords" name="secondary_keywords" placeholder="e.g., machine learning, digital health, patient care">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-col">
+                    <label for="competitor_urls">Competitor URLs (one per line):</label>
+                    <textarea id="competitor_urls" name="competitor_urls" placeholder="https://competitor1.com/article
+https://competitor2.com/page"></textarea>
+                </div>
+                <div class="form-col">
+                    <label for="target_geography">Target Geography:</label>
+                    <select id="target_geography" name="target_geography">
+                        <option value="global">Global</option>
+                        <option value="united states">United States</option>
+                        <option value="canada">Canada</option>
+                        <option value="united kingdom">United Kingdom</option>
+                        <option value="australia">Australia</option>
+                        <option value="germany">Germany</option>
+                        <option value="france">France</option>
+                        <option value="spain">Spain</option>
+                        <option value="italy">Italy</option>
+                        <option value="brazil">Brazil</option>
+                        <option value="india">India</option>
+                        <option value="japan">Japan</option>
+                        <option value="china">China</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-col">
+                    <label for="content_goal">Primary Content Goal:</label>
+                    <select id="content_goal" name="content_goal">
+                        <option value="">Select Primary Goal</option>
+                        <option value="brand awareness">Brand Awareness</option>
+                        <option value="lead generation">Lead Generation</option>
+                        <option value="sales conversion">Sales Conversion</option>
+                        <option value="customer education">Customer Education</option>
+                        <option value="thought leadership">Thought Leadership</option>
+                        <option value="customer retention">Customer Retention</option>
+                        <option value="seo rankings">SEO Rankings</option>
+                        <option value="social engagement">Social Engagement</option>
+                    </select>
+                </div>
+                <div class="form-col">
+                    <label for="content_length">Target Content Length:</label>
+                    <select id="content_length" name="content_length">
+                        <option value="">Select Length</option>
+                        <option value="short">Short (300-800 words)</option>
+                        <option value="medium">Medium (800-1500 words)</option>
+                        <option value="long">Long (1500-3000 words)</option>
+                        <option value="comprehensive">Comprehensive (3000+ words)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="brand_voice">Brand Voice/Tone:</label>
+                <select id="brand_voice" name="brand_voice">
+                    <option value="">Select Brand Voice</option>
+                    <option value="professional">Professional & Authoritative</option>
+                    <option value="friendly">Friendly & Conversational</option>
+                    <option value="technical">Technical & Detailed</option>
+                    <option value="casual">Casual & Approachable</option>
+                    <option value="luxury">Luxury & Sophisticated</option>
+                    <option value="innovative">Innovative & Forward-thinking</option>
+                    <option value="trustworthy">Trustworthy & Reliable</option>
+                    <option value="energetic">Energetic & Enthusiastic</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="content">Content to Evaluate:</label>
+                <textarea id="content" name="content" required placeholder="Paste your content here for evaluation..."></textarea>
+            </div>
+
+            <button type="submit">🔍 Analyze Content</button>
         </form>
+
+        <div class="loading" id="loading">
+            <h3>⚡ Analyzing your content with AI...</h3>
+            <p>This may take 30-60 seconds for comprehensive analysis.</p>
+        </div>
+
+        <div id="results" class="results" style="display: none;">
+            <h2>📊 Evaluation Results</h2>
+            <div id="resultsContent"></div>
+        </div>
     </div>
-    
+
     <script>
-        document.getElementById('contentForm').addEventListener('submit', function(e) {{
+        document.getElementById('evaluationForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             
             const formData = new FormData(e.target);
-            const data = {{}};
+            const data = Object.fromEntries(formData.entries());
             
-            for (let [key, value] of formData.entries()) {{
-                data[key] = value;
-            }}
+            // Show loading
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('results').style.display = 'none';
             
-            if (!data.topic || data.topic.length < 5) {{
-                alert('Please provide a detailed topic');
-                return;
-            }}
-            
-            if (!data.target_audience || data.target_audience.length < 3) {{
-                alert('Please specify your target audience');
-                return;
-            }}
-            
-            localStorage.setItem('contentFormData', JSON.stringify(data));
-            window.location.href = '/generate';
-        }});
-    </script>
-</body>
-</html>
-'''
-
-def generate_generator_html():
-    return '''
-<!DOCTYPE html>
-<html>
-<head>
-    <title>GPT-5 Content Generation</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            font-family: 'Inter', -apple-system, sans-serif; 
-            background: linear-gradient(135deg, #000 0%, #1a1a1a 100%);
-            color: #fff; min-height: 100vh;
-        }
-        .header { 
-            background: rgba(0, 0, 0, 0.8); backdrop-filter: blur(20px);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1); padding: 1rem 0; 
-            position: sticky; top: 0; z-index: 100;
-        }
-        .header-content { 
-            max-width: 1200px; margin: 0 auto; padding: 0 2rem; 
-            display: flex; justify-content: space-between; align-items: center; 
-        }
-        .header-title { 
-            font-size: 1.5rem; font-weight: 700; 
-            background: linear-gradient(135deg, #10b981, #059669);
-            background-clip: text; -webkit-background-clip: text; 
-            -webkit-text-fill-color: transparent;
-        }
-        .status { 
-            padding: 0.5rem 1rem; border-radius: 2rem; font-weight: 600; 
-            backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-        .status-connecting { background: rgba(251, 191, 36, 0.2); color: #fbbf24; }
-        .status-connected { background: rgba(16, 185, 129, 0.2); color: #10b981; }
-        .status-generating { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
-        .status-error { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
-        
-        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
-        .progress-section, .content-display, .evaluation-display { 
-            background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 1rem; 
-            padding: 2rem; margin-bottom: 2rem; 
-        }
-        .progress-header { 
-            display: flex; justify-content: space-between; align-items: center; 
-            margin-bottom: 2rem; 
-        }
-        .progress-title { color: #fff; font-size: 1.4rem; font-weight: 700; }
-        .progress-bar { 
-            width: 100%; height: 8px; background: rgba(255, 255, 255, 0.1); 
-            border-radius: 4px; overflow: hidden; margin-bottom: 1rem; 
-        }
-        .progress-fill { 
-            height: 100%; background: linear-gradient(135deg, #10b981, #059669); 
-            width: 0%; transition: width 0.5s ease; 
-        }
-        .progress-text { text-align: center; color: #ccc; font-weight: 500; }
-        .current-step { 
-            background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2); 
-            border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem; display: none; 
-        }
-        .current-step h4 { color: #fff; margin-bottom: 0.5rem; }
-        .current-step p { color: #ccc; }
-        
-        .content-display, .evaluation-display { display: none; }
-        .content-display.visible, .evaluation-display.visible { display: block; }
-        
-        .metrics { 
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); 
-            gap: 1rem; margin-bottom: 2rem; 
-        }
-        .metric-card { 
-            background: rgba(255, 255, 255, 0.05); padding: 1rem; 
-            border-radius: 0.5rem; text-align: center; 
-        }
-        .metric-value { font-size: 1.5rem; font-weight: 700; color: #fff; margin-bottom: 0.5rem; }
-        .metric-label { font-size: 0.8rem; color: #aaa; text-transform: uppercase; }
-        
-        .evaluation-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
-        .evaluation-score { 
-            background: linear-gradient(135deg, #10b981, #059669); color: white;
-            padding: 0.5rem 1rem; border-radius: 2rem; font-weight: 700; 
-        }
-        .eeat-scores { 
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); 
-            gap: 1rem; margin-bottom: 2rem; 
-        }
-        .eeat-item { 
-            background: rgba(255, 255, 255, 0.03); padding: 1rem; 
-            border-radius: 0.5rem; border: 1px solid rgba(255, 255, 255, 0.1); 
-        }
-        .eeat-title { font-weight: 600; margin-bottom: 0.5rem; color: #fff; }
-        .eeat-score { font-size: 1.3rem; font-weight: 700; color: #10b981; }
-        
-        .content-display h1 { color: #fff; font-size: 2rem; margin-bottom: 1rem; 
-            border-bottom: 2px solid rgba(255, 255, 255, 0.2); padding-bottom: 1rem; }
-        .content-display h2 { color: #ccc; font-size: 1.5rem; margin: 1.5rem 0 1rem 0; }
-        .content-display h3 { color: #fff; font-size: 1.2rem; margin: 1rem 0 0.5rem 0; }
-        .content-display p { margin-bottom: 1rem; line-height: 1.6; color: #eee; }
-        .content-display ul, .content-display ol { margin: 1rem 0 1rem 2rem; color: #eee; }
-        .content-display li { margin-bottom: 0.5rem; }
-        
-        .content-actions { 
-            display: flex; gap: 1rem; margin-top: 2rem; 
-            padding-top: 2rem; border-top: 1px solid rgba(255, 255, 255, 0.1); 
-        }
-        .action-btn { 
-            background: rgba(255, 255, 255, 0.1); color: #fff; 
-            padding: 0.75rem 1.5rem; border: 1px solid rgba(255, 255, 255, 0.2); 
-            border-radius: 0.5rem; cursor: pointer; font-weight: 600; 
-            transition: all 0.3s ease; text-decoration: none;
-            display: inline-flex; align-items: center; gap: 0.5rem;
-        }
-        .action-btn:hover { background: rgba(255, 255, 255, 0.15); transform: translateY(-2px); }
-        .action-btn.primary { background: linear-gradient(135deg, #10b981, #059669); border: none; }
-        
-        .back-btn { 
-            background: rgba(255, 255, 255, 0.05); color: #ccc; 
-            padding: 0.5rem 1rem; border: 1px solid rgba(255, 255, 255, 0.1); 
-            border-radius: 0.5rem; text-decoration: none; font-size: 0.9rem; 
-        }
-        .back-btn:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
-        
-        .loading { text-align: center; padding: 3rem; color: #aaa; }
-        .spinner { 
-            border: 3px solid rgba(255, 255, 255, 0.1); border-top: 3px solid #10b981; 
-            border-radius: 50%; width: 40px; height: 40px; 
-            animation: spin 1s linear infinite; margin: 0 auto 1rem; 
-        }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        
-        .recommendations { 
-            background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); 
-            border-radius: 0.5rem; padding: 1rem; margin-top: 1rem; 
-        }
-        .recommendations h4 { color: #fff; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
-        .recommendations ul { list-style: none; padding: 0; }
-        .recommendations li { margin-bottom: 0.5rem; color: #ccc; position: relative; padding-left: 1.5rem; }
-        .recommendations li:before { content: "💡"; position: absolute; left: 0; }
-        
-        @media (max-width: 768px) { 
-            .header-content { flex-direction: column; gap: 1rem; } 
-            .container { padding: 1rem; }
-            .content-actions { flex-direction: column; }
-            .metrics, .eeat-scores { grid-template-columns: 1fr; } 
-        }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <div class="header-content">
-            <div class="header-title">GPT-5 Content Generator</div>
-            <div class="status status-connecting" id="connectionStatus">Connecting...</div>
-        </div>
-    </div>
-    
-    <div class="container">
-        <div class="progress-section">
-            <div class="progress-header">
-                <div class="progress-title">GPT-5 Content Generation</div>
-                <a href="/" class="back-btn">← Back to Form</a>
-            </div>
-            
-            <div class="progress-bar">
-                <div class="progress-fill" id="progressFill"></div>
-            </div>
-            <div class="progress-text" id="progressText">Initializing GPT-5...</div>
-            
-            <div class="current-step" id="currentStep">
-                <h4 id="currentStepTitle">Loading...</h4>
-                <p id="currentStepMessage">Please wait...</p>
-            </div>
-            
-            <div class="loading" id="loadingIndicator">
-                <div class="spinner"></div>
-                <p>Connecting to GPT-5...</p>
-            </div>
-        </div>
-        
-        <div class="evaluation-display" id="evaluationDisplay">
-            <div class="evaluation-header">
-                <h2>📊 Content Evaluation Report</h2>
-                <div class="evaluation-score" id="overallScore">9.0/10</div>
-            </div>
-            
-            <div class="eeat-scores" id="eeatScores">
-                <!-- E-E-A-T scores populated here -->
-            </div>
-            
-            <div class="recommendations" id="recommendations">
-                <h4>💡 Optimization Recommendations</h4>
-                <ul id="recommendationsList">
-                    <!-- Recommendations populated here -->
-                </ul>
-            </div>
-        </div>
-        
-        <div class="content-display" id="contentDisplay">
-            <div class="metrics">
-                <div class="metric-card">
-                    <div class="metric-value" id="wordCount">--</div>
-                    <div class="metric-label">Words</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value" id="readingTime">--</div>
-                    <div class="metric-label">Reading Time</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value" id="qualityScore">--</div>
-                    <div class="metric-label">Quality Score</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value" id="modelUsed">--</div>
-                    <div class="metric-label">AI Model</div>
-                </div>
-            </div>
-            
-            <div id="generatedContent"></div>
-            
-            <div class="content-actions">
-                <button class="action-btn primary" onclick="copyContent()">📋 Copy Content</button>
-                <button class="action-btn" onclick="downloadContent()">💾 Download</button>
-                <button class="action-btn" onclick="regenerateContent()">🔄 Regenerate</button>
-                <button class="action-btn" onclick="toggleEvaluation()">📊 Toggle Evaluation</button>
-            </div>
-        </div>
-    </div>
-    
-    <script>
-        let ws = null;
-        let sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-        let generatedContent = '';
-        let evaluationData = {};
-        let formData = null;
-        
-        window.addEventListener('load', function() {
-            const storedData = localStorage.getItem('contentFormData');
-            if (storedData) {
-                formData = JSON.parse(storedData);
-                console.log('Form data loaded:', formData);
-                initWebSocket();
-            } else {
-                alert('No form data found. Please fill out the form first.');
-                window.location.href = '/';
-            }
-        });
-        
-        function initWebSocket() {
             try {
-                const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                const wsHost = window.location.host;
-                const wsUrl = `${wsProtocol}//${wsHost}/ws/${sessionId}`;
+                const response = await fetch('/evaluate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
                 
-                console.log('Connecting to WebSocket:', wsUrl);
-                ws = new WebSocket(wsUrl);
+                const result = await response.json();
                 
-                ws.onopen = function() {
-                    console.log('WebSocket connected');
-                    document.getElementById('connectionStatus').textContent = 'Connected';
-                    document.getElementById('connectionStatus').className = 'status status-connected';
-                    startContentGeneration();
-                };
+                // Hide loading
+                document.getElementById('loading').style.display = 'none';
                 
-                ws.onmessage = function(event) {
-                    try {
-                        const data = JSON.parse(event.data);
-                        handleWebSocketMessage(data);
-                    } catch (error) {
-                        console.error('Error parsing message:', error);
-                    }
-                };
+                if (result.error) {
+                    document.getElementById('resultsContent').innerHTML = `<div class="section"><h3>❌ Error</h3><p>${result.error}</p></div>`;
+                } else {
+                    displayResults(result);
+                }
                 
-                ws.onclose = function(event) {
-                    console.log('WebSocket closed:', event.code, event.reason);
-                    document.getElementById('connectionStatus').textContent = 'Disconnected';
-                    document.getElementById('connectionStatus').className = 'status status-error';
-                };
-                
-                ws.onerror = function(error) {
-                    console.error('WebSocket error:', error);
-                    document.getElementById('connectionStatus').textContent = 'Error';
-                    document.getElementById('connectionStatus').className = 'status status-error';
-                };
+                document.getElementById('results').style.display = 'block';
+                document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
                 
             } catch (error) {
-                console.error('WebSocket init error:', error);
-                document.getElementById('connectionStatus').textContent = 'Setup Error';
-                document.getElementById('connectionStatus').className = 'status status-error';
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('resultsContent').innerHTML = `<div class="section"><h3>❌ Error</h3><p>Failed to analyze content: ${error.message}</p></div>`;
+                document.getElementById('results').style.display = 'block';
             }
-        }
-        
-        function startContentGeneration() {
-            if (ws && ws.readyState === WebSocket.OPEN && formData) {
-                document.getElementById('connectionStatus').textContent = 'Generating';
-                document.getElementById('connectionStatus').className = 'status status-generating';
-                
-                ws.send(JSON.stringify({
-                    type: 'start_generation',
-                    data: formData
-                }));
-            } else {
-                console.error('Cannot start generation');
-            }
-        }
-        
-        function handleWebSocketMessage(data) {
-            console.log('Received:', data.type);
-            
-            switch(data.type) {
-                case 'progress_update':
-                    document.getElementById('loadingIndicator').style.display = 'none';
-                    updateProgress(data);
-                    break;
-                    
-                case 'generation_complete':
-                    displayContent(data);
-                    displayEvaluation(data.evaluation || {});
-                    document.getElementById('connectionStatus').textContent = 'Complete';
-                    document.getElementById('connectionStatus').className = 'status status-connected';
-                    break;
-                    
-                case 'generation_error':
-                    alert('Error: ' + data.error);
-                    document.getElementById('connectionStatus').textContent = 'Error';
-                    document.getElementById('connectionStatus').className = 'status status-error';
-                    break;
-            }
-        }
-        
-        function updateProgress(data) {
-            const percentage = (data.step / data.total) * 100;
-            document.getElementById('progressFill').style.width = percentage + '%';
-            document.getElementById('progressText').textContent = `Step ${data.step} of ${data.total}: ${data.title}`;
-            
-            const currentStep = document.getElementById('currentStep');
-            currentStep.style.display = 'block';
-            document.getElementById('currentStepTitle').textContent = data.title;
-            document.getElementById('currentStepMessage').textContent = data.message;
-        }
-        
-        function displayContent(data) {
-            generatedContent = data.content;
-            
-            const metrics = data.metrics || {};
-            document.getElementById('wordCount').textContent = metrics.word_count?.toLocaleString() || '--';
-            document.getElementById('readingTime').textContent = metrics.reading_time ? metrics.reading_time + ' min' : '--';
-            document.getElementById('qualityScore').textContent = metrics.quality_score?.toFixed(1) || '8.5';
-            document.getElementById('modelUsed').textContent = metrics.model_used || 'GPT-5';
-            
-            const formattedContent = formatContent(data.content);
-            document.getElementById('generatedContent').innerHTML = formattedContent;
-            
-            document.getElementById('contentDisplay').classList.add('visible');
-            document.getElementById('contentDisplay').scrollIntoView({ behavior: 'smooth' });
-        }
-        
-        function displayEvaluation(evaluation) {
-            evaluationData = evaluation;
-            
-            if (!evaluation || Object.keys(evaluation).length === 0) {
-                document.getElementById('evaluationDisplay').style.display = 'none';
-                return;
-            }
-            
-            // Update overall score
-            const overallScore = evaluation.overall_score || 8.5;
-            document.getElementById('overallScore').textContent = overallScore.toFixed(1) + '/10';
-            
-            // Display E-E-A-T scores
-            const eeatAnalysis = evaluation.eeat_analysis || {};
-            const eeatContainer = document.getElementById('eeatScores');
-            eeatContainer.innerHTML = '';
-            
-            const eeatFactors = [
-                { key: 'experience', label: 'Experience', icon: '🎯' },
-                { key: 'expertise', label: 'Expertise', icon: '🧠' },
-                { key: 'authoritativeness', label: 'Authority', icon: '🏆' },
-                { key: 'trustworthiness', label: 'Trust', icon: '🔒' }
-            ];
-            
-            eeatFactors.forEach(factor => {
-                const score = eeatAnalysis[factor.key] || 8;
-                const eeatItem = document.createElement('div');
-                eeatItem.className = 'eeat-item';
-                eeatItem.innerHTML = `
-                    <div class="eeat-title">${factor.icon} ${factor.label}</div>
-                    <div class="eeat-score">${score.toFixed(1)}/10</div>
-                `;
-                eeatContainer.appendChild(eeatItem);
-            });
-            
-            // Display recommendations
-            const recommendations = evaluation.recommendations || [];
-            const recommendationsList = document.getElementById('recommendationsList');
-            recommendationsList.innerHTML = '';
-            
-            recommendations.forEach(rec => {
-                const li = document.createElement('li');
-                li.textContent = rec;
-                recommendationsList.appendChild(li);
-            });
-            
-            document.getElementById('evaluationDisplay').classList.add('visible');
-        }
-        
-        function formatContent(content) {
-            return content
-                .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-                .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-                .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-                .replace(/^- (.+)$/gm, '<li>$1</li>')
-                .replace(/^\\d+\\. (.+)$/gm, '<li>$1</li>')
-                .replace(/(<li>.*?<\\/li>)/gs, '<ul>$1</ul>')
-                .replace(/\\n\\n/g, '</p><p>')
-                .replace(/^([^<].+)$/gm, '<p>$1</p>')
-                .replace(/<p><h/g, '<h')
-                .replace(/<\\/h([1-6])><\\/p>/g, '</h$1>')
-                .replace(/<p><ul>/g, '<ul>')
-                .replace(/<\\/ul><\\/p>/g, '</ul>');
-        }
-        
-        function copyContent() {
-            const content = document.getElementById('generatedContent').innerText;
-            navigator.clipboard.writeText(content).then(() => {
-                const btn = event.target;
-                const originalText = btn.innerHTML;
-                btn.innerHTML = '✅ Copied!';
-                setTimeout(() => {
-                    btn.innerHTML = originalText;
-                }, 2000);
-            }).catch(err => {
-                console.error('Copy failed:', err);
-            });
-        }
-        
-        function downloadContent() {
-            const content = document.getElementById('generatedContent').innerText;
-            const evaluation = evaluationData;
-            
-            const fullContent = `
-CONTENT:
-${content}
+        });
 
-EVALUATION REPORT:
-Overall Score: ${evaluation.overall_score || 'N/A'}/10
+        function displayResults(result) {
+            const eeat = result.eeat_analysis || {};
+            const quality = result.content_quality || {};
+            const seo = result.seo_analysis || {};
+            const recommendations = result.recommendations || [];
+            const reddit = result.reddit_insights || {};
 
-E-E-A-T Analysis:
-- Experience: ${evaluation.eeat_analysis?.experience || 'N/A'}/10
-- Expertise: ${evaluation.eeat_analysis?.expertise || 'N/A'}/10
-- Authoritativeness: ${evaluation.eeat_analysis?.authoritativeness || 'N/A'}/10
-- Trustworthiness: ${evaluation.eeat_analysis?.trustworthiness || 'N/A'}/10
+            let html = `
+                <div class="section">
+                    <h3>🎯 Overall Score</h3>
+                    <div class="score">${result.overall_score || 'N/A'}/10</div>
+                </div>
 
-Recommendations:
-${(evaluation.recommendations || []).map(rec => `- ${rec}`).join('\\n')}
+                <div class="section">
+                    <h3>🏆 E-E-A-T Analysis</h3>
+                    <div class="metric">Experience: <strong>${eeat.experience || 'N/A'}/10</strong></div>
+                    <div class="metric">Expertise: <strong>${eeat.expertise || 'N/A'}/10</strong></div>
+                    <div class="metric">Authoritativeness: <strong>${eeat.authoritativeness || 'N/A'}/10</strong></div>
+                    <div class="metric">Trustworthiness: <strong>${eeat.trustworthiness || 'N/A'}/10</strong></div>
+                </div>
 
-Generated with GPT-5 Content Generator
+                <div class="section">
+                    <h3>📝 Content Quality</h3>
+                    <div class="metric">Originality: <strong>${quality.originality || 'N/A'}/10</strong></div>
+                    <div class="metric">Comprehensiveness: <strong>${quality.comprehensiveness || 'N/A'}/10</strong></div>
+                    <div class="metric">User Value: <strong>${quality.user_value || 'N/A'}/10</strong></div>
+                    <div class="metric">Readability: <strong>${quality.readability || 'N/A'}/10</strong></div>
+                </div>
+
+                <div class="section">
+                    <h3>🔍 SEO Analysis</h3>
+                    <div class="metric">Search Intent: <strong>${seo.search_intent || 'N/A'}/10</strong></div>
+                    <div class="metric">Content Structure: <strong>${seo.content_structure || 'N/A'}/10</strong></div>
+                    <div class="metric">Keyword Optimization: <strong>${seo.keyword_optimization || 'N/A'}/10</strong></div>
+                </div>
             `;
-            
-            const blob = new Blob([fullContent], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `gpt5-content_${new Date().toISOString().split('T')[0]}.txt`;
-            a.click();
-            URL.revokeObjectURL(url);
-        }
-        
-        function regenerateContent() {
-            window.location.reload();
-        }
-        
-        function toggleEvaluation() {
-            const evaluationDisplay = document.getElementById('evaluationDisplay');
-            if (evaluationDisplay.classList.contains('visible')) {
-                evaluationDisplay.classList.remove('visible');
-                evaluationDisplay.style.display = 'none';
-            } else {
-                evaluationDisplay.classList.add('visible');
-                evaluationDisplay.style.display = 'block';
-                evaluationDisplay.scrollIntoView({ behavior: 'smooth' });
+
+            if (recommendations.length > 0) {
+                html += `
+                    <div class="section">
+                        <h3>💡 Recommendations</h3>
+                        <ol>
+                `;
+                recommendations.forEach(rec => {
+                    html += `<li>${rec}</li>`;
+                });
+                html += '</ol></div>';
             }
+
+            if (reddit.subreddits && reddit.subreddits.length > 0) {
+                html += `
+                    <div class="section">
+                        <h3>🌐 Reddit Insights</h3>
+                        <p><strong>Relevant Subreddits:</strong> ${reddit.subreddits.join(', ')}</p>
+                `;
+                if (reddit.pain_points && reddit.pain_points.length > 0) {
+                    html += `<p><strong>Pain Points:</strong> ${reddit.pain_points.join(', ')}</p>`;
+                }
+                html += '</div>';
+            }
+
+            document.getElementById('resultsContent').innerHTML = html;
         }
     </script>
 </body>
 </html>
-'''
+"""
 
-@app.websocket("/ws/{session_id}")
-async def websocket_endpoint(websocket: WebSocket, session_id: str):
+# Flask Routes
+@app.route('/')
+def index():
+    """Serve the main page with enhanced SEO input fields"""
+    return render_template_string(HTML_TEMPLATE)
+
+@app.route('/evaluate', methods=['POST'])
+async def evaluate_content():
+    """Evaluate content with enhanced SEO parameters"""
     try:
-        await manager.connect(websocket, session_id)
+        data = request.get_json()
         
-        while True:
-            try:
-                data = await websocket.receive_text()
-                message_data = json.loads(data)
-                
-                if message_data['type'] == 'start_generation':
-                    form_data = message_data['data']
-                    asyncio.create_task(
-                        content_system.generate_content_with_progress(form_data, session_id)
-                    )
-                elif message_data['type'] == 'ping':
-                    await websocket.send_text(json.dumps({'type': 'pong'}))
-                    
-            except json.JSONDecodeError:
-                await websocket.send_text(json.dumps({
-                    'type': 'error',
-                    'message': 'Invalid message format'
-                }))
-            except Exception as e:
-                logger.error(f"WebSocket message error: {e}")
-                break
-                
-    except WebSocketDisconnect:
-        manager.disconnect(session_id)
-    except Exception as e:
-        logger.error(f"WebSocket error: {e}")
-        manager.disconnect(session_id)
-
-@app.get("/health")
-async def health_check():
-    openai_working = False
-    openai_error = None
-    model_used = "unknown"
-    agent_status = "available" if AGENT_AVAILABLE else "basic"
-    
-    if config.OPENAI_API_KEY and OPENAI_AVAILABLE:
-        try:
-            openai.api_key = config.OPENAI_API_KEY
-            model_params = {
-                "model": content_system.ai_client.latest_model,
-                "messages": [{"role": "user", "content": "Test"}],
-                "max_tokens": 5
-            }
-            
-            if content_system.ai_client.latest_model.startswith("gpt-5"):
-                model_params["reasoning_effort"] = "minimal"
-                
-            response = openai.ChatCompletion.create(**model_params)
-            openai_working = True
-            model_used = content_system.ai_client.latest_model
-        except Exception as e:
-            openai_error = str(e)
-    
-    return JSONResponse({
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "openai_configured": bool(config.OPENAI_API_KEY),
-        "openai_available": OPENAI_AVAILABLE,
-        "openai_working": openai_working,
-        "openai_error": openai_error,
-        "model_used": model_used,
-        "latest_model": content_system.ai_client.latest_model,
-        "gpt5_reasoning": content_system.ai_client.latest_model.startswith("gpt-5"),
-        "content_agent_available": AGENT_AVAILABLE,
-        "agent_status": agent_status,
-        "version": "gpt-5-complete",
-        "api_key_preview": f"{config.OPENAI_API_KEY[:8]}...{config.OPENAI_API_KEY[-4:]}" if config.OPENAI_API_KEY else None
-    })
-
-@app.get("/test-openai")
-async def test_openai():
-    try:
-        api_key = config.OPENAI_API_KEY
+        # Create agent
+        evaluation_agent = create_evaluation_agent()
+        if not evaluation_agent:
+            return jsonify({"error": "Failed to initialize evaluation agent"}), 500
         
-        if not api_key:
-            return JSONResponse({
-                "status": "error",
-                "message": "❌ No OpenAI API key found",
-                "solution": "Set Open_Api_Key in Railway environment variables"
-            })
+        # Extract all the enhanced SEO parameters
+        content = data.get('content', '')
+        topic = data.get('topic', '')
+        content_type = data.get('content_type', 'blog post')
+        target_audience = data.get('target_audience', 'general')
+        search_intent = data.get('search_intent', '')
+        primary_keywords = data.get('primary_keywords', '')
+        secondary_keywords = data.get('secondary_keywords', '')
+        competitor_urls = data.get('competitor_urls', '')
+        target_geography = data.get('target_geography', 'global')
+        content_goal = data.get('content_goal', '')
+        content_length = data.get('content_length', '')
+        brand_voice = data.get('brand_voice', '')
         
-        if not api_key.startswith("sk-"):
-            return JSONResponse({
-                "status": "error", 
-                "message": f"❌ Invalid API key format",
-                "solution": "Get new key from https://platform.openai.com/api-keys"
-            })
+        # Enhanced evaluation with additional context
+        enhanced_topic = f"{topic} (Intent: {search_intent}, Geography: {target_geography}, Goal: {content_goal})"
+        enhanced_audience = f"{target_audience} seeking {search_intent} content with {brand_voice} tone"
         
-        openai.api_key = api_key
-        model_used = content_system.ai_client.latest_model
+        # Run evaluation
+        result = await evaluation_agent.evaluate_content(
+            content=content,
+            topic=enhanced_topic,
+            content_type=content_type,
+            target_audience=enhanced_audience
+        )
         
-        model_params = {
-            "model": model_used,
-            "messages": [{
-                "role": "user", 
-                "content": f"Write a short paragraph about GPT-5 content generation working correctly."
-            }],
-            "max_tokens": 150
+        # Add the additional context to the result
+        result['seo_context'] = {
+            'primary_keywords': primary_keywords.split(',') if primary_keywords else [],
+            'secondary_keywords': secondary_keywords.split(',') if secondary_keywords else [],
+            'search_intent': search_intent,
+            'target_geography': target_geography,
+            'content_goal': content_goal,
+            'content_length': content_length,
+            'brand_voice': brand_voice,
+            'competitor_urls': competitor_urls.split('\n') if competitor_urls else []
         }
         
-        if model_used.startswith("gpt-5"):
-            model_params["reasoning_effort"] = "medium"
-            
-        response = openai.ChatCompletion.create(**model_params)
-        content = response.choices[0].message.content if response.choices else "No content generated"
-        
-        return JSONResponse({
-            "status": "SUCCESS! ✅",
-            "message": f"OpenAI {model_used} is working perfectly!",
-            "generated_content": content,
-            "model": model_used,
-            "gpt5_reasoning": model_used.startswith("gpt-5"),
-            "word_count": len(content.split()),
-            "content_agent_available": AGENT_AVAILABLE,
-            "features": [
-                "GPT-5 model with reasoning",
-                "British English support", 
-                "E-E-A-T evaluation",
-                "Reddit insights research",
-                "Entity analysis",
-                "Content cluster suggestions"
-            ],
-            "usage": {
-                "prompt_tokens": response.usage.prompt_tokens,
-                "completion_tokens": response.usage.completion_tokens,
-                "total_tokens": response.usage.total_tokens
-            }
-        })
+        return jsonify(result)
         
     except Exception as e:
-        return JSONResponse({
-            "status": "error",
-            "message": f"❌ Error: {str(e)}",
-            "error_type": type(e).__name__,
-            "api_key_length": len(config.OPENAI_API_KEY) if config.OPENAI_API_KEY else 0
-        })
+        logger.error(f"Evaluation error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint for Railway"""
+    return jsonify({"status": "healthy", "timestamp": datetime.now().isoformat()})
+
+# Main function for testing
+async def main():
+    """Test the evaluation agent"""
+    evaluation_agent = create_evaluation_agent()
+    if evaluation_agent:
+        result = await evaluation_agent.evaluate_content(
+            content="Artificial Intelligence is revolutionizing healthcare by enabling more accurate diagnoses, personalized treatment plans, and improved patient outcomes. Medical professionals are leveraging AI-powered tools to analyze medical images, predict disease progression, and optimize treatment protocols.",
+            topic="AI in Healthcare 2024",
+            content_type="blog post",
+            target_audience="healthcare professionals"
+        )
+        print(json.dumps(result, indent=2))
 
 if __name__ == "__main__":
-    print("🚀 Starting GPT-5 Content Generator...")
-    print("=" * 60)
-    print(f"🌐 Host: {config.HOST}")
-    print(f"🔌 Port: {config.PORT}")
-    
-    openai_status = "✅ Configured" if config.OPENAI_API_KEY else "❌ Not configured"
-    agent_status = "✅ Available" if AGENT_AVAILABLE else "⚠️ Basic version"
-    
-    print(f"🤖 OpenAI API: {openai_status}")
-    print(f"📊 Content Agent: {agent_status}")
-    
-    if config.OPENAI_API_KEY and OPENAI_AVAILABLE:
-        print(f"🔑 API Key: {config.OPENAI_API_KEY[:8]}...{config.OPENAI_API_KEY[-4:]}")
-        
-        client = OpenAIClient()
-        print(f"🎯 Model: {client.latest_model}")
-        
-        if client.latest_model.startswith("gpt-5"):
-            print("🧠 GPT-5 reasoning enabled")
-    
-    print("🎯 Features:")
-    print("   • GPT-5 with reasoning")
-    print("   • British English support")
-    print("   • E-E-A-T evaluation")
-    print("   • Reddit insights")
-    print("   • Entity analysis")
-    print("   • Real-time WebSocket updates")
-    print("=" * 60)
-    
-    uvicorn.run(app, host=config.HOST, port=config.PORT, log_level="info")
+    # For Railway deployment
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
