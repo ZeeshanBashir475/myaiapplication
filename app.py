@@ -1983,7 +1983,10 @@ def generate_with_progress():
                 "error": "Failed to initialize OpenAI client. Please check your API key is valid.",
                 "api_key_preview": f"{api_key[:10]}..." if api_key else "None",
                 "help": "Ensure your OPENAI_API_KEY starts with 'sk-' and is valid"
-            }), 500
+            return jsonify({
+            "error": str(e),
+            "help": "Check your OpenAI API key in Railway environment variables"
+        }), 500
 
 @app.route('/debug')
 def debug_info():
