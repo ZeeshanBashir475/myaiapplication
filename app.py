@@ -297,10 +297,7 @@ class OpenAIClient:
     def __init__(self, api_key: str = None, model: str = "gpt-4", base_url: str = None):
         if api_key is None:
             # Try multiple common environment variable names
-            api_key = (os.getenv('OPENAI_API_KEY') or 
-                      os.getenv('Open_Api_Key') or 
-                      os.getenv('OPENAI_KEY') or 
-                      os.getenv('API_KEY'))
+            api_key = (os.getenv('Open_Api_Key'))
             
             if not api_key:
                 raise ValueError("OpenAI API key not found. Please set OPENAI_API_KEY environment variable in Railway.")
@@ -2187,10 +2184,7 @@ def generate_with_progress():
         data = request.get_json()
         
         # Check API key first
-        api_key = (os.getenv('OPENAI_API_KEY') or 
-                  os.getenv('Open_Api_Key') or 
-                  os.getenv('OPENAI_KEY') or 
-                  os.getenv('API_KEY'))
+        api_key = (os.getenv('Open_Api_Key'))
         
         if not api_key:
             return jsonify({
