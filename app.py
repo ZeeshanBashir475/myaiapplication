@@ -298,18 +298,28 @@ class OpenAIClient:
     
     def __init__(self, api_key: str = None, model: str = "gpt-4", base_url: str = None):
         if api_key is None:
-            api_key = os.getenv('Open_Api_Key')
+            # Try multiple common environment variable names
+            api_key = (os.getenv('OPENAI_API_KEY') or 
+                      os.getenv('Open_Api_Key') or 
+                      os.getenv('OPENAI_KEY') or 
+                      os.getenv('API_KEY'))
+            
             if not api_key:
-                raise ValueError("OpenAI API key not found. Set Open_Api_Key environment variable.")
+                raise ValueError("OpenAI API key not found. Please set OPENAI_API_KEY environment variable in Railway.")
         
         # Initialize client with only supported parameters
-        client_kwargs = {"api_key": api_key}
-        if base_url:
-            client_kwargs["base_url"] = base_url
-            
-        self.client = openai.OpenAI(**client_kwargs)
-        self.async_client = openai.AsyncOpenAI(**client_kwargs)
-        self.model = model
+        try:
+            client_kwargs = {"api_key": api_key}
+            if base_url:
+                client_kwargs["base_url"] = base_url
+                
+            self.client = openai.OpenAI(**client_kwargs)
+            self.async_client = openai.AsyncOpenAI(**client_kwargs)
+            self.model = model
+            logger.info("OpenAI client initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize OpenAI client: {e}")
+            raise ValueError(f"Failed to initialize OpenAI client: {e}")
     
     async def generate_content(self, prompt: str, max_tokens: int = 1000, temperature: float = 0.7) -> str:
         """Generate content using the new OpenAI API format"""
@@ -1070,14 +1080,30 @@ class ContentEvaluationAgent:
         return scores
 
 def create_agents():
-    """Create both generation and evaluation agents"""
+    """Create both generation and evaluation agents with error handling"""
     try:
+        # Test API key first
+        logger.info("Attempting to create OpenAI client...")
         openai_client = OpenAIClient(model="gpt-4")
+        
+        # Test the client with a simple request
+        logger.info("Testing OpenAI API connection...")
+        test_response = openai_client.client.chat.completions.create(
+            model="gpt-3.5-turbo",  # Use cheaper model for testing
+            messages=[{"role": "user", "content": "Hello"}],
+            max_tokens=5
+        )
+        logger.info("OpenAI API test successful")
+        
         generation_agent = ContentGenerationAgent(openai_client)
         evaluation_agent = ContentEvaluationAgent(openai_client)
+        
+        logger.info("Agents created successfully")
         return generation_agent, evaluation_agent
+        
     except Exception as e:
         logger.error(f"Failed to create agents: {e}")
+        logger.error("Please check your OPENAI_API_KEY environment variable in Railway")
         return None, None
 
 # Enhanced HTML Template with Surfer SEO-like Features
@@ -1274,6 +1300,7 @@ HTML_TEMPLATE = """
             <div class="button-group">
                 <button type="button" id="generateBtn" class="btn-generate">🚀 Generate Content with AI Analysis</button>
                 <button type="button" id="evaluateBtn" class="btn-evaluate">📊 Advanced Content Evaluation</button>
+                <button type="button" id="debugBtn" style="background: #6c757d; color: white; padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-size: 14px;">🔧 Test Setup</button>
             </div>
         </form>
 
@@ -1384,7 +1411,7 @@ HTML_TEMPLATE = """
                 showRealTimeIndicator(false);
                 
                 if (result.error) {
-                    showError(result.error);
+                    showError(result.error, result.help || 'Please check your Railway environment variables for OPENAI_API_KEY');
                 } else {
                     generatedContent = result.generated_content;
                     generationData = result;
@@ -1406,6 +1433,65 @@ HTML_TEMPLATE = """
                 hideLoading();
                 showRealTimeIndicator(false);
                 showError('Failed to generate content: ' + error.message);
+            }
+        });
+
+        // Debug/Test Setup button
+        document.getElementById('debugBtn').addEventListener('click', async function() {
+            try {
+                const response = await fetch('/debug');
+                const result = await response.json();
+                
+                let debugHtml = `
+                    <div class="section">
+                        <h3>🔧 System Debug Information</h3>
+                        <h4>Environment Variables:</h4>
+                `;
+                
+                for (const [varName, info] of Object.entries(result.environment_variables)) {
+                    if (info.exists) {
+                        debugHtml += `
+                            <p>✅ <strong>${varName}</strong>: Found 
+                            ${info.starts_with_sk ? '(✅ Valid format)' : '(❌ Should start with sk-)'}
+                            - Length: ${info.length} - Preview: ${info.preview}</p>
+                        `;
+                    } else {
+                        debugHtml += `<p>❌ <strong>${varName}</strong>: Not found</p>`;
+                    }
+                }
+                
+                debugHtml += `
+                        <h4>OpenAI Client Status:</h4>
+                        <p>${result.openai_client_status}</p>
+                        <h4>System Info:</h4>
+                        <p><strong>Python Version:</strong> ${result.python_version}</p>
+                        <p><strong>Directory:</strong> ${result.current_directory}</p>
+                        <p><strong>Timestamp:</strong> ${result.timestamp}</p>
+                `;
+                
+                if (!Object.values(result.environment_variables).some(info => info.exists && info.starts_with_sk)) {
+                    debugHtml += `
+                        <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                            <h4>🚨 Action Required:</h4>
+                            <ol>
+                                <li>Go to your <strong>Railway Dashboard</strong></li>
+                                <li>Select your project → <strong>Variables</strong> tab</li>
+                                <li>Add variable: <strong>OPENAI_API_KEY</strong></li>
+                                <li>Value: Your OpenAI API key (starts with sk-...)</li>
+                                <li>Save and redeploy</li>
+                            </ol>
+                        </div>
+                    `;
+                }
+                
+                debugHtml += `</div>`;
+                
+                document.getElementById('generationResults').innerHTML = debugHtml;
+                showResults();
+                document.querySelector('[data-tab="generation"]').click();
+                
+            } catch (error) {
+                showError('Debug failed: ' + error.message);
             }
         });
 
@@ -1435,7 +1521,7 @@ HTML_TEMPLATE = """
                 showRealTimeIndicator(false);
                 
                 if (result.error) {
-                    showError(result.error);
+                    showError(result.error, result.help || 'Please check your Railway environment variables for OPENAI_API_KEY');
                 } else {
                     displayEvaluationResults(result);
                     displayCompetitiveResults(result);
@@ -1504,9 +1590,17 @@ HTML_TEMPLATE = """
             document.getElementById('realTimeIndicator').style.display = show ? 'block' : 'none';
         }
 
-        function showError(error) {
-            document.getElementById('generationResults').innerHTML = 
-                `<div class="section"><h3>❌ Error</h3><p>${error}</p></div>`;
+        function showError(error, helpText = '') {
+            let errorHtml = `<div class="section"><h3>❌ Error</h3><p>${error}</p>`;
+            if (helpText) {
+                errorHtml += `<div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #2196f3;">
+                    <h4>💡 How to Fix:</h4>
+                    <p>${helpText}</p>
+                </div>`;
+            }
+            errorHtml += `</div>`;
+            
+            document.getElementById('generationResults').innerHTML = errorHtml;
             showResults();
         }
 
@@ -1871,9 +1965,61 @@ def generate_with_progress():
     try:
         data = request.get_json()
         
+        # Check API key first
+        api_key = (os.getenv('OPENAI_API_KEY') or 
+                  os.getenv('Open_Api_Key') or 
+                  os.getenv('OPENAI_KEY') or 
+                  os.getenv('API_KEY'))
+        
+        if not api_key:
+            return jsonify({
+                "error": "OpenAI API key not found. Please set OPENAI_API_KEY in your Railway environment variables.",
+                "help": "Go to Railway → Your Project → Variables → Add OPENAI_API_KEY"
+            }), 400
+        
         generation_agent, _ = create_agents()
         if not generation_agent:
-            return jsonify({"error": "Failed to initialize generation agent"}), 500
+            return jsonify({
+                "error": "Failed to initialize OpenAI client. Please check your API key is valid.",
+                "api_key_preview": f"{api_key[:10]}..." if api_key else "None",
+                "help": "Ensure your OPENAI_API_KEY starts with 'sk-' and is valid"
+            }), 500
+
+@app.route('/debug')
+def debug_info():
+    """Debug endpoint to check environment setup"""
+    try:
+        env_vars = {}
+        var_names = ['OPENAI_API_KEY', 'Open_Api_Key', 'OPENAI_KEY', 'API_KEY']
+        
+        for var_name in var_names:
+            value = os.getenv(var_name)
+            if value:
+                env_vars[var_name] = {
+                    "exists": True,
+                    "length": len(value),
+                    "starts_with_sk": value.startswith('sk-'),
+                    "preview": f"{value[:10]}..." if len(value) > 10 else value
+                }
+            else:
+                env_vars[var_name] = {"exists": False}
+        
+        # Test OpenAI client creation
+        try:
+            client = OpenAIClient()
+            client_status = "✅ Success"
+        except Exception as e:
+            client_status = f"❌ Failed: {str(e)}"
+        
+        return jsonify({
+            "environment_variables": env_vars,
+            "openai_client_status": client_status,
+            "python_version": os.sys.version,
+            "current_directory": os.getcwd(),
+            "timestamp": datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)})
         
         # Extract parameters
         topic = data.get('topic', '')
@@ -1905,7 +2051,10 @@ def generate_with_progress():
         
     except Exception as e:
         logger.error(f"Integrated generation error: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "error": str(e),
+            "help": "Check your OpenAI API key in Railway environment variables"
+        }), 500
 
 @app.route('/generate', methods=['POST'])
 def generate_content():
@@ -1920,9 +2069,25 @@ def evaluate_content():
     try:
         data = request.get_json()
         
+        # Check API key first
+        api_key = (os.getenv('OPENAI_API_KEY') or 
+                  os.getenv('Open_Api_Key') or 
+                  os.getenv('OPENAI_KEY') or 
+                  os.getenv('API_KEY'))
+        
+        if not api_key:
+            return jsonify({
+                "error": "OpenAI API key not found. Please set OPENAI_API_KEY in your Railway environment variables.",
+                "help": "Go to Railway → Your Project → Variables → Add OPENAI_API_KEY"
+            }), 400
+        
         _, evaluation_agent = create_agents()
         if not evaluation_agent:
-            return jsonify({"error": "Failed to initialize evaluation agent"}), 500
+            return jsonify({
+                "error": "Failed to initialize OpenAI client. Please check your API key is valid.",
+                "api_key_preview": f"{api_key[:10]}..." if api_key else "None",
+                "help": "Ensure your OPENAI_API_KEY starts with 'sk-' and is valid"
+            }), 500
         
         content = data.get('content', '')
         topic = data.get('topic', '')
@@ -1943,12 +2108,47 @@ def evaluate_content():
         
     except Exception as e:
         logger.error(f"Enhanced evaluation error: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "error": str(e),
+            "help": "Check your OpenAI API key in Railway environment variables"
+        }), 500
 
 @app.route('/health')
 def health_check():
-    """Health check endpoint"""
-    return jsonify({"status": "healthy", "timestamp": datetime.now().isoformat()})
+    """Health check endpoint with API key status"""
+    try:
+        # Check if API key is available
+        api_key = (os.getenv('OPENAI_API_KEY') or 
+                  os.getenv('Open_Api_Key') or 
+                  os.getenv('OPENAI_KEY') or 
+                  os.getenv('API_KEY'))
+        
+        api_key_status = "✅ Found" if api_key else "❌ Missing"
+        api_key_preview = f"{api_key[:10]}..." if api_key else "None"
+        
+        # Test agent creation
+        generation_agent, evaluation_agent = create_agents()
+        agents_status = "✅ Ready" if (generation_agent and evaluation_agent) else "❌ Failed"
+        
+        return jsonify({
+            "status": "healthy" if agents_status == "✅ Ready" else "unhealthy",
+            "timestamp": datetime.now().isoformat(),
+            "api_key_status": api_key_status,
+            "api_key_preview": api_key_preview,
+            "agents_status": agents_status,
+            "environment_variables": {
+                "OPENAI_API_KEY": "✅" if os.getenv('OPENAI_API_KEY') else "❌",
+                "Open_Api_Key": "✅" if os.getenv('Open_Api_Key') else "❌",
+                "OPENAI_KEY": "✅" if os.getenv('OPENAI_KEY') else "❌",
+                "API_KEY": "✅" if os.getenv('API_KEY') else "❌"
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        })
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
