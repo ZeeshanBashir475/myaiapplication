@@ -1113,51 +1113,270 @@ HTML_TEMPLATE = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Content Generator with Real-Time Analysis</title>
     <style>
-        body { font-family: 'Segoe UI', Arial, sans-serif; max-width: 1600px; margin: 0 auto; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
-        .container { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
-        h1 { color: #333; text-align: center; margin-bottom: 10px; font-size: 2.5em; text-shadow: 2px 2px 4px rgba(0,0,0,0.1); }
-        .subtitle { text-align: center; color: #666; font-size: 1.1em; margin-bottom: 30px; }
-        .form-group { margin-bottom: 20px; }
-        .form-row { display: flex; gap: 15px; margin-bottom: 20px; }
-        .form-col { flex: 1; }
-        label { display: block; margin-bottom: 8px; font-weight: bold; color: #555; }
-        input, textarea, select { width: 100%; padding: 12px; border: 2px solid #e1e1e1; border-radius: 8px; font-size: 14px; transition: border-color 0.3s; }
-        input:focus, textarea:focus, select:focus { border-color: #667eea; outline: none; box-shadow: 0 0 10px rgba(102, 126, 234, 0.3); }
-        .user-input { margin: 20px 0; }
-        .user-input textarea { min-height: 80px; }
-        .toggle-section { background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0; }
-        .toggle-label { cursor: pointer; font-weight: bold; color: #667eea; }
-        .button-group { display: flex; gap: 15px; margin: 30px 0; flex-wrap: wrap; }
-        button { flex: 1; min-width: 200px; padding: 15px 24px; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold; transition: all 0.3s; }
-        .btn-generate { background: linear-gradient(45deg, #667eea, #764ba2); color: white; flex: 2; }
-        .btn-generate:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4); }
-        .btn-evaluate { background: linear-gradient(45deg, #f093fb, #f5576c); color: white; }
-        .btn-evaluate:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(245, 87, 108, 0.4); }
-        .results { margin-top: 30px; padding: 25px; background: #f8f9fa; border-radius: 10px; border-left: 5px solid #667eea; }
-        .loading { display: none; text-align: center; padding: 30px; background: #e3f2fd; border-radius: 10px; }
-        .score-circle { display: inline-block; width: 80px; height: 80px; border-radius: 50%; background: conic-gradient(#28a745 calc(var(--score) * 3.6deg), #e9ecef 0); position: relative; margin: 10px; }
-        .score-circle::before { content: attr(data-score) "/10"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-weight: bold; font-size: 14px; }
-        .section { margin: 20px 0; padding: 20px; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .metric { display: inline-block; margin: 8px; padding: 12px 16px; background: linear-gradient(45deg, #e3f2fd, #f3e5f5); border-radius: 20px; font-weight: bold; }
-        .pain-points { background: #fff3e0; border-left: 5px solid #ff9800; padding: 15px; margin: 15px 0; border-radius: 5px; }
-        .content-gaps { background: #e8f5e8; border-left: 5px solid #28a745; padding: 15px; margin: 15px 0; border-radius: 5px; }
-        .generated-content { background: #f1f8e9; border: 2px solid #8bc34a; padding: 20px; border-radius: 10px; margin: 20px 0; max-height: 500px; overflow-y: auto; }
-        .competitive-analysis { background: #fff3e0; border-left: 5px solid #ff9800; padding: 15px; margin: 15px 0; border-radius: 5px; }
-        .recommendations { background: #e3f2fd; border-left: 5px solid #2196f3; padding: 15px; margin: 15px 0; border-radius: 5px; }
-        .tab-container { margin: 20px 0; }
-        .tabs { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
-        .tab { padding: 12px 24px; background: #e0e0e0; border: none; border-radius: 8px 8px 0 0; cursor: pointer; font-weight: bold; transition: all 0.3s; }
-        .tab.active { background: #667eea; color: white; }
-        .tab-content { display: none; padding: 20px; background: white; border-radius: 0 8px 8px 8px; border: 2px solid #667eea; }
-        .tab-content.active { display: block; }
-        .serp-insights { background: #f8f9fa; border: 2px solid #6c757d; padding: 20px; border-radius: 10px; margin: 20px 0; }
-        .benchmark-comparison { display: flex; gap: 20px; flex-wrap: wrap; }
-        .benchmark-item { flex: 1; min-width: 200px; text-align: center; padding: 15px; background: #e9ecef; border-radius: 8px; }
-        .real-time-indicator { position: fixed; top: 20px; right: 20px; padding: 10px; background: #28a745; color: white; border-radius: 5px; font-weight: bold; }
+        body { 
+            font-family: 'Segoe UI', Arial, sans-serif; 
+            max-width: 1600px; 
+            margin: 0 auto; 
+            padding: 20px; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            min-height: 100vh; 
+        }
+        .container { 
+            background: white; 
+            padding: 30px; 
+            border-radius: 15px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2); 
+        }
+        h1 { 
+            color: #333; 
+            text-align: center; 
+            margin-bottom: 10px; 
+            font-size: 2.5em; 
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1); 
+        }
+        .subtitle { 
+            text-align: center; 
+            color: #666; 
+            font-size: 1.1em; 
+            margin-bottom: 30px; 
+        }
+        .form-group { 
+            margin-bottom: 20px; 
+        }
+        .form-row { 
+            display: flex; 
+            gap: 15px; 
+            margin-bottom: 20px; 
+        }
+        .form-col { 
+            flex: 1; 
+        }
+        label { 
+            display: block; 
+            margin-bottom: 8px; 
+            font-weight: bold; 
+            color: #555; 
+        }
+        input, textarea, select { 
+            width: 100%; 
+            padding: 12px; 
+            border: 2px solid #e1e1e1; 
+            border-radius: 8px; 
+            font-size: 14px; 
+            transition: border-color 0.3s; 
+        }
+        input:focus, textarea:focus, select:focus { 
+            border-color: #667eea; 
+            outline: none; 
+            box-shadow: 0 0 10px rgba(102, 126, 234, 0.3); 
+        }
+        .user-input { 
+            margin: 20px 0; 
+        }
+        .user-input textarea { 
+            min-height: 80px; 
+        }
+        .toggle-section { 
+            background: #f8f9fa; 
+            padding: 15px; 
+            border-radius: 8px; 
+            margin: 20px 0; 
+        }
+        .toggle-label { 
+            cursor: pointer; 
+            font-weight: bold; 
+            color: #667eea; 
+        }
+        .button-group { 
+            display: flex; 
+            gap: 15px; 
+            margin: 30px 0; 
+            flex-wrap: wrap; 
+        }
+        button { 
+            flex: 1; 
+            min-width: 200px; 
+            padding: 15px 24px; 
+            border: none; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            font-size: 16px; 
+            font-weight: bold; 
+            transition: all 0.3s; 
+        }
+        .btn-generate { 
+            background: linear-gradient(45deg, #667eea, #764ba2); 
+            color: white; 
+            flex: 2; 
+        }
+        .btn-generate:hover { 
+            transform: translateY(-2px); 
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4); 
+        }
+        .btn-evaluate { 
+            background: linear-gradient(45deg, #f093fb, #f5576c); 
+            color: white; 
+        }
+        .btn-evaluate:hover { 
+            transform: translateY(-2px); 
+            box-shadow: 0 5px 15px rgba(245, 87, 108, 0.4); 
+        }
+        .results { 
+            margin-top: 30px; 
+            padding: 25px; 
+            background: #f8f9fa; 
+            border-radius: 10px; 
+            border-left: 5px solid #667eea; 
+        }
+        .loading { 
+            display: none; 
+            text-align: center; 
+            padding: 30px; 
+            background: #e3f2fd; 
+            border-radius: 10px; 
+        }
+        .score-circle { 
+            display: inline-block; 
+            width: 80px; 
+            height: 80px; 
+            border-radius: 50%; 
+            background: conic-gradient(#28a745 calc(var(--score) * 3.6deg), #e9ecef 0); 
+            position: relative; 
+            margin: 10px; 
+        }
+        .score-circle::before { 
+            content: attr(data-score) "/10"; 
+            position: absolute; 
+            top: 50%; 
+            left: 50%; 
+            transform: translate(-50%, -50%); 
+            font-weight: bold; 
+            font-size: 14px; 
+        }
+        .section { 
+            margin: 20px 0; 
+            padding: 20px; 
+            background: white; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+        }
+        .metric { 
+            display: inline-block; 
+            margin: 8px; 
+            padding: 12px 16px; 
+            background: linear-gradient(45deg, #e3f2fd, #f3e5f5); 
+            border-radius: 20px; 
+            font-weight: bold; 
+        }
+        .pain-points { 
+            background: #fff3e0; 
+            border-left: 5px solid #ff9800; 
+            padding: 15px; 
+            margin: 15px 0; 
+            border-radius: 5px; 
+        }
+        .content-gaps { 
+            background: #e8f5e8; 
+            border-left: 5px solid #28a745; 
+            padding: 15px; 
+            margin: 15px 0; 
+            border-radius: 5px; 
+        }
+        .generated-content { 
+            background: #f1f8e9; 
+            border: 2px solid #8bc34a; 
+            padding: 20px; 
+            border-radius: 10px; 
+            margin: 20px 0; 
+            max-height: 500px; 
+            overflow-y: auto; 
+        }
+        .competitive-analysis { 
+            background: #fff3e0; 
+            border-left: 5px solid #ff9800; 
+            padding: 15px; 
+            margin: 15px 0; 
+            border-radius: 5px; 
+        }
+        .recommendations { 
+            background: #e3f2fd; 
+            border-left: 5px solid #2196f3; 
+            padding: 15px; 
+            margin: 15px 0; 
+            border-radius: 5px; 
+        }
+        .tab-container { 
+            margin: 20px 0; 
+        }
+        .tabs { 
+            display: flex; 
+            gap: 10px; 
+            margin-bottom: 20px; 
+            flex-wrap: wrap; 
+        }
+        .tab { 
+            padding: 12px 24px; 
+            background: #e0e0e0; 
+            border: none; 
+            border-radius: 8px 8px 0 0; 
+            cursor: pointer; 
+            font-weight: bold; 
+            transition: all 0.3s; 
+        }
+        .tab.active { 
+            background: #667eea; 
+            color: white; 
+        }
+        .tab-content { 
+            display: none; 
+            padding: 20px; 
+            background: white; 
+            border-radius: 0 8px 8px 8px; 
+            border: 2px solid #667eea; 
+        }
+        .tab-content.active { 
+            display: block; 
+        }
+        .serp-insights { 
+            background: #f8f9fa; 
+            border: 2px solid #6c757d; 
+            padding: 20px; 
+            border-radius: 10px; 
+            margin: 20px 0; 
+        }
+        .benchmark-comparison { 
+            display: flex; 
+            gap: 20px; 
+            flex-wrap: wrap; 
+        }
+        .benchmark-item { 
+            flex: 1; 
+            min-width: 200px; 
+            text-align: center; 
+            padding: 15px; 
+            background: #e9ecef; 
+            border-radius: 8px; 
+        }
+        .real-time-indicator { 
+            position: fixed; 
+            top: 20px; 
+            right: 20px; 
+            padding: 10px; 
+            background: #28a745; 
+            color: white; 
+            border-radius: 5px; 
+            font-weight: bold; 
+        }
         @media (max-width: 768px) {
-            .form-row { flex-direction: column; }
-            .button-group { flex-direction: column; }
-            .benchmark-comparison { flex-direction: column; }
+            .form-row { 
+                flex-direction: column; 
+            }
+            .button-group { 
+                flex-direction: column; 
+            }
+            .benchmark-comparison { 
+                flex-direction: column; 
+            }
         }
     </style>
 </head>
@@ -1361,6 +1580,11 @@ HTML_TEMPLATE = """
         let generationData = null;
         let serpData = null;
 
+        // Add CSS animation for loading spinner
+        const style = document.createElement('style');
+        style.textContent = '@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }';
+        document.head.append(style);
+
         // Tab functionality
         document.querySelectorAll('.tab').forEach(tab => {
             tab.addEventListener('click', function() {
@@ -1375,13 +1599,6 @@ HTML_TEMPLATE = """
                 document.getElementById(targetTab + '-tab').classList.add('active');
             });
         });
-
-        // Add CSS animation for loading spinner
-        const style = document.createElement('style');
-        style.textContent = '@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }';
-        document.head.append(style);
-
-        // Remove the separate Analyze SERPs button functionality and integrate into Generate
 
         // Generate content with real-time progress
         document.getElementById('generateBtn').addEventListener('click', async function() {
@@ -1658,214 +1875,6 @@ HTML_TEMPLATE = """
                 html += `</div></div>`;
             }
 
-            document.getElementById('competitiveResults').innerHTML = html;
-        }
-    </script>
-</body>
-</html>
-"""
-
-# Flask Routes
-@app.route('/')
-def index():
-    """Serve the main page"""
-    return render_template_string(HTML_TEMPLATE)
-
-@app.route('/generate-with-progress', methods=['POST'])
-def generate_with_progress():
-    """Generate content with integrated SERP analysis and real-time progress"""
-    try:
-        data = request.get_json()
-        
-        # Check API key first
-        api_key = (os.getenv('OPENAI_API_KEY') or 
-                  os.getenv('Open_Api_Key') or 
-                  os.getenv('OPENAI_KEY') or 
-                  os.getenv('API_KEY'))
-        
-        if not api_key:
-            return jsonify({
-                "error": "OpenAI API key not found. Please set OPENAI_API_KEY in your Railway environment variables.",
-                "help": "Go to Railway → Your Project → Variables → Add OPENAI_API_KEY"
-            }), 400
-        
-        generation_agent, _ = create_agents()
-        if not generation_agent:
-            return jsonify({
-                "error": "Failed to initialize OpenAI client. Please check your API key is valid.",
-                "api_key_preview": f"{api_key[:10]}..." if api_key else "None",
-                "help": "Ensure your OPENAI_API_KEY starts with 'sk-' and is valid"
-            }), 500
-        
-        # Extract parameters
-        topic = data.get('topic', '')
-        content_type = data.get('content_type', 'blog post')
-        target_audience = data.get('target_audience', 'general')
-        primary_keywords = [k.strip() for k in data.get('primary_keywords', '').split(',') if k.strip()]
-        search_intent = data.get('search_intent', 'informational')
-        brand_voice = data.get('brand_voice', 'professional')
-        content_goal = data.get('content_goal', 'brand awareness')
-        target_geography = data.get('target_geography', 'global')
-        user_input = data.get('user_context', '')
-        analyze_serps = data.get('enable_serp_analysis', 'on') == 'on'
-        
-        # Generate enhanced content with full analysis
-        result = asyncio.run(generation_agent.generate_content(
-            topic=topic,
-            content_type=content_type,
-            target_audience=target_audience,
-            primary_keywords=primary_keywords,
-            search_intent=search_intent,
-            brand_voice=brand_voice,
-            content_goal=content_goal,
-            target_geography=target_geography,
-            user_input=user_input,
-            analyze_serps=analyze_serps
-        ))
-        
-        return jsonify(result)
-        
-    except Exception as e:
-        logger.error(f"Integrated generation error: {e}")
-        return jsonify({
-            "error": str(e),
-            "help": "Check your OpenAI API key in Railway environment variables"
-        }), 500
-
-@app.route('/generate', methods=['POST'])
-def generate_content():
-    """Legacy generate endpoint - redirects to new integrated flow"""
-    return generate_with_progress()
-
-@app.route('/evaluate', methods=['POST'])
-def evaluate_content():
-    """Evaluate content with real-time SERP analysis"""
-    try:
-        data = request.get_json()
-        
-        # Check API key first
-        api_key = (os.getenv('OPENAI_API_KEY') or 
-                  os.getenv('Open_Api_Key') or 
-                  os.getenv('OPENAI_KEY') or 
-                  os.getenv('API_KEY'))
-        
-        if not api_key:
-            return jsonify({
-                "error": "OpenAI API key not found. Please set OPENAI_API_KEY in your Railway environment variables.",
-                "help": "Go to Railway → Your Project → Variables → Add OPENAI_API_KEY"
-            }), 400
-        
-        _, evaluation_agent = create_agents()
-        if not evaluation_agent:
-            return jsonify({
-                "error": "Failed to initialize OpenAI client. Please check your API key is valid.",
-                "api_key_preview": f"{api_key[:10]}..." if api_key else "None",
-                "help": "Ensure your OPENAI_API_KEY starts with 'sk-' and is valid"
-            }), 500
-        
-        content = data.get('content', '')
-        topic = data.get('topic', '')
-        content_type = data.get('content_type', 'blog post')
-        target_audience = data.get('target_audience', 'general')
-        real_time = data.get('enable_serp_analysis', True)
-        
-        # Evaluate content with real-time analysis
-        result = asyncio.run(evaluation_agent.evaluate_content(
-            content=content,
-            topic=topic,
-            content_type=content_type,
-            target_audience=target_audience,
-            real_time=real_time
-        ))
-        
-        return jsonify(result)
-        
-    except Exception as e:
-        logger.error(f"Enhanced evaluation error: {e}")
-        return jsonify({
-            "error": str(e),
-            "help": "Check your OpenAI API key in Railway environment variables"
-        }), 500
-
-@app.route('/health')
-def health_check():
-    """Health check endpoint with API key status"""
-    try:
-        # Check if API key is available
-        api_key = (os.getenv('OPENAI_API_KEY') or 
-                  os.getenv('Open_Api_Key') or 
-                  os.getenv('OPENAI_KEY') or 
-                  os.getenv('API_KEY'))
-        
-        api_key_status = "✅ Found" if api_key else "❌ Missing"
-        api_key_preview = f"{api_key[:10]}..." if api_key else "None"
-        
-        # Test agent creation
-        generation_agent, evaluation_agent = create_agents()
-        agents_status = "✅ Ready" if (generation_agent and evaluation_agent) else "❌ Failed"
-        
-        return jsonify({
-            "status": "healthy" if agents_status == "✅ Ready" else "unhealthy",
-            "timestamp": datetime.now().isoformat(),
-            "api_key_status": api_key_status,
-            "api_key_preview": api_key_preview,
-            "agents_status": agents_status,
-            "environment_variables": {
-                "OPENAI_API_KEY": "✅" if os.getenv('OPENAI_API_KEY') else "❌",
-                "Open_Api_Key": "✅" if os.getenv('Open_Api_Key') else "❌",
-                "OPENAI_KEY": "✅" if os.getenv('OPENAI_KEY') else "❌",
-                "API_KEY": "✅" if os.getenv('API_KEY') else "❌"
-            }
-        })
-    except Exception as e:
-        return jsonify({
-            "status": "error",
-            "error": str(e),
-            "timestamp": datetime.now().isoformat()
-        })
-
-@app.route('/debug')
-def debug_info():
-    """Debug endpoint to check environment setup"""
-    try:
-        env_vars = {}
-        var_names = ['OPENAI_API_KEY', 'Open_Api_Key', 'OPENAI_KEY', 'API_KEY']
-        
-        for var_name in var_names:
-            value = os.getenv(var_name)
-            if value:
-                env_vars[var_name] = {
-                    "exists": True,
-                    "length": len(value),
-                    "starts_with_sk": value.startswith('sk-'),
-                    "preview": f"{value[:10]}..." if len(value) > 10 else value
-                }
-            else:
-                env_vars[var_name] = {"exists": False}
-        
-        # Test OpenAI client creation
-        try:
-            client = OpenAIClient()
-            client_status = "✅ Success"
-        except Exception as e:
-            client_status = f"❌ Failed: {str(e)}"
-        
-        return jsonify({
-            "environment_variables": env_vars,
-            "openai_client_status": client_status,
-            "python_version": os.sys.version,
-            "current_directory": os.getcwd(),
-            "timestamp": datetime.now().isoformat()
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)})
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    logger.info(f"Starting application on port {port}")
-    app.run(host="0.0.0.0", port=port, debug=False)</div>`;
-            }
-
             if (insights.content_gaps && insights.content_gaps.length > 0) {
                 html += `
                     <div class="section">
@@ -1903,26 +1912,32 @@ if __name__ == "__main__":
                         <div class="score-circle" data-score="${contentScore.overall_score || 75}" style="--score: ${(contentScore.overall_score || 75) * 10}; width: 100px; height: 100px; font-size: 18px;"></div>
                         <p style="margin-top: 10px; font-size: 16px;"><strong>Overall Content Score: ${contentScore.overall_score || 'N/A'}/100</strong></p>
                     </div>
-                    ${contentScore.breakdown ? `
-                        <div class="benchmark-comparison" style="margin-top: 20px;">
-                            <div class="benchmark-item">
-                                <h4>${contentScore.breakdown.word_count_score || 0}</h4>
-                                <p>Word Count Score</p>
-                            </div>
-                            <div class="benchmark-item">
-                                <h4>${contentScore.breakdown.pain_point_coverage || 0}</h4>
-                                <p>Pain Point Coverage</p>
-                            </div>
-                            <div class="benchmark-item">
-                                <h4>${contentScore.breakdown.topic_coverage_score || 0}</h4>
-                                <p>Topic Coverage</p>
-                            </div>
-                            <div class="benchmark-item">
-                                <h4>${contentScore.breakdown.human_quality_score || 0}</h4>
-                                <p>Human-Like Quality</p>
-                            </div>
+            `;
+
+            if (contentScore.breakdown) {
+                html += `
+                    <div class="benchmark-comparison" style="margin-top: 20px;">
+                        <div class="benchmark-item">
+                            <h4>${contentScore.breakdown.word_count_score || 0}</h4>
+                            <p>Word Count Score</p>
                         </div>
-                    ` : ''}
+                        <div class="benchmark-item">
+                            <h4>${contentScore.breakdown.pain_point_coverage || 0}</h4>
+                            <p>Pain Point Coverage</p>
+                        </div>
+                        <div class="benchmark-item">
+                            <h4>${contentScore.breakdown.topic_coverage_score || 0}</h4>
+                            <p>Topic Coverage</p>
+                        </div>
+                        <div class="benchmark-item">
+                            <h4>${contentScore.breakdown.human_quality_score || 0}</h4>
+                            <p>Human-Like Quality</p>
+                        </div>
+                    </div>
+                `;
+            }
+
+            html += `
                 </div>
 
                 <div class="section">
@@ -2149,4 +2164,212 @@ if __name__ == "__main__":
                 painCoverage.missed_pain_points.forEach(point => {
                     html += `<p>• ${point}</p>`;
                 });
-                html += `</div>
+                html += `</div></div>`;
+            }
+
+            document.getElementById('competitiveResults').innerHTML = html;
+        }
+    </script>
+</body>
+</html>
+"""
+
+# Flask Routes
+@app.route('/')
+def index():
+    """Serve the main page"""
+    return render_template_string(HTML_TEMPLATE)
+
+@app.route('/generate-with-progress', methods=['POST'])
+def generate_with_progress():
+    """Generate content with integrated SERP analysis and real-time progress"""
+    try:
+        data = request.get_json()
+        
+        # Check API key first
+        api_key = (os.getenv('OPENAI_API_KEY') or 
+                  os.getenv('Open_Api_Key') or 
+                  os.getenv('OPENAI_KEY') or 
+                  os.getenv('API_KEY'))
+        
+        if not api_key:
+            return jsonify({
+                "error": "OpenAI API key not found. Please set OPENAI_API_KEY in your Railway environment variables.",
+                "help": "Go to Railway → Your Project → Variables → Add OPENAI_API_KEY"
+            }), 400
+        
+        generation_agent, _ = create_agents()
+        if not generation_agent:
+            return jsonify({
+                "error": "Failed to initialize OpenAI client. Please check your API key is valid.",
+                "api_key_preview": f"{api_key[:10]}..." if api_key else "None",
+                "help": "Ensure your OPENAI_API_KEY starts with 'sk-' and is valid"
+            }), 500
+        
+        # Extract parameters
+        topic = data.get('topic', '')
+        content_type = data.get('content_type', 'blog post')
+        target_audience = data.get('target_audience', 'general')
+        primary_keywords = [k.strip() for k in data.get('primary_keywords', '').split(',') if k.strip()]
+        search_intent = data.get('search_intent', 'informational')
+        brand_voice = data.get('brand_voice', 'professional')
+        content_goal = data.get('content_goal', 'brand awareness')
+        target_geography = data.get('target_geography', 'global')
+        user_input = data.get('user_context', '')
+        analyze_serps = data.get('enable_serp_analysis', 'on') == 'on'
+        
+        # Generate enhanced content with full analysis
+        result = asyncio.run(generation_agent.generate_content(
+            topic=topic,
+            content_type=content_type,
+            target_audience=target_audience,
+            primary_keywords=primary_keywords,
+            search_intent=search_intent,
+            brand_voice=brand_voice,
+            content_goal=content_goal,
+            target_geography=target_geography,
+            user_input=user_input,
+            analyze_serps=analyze_serps
+        ))
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Integrated generation error: {e}")
+        return jsonify({
+            "error": str(e),
+            "help": "Check your OpenAI API key in Railway environment variables"
+        }), 500
+
+@app.route('/generate', methods=['POST'])
+def generate_content():
+    """Legacy generate endpoint - redirects to new integrated flow"""
+    return generate_with_progress()
+
+@app.route('/evaluate', methods=['POST'])
+def evaluate_content():
+    """Evaluate content with real-time SERP analysis"""
+    try:
+        data = request.get_json()
+        
+        # Check API key first
+        api_key = (os.getenv('OPENAI_API_KEY') or 
+                  os.getenv('Open_Api_Key') or 
+                  os.getenv('OPENAI_KEY') or 
+                  os.getenv('API_KEY'))
+        
+        if not api_key:
+            return jsonify({
+                "error": "OpenAI API key not found. Please set OPENAI_API_KEY in your Railway environment variables.",
+                "help": "Go to Railway → Your Project → Variables → Add OPENAI_API_KEY"
+            }), 400
+        
+        _, evaluation_agent = create_agents()
+        if not evaluation_agent:
+            return jsonify({
+                "error": "Failed to initialize OpenAI client. Please check your API key is valid.",
+                "api_key_preview": f"{api_key[:10]}..." if api_key else "None",
+                "help": "Ensure your OPENAI_API_KEY starts with 'sk-' and is valid"
+            }), 500
+        
+        content = data.get('content', '')
+        topic = data.get('topic', '')
+        content_type = data.get('content_type', 'blog post')
+        target_audience = data.get('target_audience', 'general')
+        real_time = data.get('enable_serp_analysis', True)
+        
+        # Evaluate content with real-time analysis
+        result = asyncio.run(evaluation_agent.evaluate_content(
+            content=content,
+            topic=topic,
+            content_type=content_type,
+            target_audience=target_audience,
+            real_time=real_time
+        ))
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Enhanced evaluation error: {e}")
+        return jsonify({
+            "error": str(e),
+            "help": "Check your OpenAI API key in Railway environment variables"
+        }), 500
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint with API key status"""
+    try:
+        # Check if API key is available
+        api_key = (os.getenv('OPENAI_API_KEY') or 
+                  os.getenv('Open_Api_Key') or 
+                  os.getenv('OPENAI_KEY') or 
+                  os.getenv('API_KEY'))
+        
+        api_key_status = "✅ Found" if api_key else "❌ Missing"
+        api_key_preview = f"{api_key[:10]}..." if api_key else "None"
+        
+        # Test agent creation
+        generation_agent, evaluation_agent = create_agents()
+        agents_status = "✅ Ready" if (generation_agent and evaluation_agent) else "❌ Failed"
+        
+        return jsonify({
+            "status": "healthy" if agents_status == "✅ Ready" else "unhealthy",
+            "timestamp": datetime.now().isoformat(),
+            "api_key_status": api_key_status,
+            "api_key_preview": api_key_preview,
+            "agents_status": agents_status,
+            "environment_variables": {
+                "OPENAI_API_KEY": "✅" if os.getenv('OPENAI_API_KEY') else "❌",
+                "Open_Api_Key": "✅" if os.getenv('Open_Api_Key') else "❌",
+                "OPENAI_KEY": "✅" if os.getenv('OPENAI_KEY') else "❌",
+                "API_KEY": "✅" if os.getenv('API_KEY') else "❌"
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        })
+
+@app.route('/debug')
+def debug_info():
+    """Debug endpoint to check environment setup"""
+    try:
+        env_vars = {}
+        var_names = ['OPENAI_API_KEY', 'Open_Api_Key', 'OPENAI_KEY', 'API_KEY']
+        
+        for var_name in var_names:
+            value = os.getenv(var_name)
+            if value:
+                env_vars[var_name] = {
+                    "exists": True,
+                    "length": len(value),
+                    "starts_with_sk": value.startswith('sk-'),
+                    "preview": f"{value[:10]}..." if len(value) > 10 else value
+                }
+            else:
+                env_vars[var_name] = {"exists": False}
+        
+        # Test OpenAI client creation
+        try:
+            client = OpenAIClient()
+            client_status = "✅ Success"
+        except Exception as e:
+            client_status = f"❌ Failed: {str(e)}"
+        
+        return jsonify({
+            "environment_variables": env_vars,
+            "openai_client_status": client_status,
+            "python_version": os.sys.version,
+            "current_directory": os.getcwd(),
+            "timestamp": datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    logger.info(f"Starting application on port {port}")
+    app.run(host="0.0.0.0", port=port, debug=False)
