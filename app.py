@@ -71,7 +71,6 @@ class SERPAnalyzer:
         """Get search results using a search API or web scraping"""
         try:
             # For demo purposes, creating mock search results
-            # In production, integrate with Google Custom Search API or similar
             mock_results = [
                 {
                     "title": f"Ultimate Guide to {keyword} - Complete 2024 Overview",
@@ -88,10 +87,9 @@ class SERPAnalyzer:
                     "url": f"https://example3.com/{keyword.replace(' ', '-')}-best-practices",
                     "snippet": f"Essential best practices and common mistakes to avoid with {keyword}..."
                 },
-                # Add more mock results...
             ]
             
-            # Extend to 10 results
+            # Extend to num_results
             while len(mock_results) < num_results:
                 idx = len(mock_results) + 1
                 mock_results.append({
@@ -1106,14 +1104,14 @@ def create_agents():
         logger.error("Please check your OPENAI_API_KEY environment variable in Railway")
         return None, None
 
-# Enhanced HTML Template with Surfer SEO-like Features
+# Enhanced HTML Template with Real-Time Progress
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Advanced SEO Content Generator - Surfer SEO Alternative</title>
+    <title>AI Content Generator with Real-Time Analysis</title>
     <style>
         body { font-family: 'Segoe UI', Arial, sans-serif; max-width: 1600px; margin: 0 auto; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
         .container { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
@@ -1436,6 +1434,47 @@ HTML_TEMPLATE = """
             }
         });
 
+        // Evaluate content
+        document.getElementById('evaluateBtn').addEventListener('click', async function() {
+            if (!generatedContent) {
+                alert('Please generate content first!');
+                return;
+            }
+            
+            const formData = new FormData(document.getElementById('contentForm'));
+            const data = Object.fromEntries(formData.entries());
+            data.content = generatedContent;
+            
+            showLoadingWithProgress();
+            showRealTimeIndicator(true);
+            
+            try {
+                const response = await fetch('/evaluate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                hideLoading();
+                showRealTimeIndicator(false);
+                
+                if (result.error) {
+                    showError(result.error, result.help || 'Please check your Railway environment variables for OPENAI_API_KEY');
+                } else {
+                    displayEvaluationResults(result);
+                    displayCompetitiveResults(result);
+                    // Switch to evaluation tab
+                    document.querySelector('[data-tab="evaluation"]').click();
+                }
+                
+            } catch (error) {
+                hideLoading();
+                showRealTimeIndicator(false);
+                showError('Failed to evaluate content: ' + error.message);
+            }
+        });
+
         // Debug/Test Setup button
         document.getElementById('debugBtn').addEventListener('click', async function() {
             try {
@@ -1492,47 +1531,6 @@ HTML_TEMPLATE = """
                 
             } catch (error) {
                 showError('Debug failed: ' + error.message);
-            }
-        });
-
-        // Evaluate content
-        document.getElementById('evaluateBtn').addEventListener('click', async function() {
-            if (!generatedContent) {
-                alert('Please generate content first!');
-                return;
-            }
-            
-            const formData = new FormData(document.getElementById('contentForm'));
-            const data = Object.fromEntries(formData.entries());
-            data.content = generatedContent;
-            
-            showLoading('📊 Real-time content evaluation with competitive analysis...');
-            showRealTimeIndicator(true);
-            
-            try {
-                const response = await fetch('/evaluate', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(data)
-                });
-                
-                const result = await response.json();
-                hideLoading();
-                showRealTimeIndicator(false);
-                
-                if (result.error) {
-                    showError(result.error, result.help || 'Please check your Railway environment variables for OPENAI_API_KEY');
-                } else {
-                    displayEvaluationResults(result);
-                    displayCompetitiveResults(result);
-                    // Switch to evaluation tab
-                    document.querySelector('[data-tab="evaluation"]').click();
-                }
-                
-            } catch (error) {
-                hideLoading();
-                showRealTimeIndicator(false);
-                showError('Failed to evaluate content: ' + error.message);
             }
         });
 
@@ -1658,6 +1656,214 @@ HTML_TEMPLATE = """
                     html += `<p>• ${point}</p>`;
                 });
                 html += `</div></div>`;
+            }
+
+            document.getElementById('competitiveResults').innerHTML = html;
+        }
+    </script>
+</body>
+</html>
+"""
+
+# Flask Routes
+@app.route('/')
+def index():
+    """Serve the main page"""
+    return render_template_string(HTML_TEMPLATE)
+
+@app.route('/generate-with-progress', methods=['POST'])
+def generate_with_progress():
+    """Generate content with integrated SERP analysis and real-time progress"""
+    try:
+        data = request.get_json()
+        
+        # Check API key first
+        api_key = (os.getenv('OPENAI_API_KEY') or 
+                  os.getenv('Open_Api_Key') or 
+                  os.getenv('OPENAI_KEY') or 
+                  os.getenv('API_KEY'))
+        
+        if not api_key:
+            return jsonify({
+                "error": "OpenAI API key not found. Please set OPENAI_API_KEY in your Railway environment variables.",
+                "help": "Go to Railway → Your Project → Variables → Add OPENAI_API_KEY"
+            }), 400
+        
+        generation_agent, _ = create_agents()
+        if not generation_agent:
+            return jsonify({
+                "error": "Failed to initialize OpenAI client. Please check your API key is valid.",
+                "api_key_preview": f"{api_key[:10]}..." if api_key else "None",
+                "help": "Ensure your OPENAI_API_KEY starts with 'sk-' and is valid"
+            }), 500
+        
+        # Extract parameters
+        topic = data.get('topic', '')
+        content_type = data.get('content_type', 'blog post')
+        target_audience = data.get('target_audience', 'general')
+        primary_keywords = [k.strip() for k in data.get('primary_keywords', '').split(',') if k.strip()]
+        search_intent = data.get('search_intent', 'informational')
+        brand_voice = data.get('brand_voice', 'professional')
+        content_goal = data.get('content_goal', 'brand awareness')
+        target_geography = data.get('target_geography', 'global')
+        user_input = data.get('user_context', '')
+        analyze_serps = data.get('enable_serp_analysis', 'on') == 'on'
+        
+        # Generate enhanced content with full analysis
+        result = asyncio.run(generation_agent.generate_content(
+            topic=topic,
+            content_type=content_type,
+            target_audience=target_audience,
+            primary_keywords=primary_keywords,
+            search_intent=search_intent,
+            brand_voice=brand_voice,
+            content_goal=content_goal,
+            target_geography=target_geography,
+            user_input=user_input,
+            analyze_serps=analyze_serps
+        ))
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Integrated generation error: {e}")
+        return jsonify({
+            "error": str(e),
+            "help": "Check your OpenAI API key in Railway environment variables"
+        }), 500
+
+@app.route('/generate', methods=['POST'])
+def generate_content():
+    """Legacy generate endpoint - redirects to new integrated flow"""
+    return generate_with_progress()
+
+@app.route('/evaluate', methods=['POST'])
+def evaluate_content():
+    """Evaluate content with real-time SERP analysis"""
+    try:
+        data = request.get_json()
+        
+        # Check API key first
+        api_key = (os.getenv('OPENAI_API_KEY') or 
+                  os.getenv('Open_Api_Key') or 
+                  os.getenv('OPENAI_KEY') or 
+                  os.getenv('API_KEY'))
+        
+        if not api_key:
+            return jsonify({
+                "error": "OpenAI API key not found. Please set OPENAI_API_KEY in your Railway environment variables.",
+                "help": "Go to Railway → Your Project → Variables → Add OPENAI_API_KEY"
+            }), 400
+        
+        _, evaluation_agent = create_agents()
+        if not evaluation_agent:
+            return jsonify({
+                "error": "Failed to initialize OpenAI client. Please check your API key is valid.",
+                "api_key_preview": f"{api_key[:10]}..." if api_key else "None",
+                "help": "Ensure your OPENAI_API_KEY starts with 'sk-' and is valid"
+            }), 500
+        
+        content = data.get('content', '')
+        topic = data.get('topic', '')
+        content_type = data.get('content_type', 'blog post')
+        target_audience = data.get('target_audience', 'general')
+        real_time = data.get('enable_serp_analysis', True)
+        
+        # Evaluate content with real-time analysis
+        result = asyncio.run(evaluation_agent.evaluate_content(
+            content=content,
+            topic=topic,
+            content_type=content_type,
+            target_audience=target_audience,
+            real_time=real_time
+        ))
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Enhanced evaluation error: {e}")
+        return jsonify({
+            "error": str(e),
+            "help": "Check your OpenAI API key in Railway environment variables"
+        }), 500
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint with API key status"""
+    try:
+        # Check if API key is available
+        api_key = (os.getenv('OPENAI_API_KEY') or 
+                  os.getenv('Open_Api_Key') or 
+                  os.getenv('OPENAI_KEY') or 
+                  os.getenv('API_KEY'))
+        
+        api_key_status = "✅ Found" if api_key else "❌ Missing"
+        api_key_preview = f"{api_key[:10]}..." if api_key else "None"
+        
+        # Test agent creation
+        generation_agent, evaluation_agent = create_agents()
+        agents_status = "✅ Ready" if (generation_agent and evaluation_agent) else "❌ Failed"
+        
+        return jsonify({
+            "status": "healthy" if agents_status == "✅ Ready" else "unhealthy",
+            "timestamp": datetime.now().isoformat(),
+            "api_key_status": api_key_status,
+            "api_key_preview": api_key_preview,
+            "agents_status": agents_status,
+            "environment_variables": {
+                "OPENAI_API_KEY": "✅" if os.getenv('OPENAI_API_KEY') else "❌",
+                "Open_Api_Key": "✅" if os.getenv('Open_Api_Key') else "❌",
+                "OPENAI_KEY": "✅" if os.getenv('OPENAI_KEY') else "❌",
+                "API_KEY": "✅" if os.getenv('API_KEY') else "❌"
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        })
+
+@app.route('/debug')
+def debug_info():
+    """Debug endpoint to check environment setup"""
+    try:
+        env_vars = {}
+        var_names = ['OPENAI_API_KEY', 'Open_Api_Key', 'OPENAI_KEY', 'API_KEY']
+        
+        for var_name in var_names:
+            value = os.getenv(var_name)
+            if value:
+                env_vars[var_name] = {
+                    "exists": True,
+                    "length": len(value),
+                    "starts_with_sk": value.startswith('sk-'),
+                    "preview": f"{value[:10]}..." if len(value) > 10 else value
+                }
+            else:
+                env_vars[var_name] = {"exists": False}
+        
+        # Test OpenAI client creation
+        try:
+            client = OpenAIClient()
+            client_status = "✅ Success"
+        except Exception as e:
+            client_status = f"❌ Failed: {str(e)}"
+        
+        return jsonify({
+            "environment_variables": env_vars,
+            "openai_client_status": client_status,
+            "python_version": os.sys.version,
+            "current_directory": os.getcwd(),
+            "timestamp": datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    logger.info(f"Starting application on port {port}")
+    app.run(host="0.0.0.0", port=port, debug=False)</div>`;
             }
 
             if (insights.content_gaps && insights.content_gaps.length > 0) {
@@ -1943,216 +2149,4 @@ HTML_TEMPLATE = """
                 painCoverage.missed_pain_points.forEach(point => {
                     html += `<p>• ${point}</p>`;
                 });
-                html += `</div></div>`;
-            }
-
-            document.getElementById('competitiveResults').innerHTML = html;
-        }
-    </script>
-</body>
-</html>
-"""
-
-# Enhanced Flask Routes
-@app.route('/')
-def index():
-    """Serve the main page"""
-    return render_template_string(HTML_TEMPLATE)
-
-@app.route('/generate-with-progress', methods=['POST'])
-def generate_with_progress():
-    """Generate content with integrated SERP analysis and real-time progress"""
-    try:
-        data = request.get_json()
-        
-        # Check API key first
-        api_key = (os.getenv('OPENAI_API_KEY') or 
-                  os.getenv('Open_Api_Key') or 
-                  os.getenv('OPENAI_KEY') or 
-                  os.getenv('API_KEY'))
-        
-        if not api_key:
-            return jsonify({
-                "error": "OpenAI API key not found. Please set OPENAI_API_KEY in your Railway environment variables.",
-                "help": "Go to Railway → Your Project → Variables → Add OPENAI_API_KEY"
-            }), 400
-        
-        generation_agent, _ = create_agents()
-        if not generation_agent:
-            return jsonify({
-                "error": "Failed to initialize OpenAI client. Please check your API key is valid.",
-                "api_key_preview": f"{api_key[:10]}..." if api_key else "None",
-                "help": "Ensure your OPENAI_API_KEY starts with 'sk-' and is valid"
-            return jsonify({
-            "error": str(e),
-            "help": "Check your OpenAI API key in Railway environment variables"
-        }), 500
-
-@app.route('/debug')
-def debug_info():
-    """Debug endpoint to check environment setup"""
-    try:
-        env_vars = {}
-        var_names = ['OPENAI_API_KEY', 'Open_Api_Key', 'OPENAI_KEY', 'API_KEY']
-        
-        for var_name in var_names:
-            value = os.getenv(var_name)
-            if value:
-                env_vars[var_name] = {
-                    "exists": True,
-                    "length": len(value),
-                    "starts_with_sk": value.startswith('sk-'),
-                    "preview": f"{value[:10]}..." if len(value) > 10 else value
-                }
-            else:
-                env_vars[var_name] = {"exists": False}
-        
-        # Test OpenAI client creation
-        try:
-            client = OpenAIClient()
-            client_status = "✅ Success"
-        except Exception as e:
-            client_status = f"❌ Failed: {str(e)}"
-        
-        return jsonify({
-            "environment_variables": env_vars,
-            "openai_client_status": client_status,
-            "python_version": os.sys.version,
-            "current_directory": os.getcwd(),
-            "timestamp": datetime.now().isoformat()
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)})
-        
-        # Extract parameters
-        topic = data.get('topic', '')
-        content_type = data.get('content_type', 'blog post')
-        target_audience = data.get('target_audience', 'general')
-        primary_keywords = [k.strip() for k in data.get('primary_keywords', '').split(',') if k.strip()]
-        search_intent = data.get('search_intent', 'informational')
-        brand_voice = data.get('brand_voice', 'professional')
-        content_goal = data.get('content_goal', 'brand awareness')
-        target_geography = data.get('target_geography', 'global')
-        user_input = data.get('user_context', '')
-        analyze_serps = data.get('enable_serp_analysis', 'on') == 'on'
-        
-        # Generate enhanced content with full analysis
-        result = asyncio.run(generation_agent.generate_content(
-            topic=topic,
-            content_type=content_type,
-            target_audience=target_audience,
-            primary_keywords=primary_keywords,
-            search_intent=search_intent,
-            brand_voice=brand_voice,
-            content_goal=content_goal,
-            target_geography=target_geography,
-            user_input=user_input,
-            analyze_serps=analyze_serps
-        ))
-        
-        return jsonify(result)
-        
-    except Exception as e:
-        logger.error(f"Integrated generation error: {e}")
-        return jsonify({
-            "error": str(e),
-            "help": "Check your OpenAI API key in Railway environment variables"
-        }), 500
-
-@app.route('/generate', methods=['POST'])
-def generate_content():
-    """Legacy generate endpoint - redirects to new integrated flow"""
-    return generate_with_progress()
-
-# Remove the separate analyze-serps endpoint since it's now integrated
-
-@app.route('/evaluate', methods=['POST'])
-def evaluate_content():
-    """Evaluate content with real-time SERP analysis"""
-    try:
-        data = request.get_json()
-        
-        # Check API key first
-        api_key = (os.getenv('OPENAI_API_KEY') or 
-                  os.getenv('Open_Api_Key') or 
-                  os.getenv('OPENAI_KEY') or 
-                  os.getenv('API_KEY'))
-        
-        if not api_key:
-            return jsonify({
-                "error": "OpenAI API key not found. Please set OPENAI_API_KEY in your Railway environment variables.",
-                "help": "Go to Railway → Your Project → Variables → Add OPENAI_API_KEY"
-            }), 400
-        
-        _, evaluation_agent = create_agents()
-        if not evaluation_agent:
-            return jsonify({
-                "error": "Failed to initialize OpenAI client. Please check your API key is valid.",
-                "api_key_preview": f"{api_key[:10]}..." if api_key else "None",
-                "help": "Ensure your OPENAI_API_KEY starts with 'sk-' and is valid"
-            }), 500
-        
-        content = data.get('content', '')
-        topic = data.get('topic', '')
-        content_type = data.get('content_type', 'blog post')
-        target_audience = data.get('target_audience', 'general')
-        real_time = data.get('enable_serp_analysis', True)
-        
-        # Evaluate content with real-time analysis
-        result = asyncio.run(evaluation_agent.evaluate_content(
-            content=content,
-            topic=topic,
-            content_type=content_type,
-            target_audience=target_audience,
-            real_time=real_time
-        ))
-        
-        return jsonify(result)
-        
-    except Exception as e:
-        logger.error(f"Enhanced evaluation error: {e}")
-        return jsonify({
-            "error": str(e),
-            "help": "Check your OpenAI API key in Railway environment variables"
-        }), 500
-
-@app.route('/health')
-def health_check():
-    """Health check endpoint with API key status"""
-    try:
-        # Check if API key is available
-        api_key = (os.getenv('OPENAI_API_KEY') or 
-                  os.getenv('Open_Api_Key') or 
-                  os.getenv('OPENAI_KEY') or 
-                  os.getenv('API_KEY'))
-        
-        api_key_status = "✅ Found" if api_key else "❌ Missing"
-        api_key_preview = f"{api_key[:10]}..." if api_key else "None"
-        
-        # Test agent creation
-        generation_agent, evaluation_agent = create_agents()
-        agents_status = "✅ Ready" if (generation_agent and evaluation_agent) else "❌ Failed"
-        
-        return jsonify({
-            "status": "healthy" if agents_status == "✅ Ready" else "unhealthy",
-            "timestamp": datetime.now().isoformat(),
-            "api_key_status": api_key_status,
-            "api_key_preview": api_key_preview,
-            "agents_status": agents_status,
-            "environment_variables": {
-                "OPENAI_API_KEY": "✅" if os.getenv('OPENAI_API_KEY') else "❌",
-                "Open_Api_Key": "✅" if os.getenv('Open_Api_Key') else "❌",
-                "OPENAI_KEY": "✅" if os.getenv('OPENAI_KEY') else "❌",
-                "API_KEY": "✅" if os.getenv('API_KEY') else "❌"
-            }
-        })
-    except Exception as e:
-        return jsonify({
-            "status": "error",
-            "error": str(e),
-            "timestamp": datetime.now().isoformat()
-        })
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+                html += `</div>
