@@ -1,3 +1,8 @@
+"""
+Reddit Scraper for Pain Point Extraction
+Uses PRAW (Python Reddit API Wrapper) to scrape posts and comments
+"""
+
 import praw
 import os
 import logging
@@ -28,21 +33,29 @@ class RedditScraper:
         self.client_secret = client_secret or os.getenv('REDDIT_CLIENT_SECRET', 'NWqTOqGQB2QA3vEKPWWin_LZAQCwTw')
         self.user_agent = user_agent or os.getenv('REDDIT_USER_AGENT', 'Zeeshan Bashir Pain Point Analyzer v1.0')
         
-        if not all([self.client_id, self.client_secret]):
-            raise ValueError("Reddit API credentials are required")
-        
-        # Initialize Reddit API client
-        try:
-            self.reddit = praw.Reddit(
-                client_id=self.client_id,
-                client_secret=self.client_secret,
-                user_agent=self.user_agent,
-                redirect_uri='http://localhost:8080'
-            )
-            logger.info("✅ Reddit API client initialized successfully")
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize Reddit client: {e}")
-            raise
+        # Don't initialize Reddit client here - do it lazily when needed
+        self._reddit = None
+        logger.info("✅ RedditScraper instance created (lazy initialization)")
+    
+    @property
+    def reddit(self):
+        """Lazy initialization of Reddit client"""
+        if self._reddit is None:
+            if not all([self.client_id, self.client_secret]):
+                raise ValueError("Reddit API credentials are required")
+            
+            try:
+                self._reddit = praw.Reddit(
+                    client_id=self.client_id,
+                    client_secret=self.client_secret,
+                    user_agent=self.user_agent,
+                    redirect_uri='http://localhost:8080'
+                )
+                logger.info("✅ Reddit API client initialized successfully")
+            except Exception as e:
+                logger.error(f"❌ Failed to initialize Reddit client: {e}")
+                raise
+        return self._reddit
     
     def scrape_subreddit(self, subreddit_name: str, limit: int = 100, 
                         time_filter: str = 'week', sort_by: str = 'hot') -> List[Dict]:
