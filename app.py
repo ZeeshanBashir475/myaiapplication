@@ -517,7 +517,7 @@ def reddit_to_content():
             "success": True,
             "workflow": {
                 "step1_reddit": {
-                    "posts_scraped": reddit_data.get('posts_scraped', len(reddit_data.get('posts', []))),
+                    "posts_scraped": reddit_data.get('posts_scraped', 0),
                     "comments_scraped": reddit_data.get('comments_scraped', 0)
                 },
                 "step2_pain_points": {
