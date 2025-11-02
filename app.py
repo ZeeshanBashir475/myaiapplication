@@ -145,11 +145,16 @@ def create_agents():
         generation_agent = ContentGenerationAgent(openai_client)
         reddit_scraper = RedditScraper() if RedditScraper else None
         pain_extractor = PainPointExtractor(openai_client) if PainPointExtractor else None
-        humanizer = PainPointHumanizer(openai_client) if PainPointHumanizer else None
+        
+        # Skip humanizer for now - it has errors
+        humanizer = None
+        logger.info("⚠️ Humanizer skipped (has import errors)")
         
         return generation_agent, reddit_scraper, pain_extractor, humanizer
     except Exception as e:
         logger.error(f"Agent creation failed: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return None, None, None, None
 
 # COMPLETE HTML with Waqzee Navigation
