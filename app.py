@@ -767,7 +767,24 @@ def reddit_to_content():
         generation_agent, reddit_scraper, pain_extractor, _ = create_agents()
         
         if not reddit_scraper:
-            return jsonify({"error": "Reddit scraper not available. Check if Reddit_scraper.py exists in src/agents/"}), 500
+            # Show detailed error with file check
+            import os
+            agents_path = os.path.join(os.path.dirname(__file__), 'src', 'agents')
+            error_msg = f"Reddit scraper not available.\n\n"
+            error_msg += f"Looking for: Reddit_scraper.py in {agents_path}\n\n"
+            
+            if os.path.exists(agents_path):
+                files = os.listdir(agents_path)
+                error_msg += f"Files found in src/agents/: {', '.join(files)}\n\n"
+                error_msg += "Please ensure files are named:\n"
+                error_msg += "- Reddit_scraper.py (capital R, underscore)\n"
+                error_msg += "- Pain_point_extractor.py (capital P, underscore)\n"
+                error_msg += "- Pain_point_humanizer.py (capital P, underscore)"
+            else:
+                error_msg += f"Folder {agents_path} does not exist!\n"
+                error_msg += "Please create src/agents/ folder and add the files."
+            
+            return jsonify({"error": error_msg}), 500
         
         if not all([generation_agent, reddit_scraper, pain_extractor]):
             return jsonify({"error": "Failed to initialize agents"}), 500
@@ -869,6 +886,36 @@ def health():
         "service": "Waqzee Pain Point Content Tool",
         "timestamp": datetime.now().isoformat()
     })
+
+@app.route('/debug')
+def debug():
+    """Debug route to check file structure"""
+    import os
+    
+    debug_info = {
+        "current_dir": os.getcwd(),
+        "app_file_location": __file__,
+        "files_in_current_dir": os.listdir('.') if os.path.exists('.') else [],
+    }
+    
+    # Check src/agents folder
+    agents_path = os.path.join(os.path.dirname(__file__), 'src', 'agents')
+    if os.path.exists(agents_path):
+        debug_info["agents_folder_exists"] = True
+        debug_info["agents_path"] = agents_path
+        debug_info["files_in_agents"] = os.listdir(agents_path)
+    else:
+        debug_info["agents_folder_exists"] = False
+        debug_info["agents_path"] = agents_path
+    
+    # Check if modules loaded
+    debug_info["modules_loaded"] = {
+        "RedditScraper": RedditScraper is not None,
+        "PainPointExtractor": PainPointExtractor is not None,
+        "PainPointHumanizer": PainPointHumanizer is not None
+    }
+    
+    return jsonify(debug_info)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
