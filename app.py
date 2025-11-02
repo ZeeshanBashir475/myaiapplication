@@ -13,7 +13,7 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-logger.info("🚀 Starting Waqzee Content Tool...")
+logger.info("Starting Waqzee Content Tool...")
 
 # Add src/agents to path
 import sys
@@ -21,10 +21,10 @@ agents_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src', 'a
 if os.path.exists(agents_path):
     if agents_path not in sys.path:
         sys.path.insert(0, agents_path)
-        logger.info(f"✅ Added to Python path: {agents_path}")
-    logger.info(f"📁 Files in agents folder: {os.listdir(agents_path)}")
+        logger.info(f"Added to Python path: {agents_path}")
+    logger.info(f"Files in agents folder: {os.listdir(agents_path)}")
 else:
-    logger.error(f"❌ Agents folder not found: {agents_path}")
+    logger.error(f"Agents folder not found: {agents_path}")
 
 # Try to import agents safely - each import is independent
 RedditScraper = None
@@ -33,27 +33,27 @@ PainPointHumanizer = None
 
 try:
     from Reddit_scraper import RedditScraper
-    logger.info("✅ RedditScraper imported successfully")
+    logger.info("RedditScraper imported successfully")
 except Exception as e:
-    logger.error(f"❌ Failed to import RedditScraper: {e}")
+    logger.error(f"Failed to import RedditScraper: {e}")
 
 try:
     from Pain_point_extractor import PainPointExtractor
-    logger.info("✅ PainPointExtractor imported successfully")
+    logger.info("PainPointExtractor imported successfully")
 except Exception as e:
-    logger.error(f"❌ Failed to import PainPointExtractor: {e}")
+    logger.error(f"Failed to import PainPointExtractor: {e}")
 
 try:
     from Pain_point_humanizer import PainPointHumanizer
-    logger.info("✅ PainPointHumanizer imported successfully")
+    logger.info("PainPointHumanizer imported successfully")
 except Exception as e:
-    logger.error(f"❌ Failed to import PainPointHumanizer: {e}")
+    logger.error(f"Failed to import PainPointHumanizer: {e}")
 
 # Check import status
 if all([RedditScraper, PainPointExtractor, PainPointHumanizer]):
-    logger.info("🎉 All agents imported successfully!")
+    logger.info("All agents imported successfully!")
 else:
-    logger.warning(f"⚠️ Some agents failed to import: Reddit={RedditScraper is not None}, Extractor={PainPointExtractor is not None}, Humanizer={PainPointHumanizer is not None}")
+    logger.warning(f"Some agents failed to import: Reddit={RedditScraper is not None}, Extractor={PainPointExtractor is not None}, Humanizer={PainPointHumanizer is not None}")
 
 app = Flask(__name__)
 
@@ -68,7 +68,7 @@ class OpenAIClient:
         self.model = model
         self.client = openai.OpenAI(api_key=self.api_key, timeout=60.0)
         self.async_client = openai.AsyncOpenAI(api_key=self.api_key, timeout=60.0)
-        logger.info(f"✅ OpenAI client initialized with model: {self.model}")
+        logger.info(f"OpenAI client initialized with model: {self.model}")
     
     async def generate_content(self, prompt: str, max_tokens: int = 2000, temperature: float = 0.7) -> str:
         try:
@@ -148,7 +148,7 @@ def create_agents():
         
         # Skip humanizer for now - it has errors
         humanizer = None
-        logger.info("⚠️ Humanizer skipped (has import errors)")
+        logger.info("Humanizer skipped (has import errors)")
         
         return generation_agent, reddit_scraper, pain_extractor, humanizer
     except Exception as e:
@@ -157,310 +157,664 @@ def create_agents():
         logger.error(traceback.format_exc())
         return None, None, None, None
 
-# COMPLETE HTML with Waqzee Navigation
+# PROFESSIONAL BLACK & WHITE HTML TEMPLATE
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Waqzee - Pain Point Content Writing Tool</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <title>Waqzee - Content Generation Tool</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; }
         
-        .waqzee-header { background: #ffffff; box-shadow: 0 2px 10px rgba(0,0,0,0.1); position: sticky; top: 0; z-index: 1000; }
-        .header-container { max-width: 1400px; margin: 0 auto; padding: 0 20px; display: flex; justify-content: space-between; align-items: center; height: 80px; }
-        .waqzee-logo { height: 50px; width: auto; }
-        .main-nav { display: flex; align-items: center; gap: 40px; list-style: none; }
-        .main-nav a { text-decoration: none; color: #2c3e50; font-weight: 500; font-size: 16px; transition: color 0.3s; }
-        .main-nav a:hover { color: #667eea; }
-        .main-nav a.active { color: #667eea; font-weight: 600; }
-        .cta-button { background: linear-gradient(45deg, #2c3e50, #34495e); color: white !important; padding: 12px 30px; border-radius: 25px; font-weight: 600; transition: all 0.3s; box-shadow: 0 4px 15px rgba(44, 62, 80, 0.3); }
-        .cta-button:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(44, 62, 80, 0.4); }
-        .mobile-menu-btn { display: none; background: none; border: none; font-size: 24px; cursor: pointer; color: #2c3e50; }
-        
-        @media (max-width: 968px) {
-            .main-nav { position: fixed; top: 80px; left: -100%; width: 100%; height: calc(100vh - 80px); background: white; flex-direction: column; padding: 40px; gap: 30px; transition: left 0.3s; }
-            .main-nav.active { left: 0; }
-            .mobile-menu-btn { display: block; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+            background: #f9f9f9;
+            color: #1a1a1a;
         }
         
-        .main-content { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: calc(100vh - 80px); padding: 40px 20px; }
-        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 40px; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
-        .page-header { text-align: center; margin-bottom: 40px; padding-bottom: 30px; border-bottom: 3px solid #667eea; }
-        .page-header h1 { color: #667eea; font-size: 2.5em; margin-bottom: 10px; }
-        .subtitle { color: #666; font-size: 1.2em; font-weight: 500; }
-        .badge { display: inline-block; background: linear-gradient(45deg, #667eea, #764ba2); color: white; padding: 8px 20px; border-radius: 20px; font-size: 0.9em; font-weight: 600; margin: 10px 5px; }
-        .section { background: #f8f9fa; padding: 30px; border-radius: 15px; margin-bottom: 30px; border-left: 5px solid #667eea; }
-        .section h2 { color: #667eea; margin-bottom: 20px; font-size: 1.8em; }
-        .form-row { display: flex; gap: 20px; margin-bottom: 20px; }
-        .form-col { flex: 1; }
-        label { display: block; margin-bottom: 8px; font-weight: 600; color: #555; font-size: 0.95em; }
-        input, textarea, select { width: 100%; padding: 12px 16px; border: 2px solid #e1e5e9; border-radius: 10px; font-size: 14px; transition: all 0.3s; font-family: inherit; }
-        input:focus, textarea:focus, select:focus { border-color: #667eea; outline: none; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
-        button { width: 100%; padding: 16px 24px; border: none; border-radius: 12px; cursor: pointer; font-size: 16px; font-weight: 600; transition: all 0.3s; font-family: inherit; background: linear-gradient(45deg, #667eea, #764ba2); color: white; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4); }
-        button:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(102, 126, 234, 0.5); }
-        .loading { display: none; text-align: center; padding: 50px; background: linear-gradient(135deg, #e3f2fd, #f3e5f5); border-radius: 15px; margin-top: 30px; }
-        .spinner { width: 50px; height: 50px; border: 5px solid #f3f3f3; border-top: 5px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .success { background: linear-gradient(135deg, #e8f5e8, #c8e6c9); color: #2e7d32; padding: 25px; border-radius: 12px; margin: 20px 0; border-left: 5px solid #4caf50; }
-        .error { background: linear-gradient(135deg, #ffebee, #ffcdd2); color: #d32f2f; padding: 25px; border-radius: 12px; margin: 20px 0; border-left: 5px solid #f44336; }
-        .content-display { background: white; padding: 30px; border-radius: 12px; margin-top: 20px; border: 2px solid #e1e5e9; max-height: 600px; overflow-y: auto; line-height: 1.8; }
-        .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 25px 0; }
-        .stat-card { background: white; padding: 20px; border-radius: 12px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        .stat-value { font-size: 2em; font-weight: bold; color: #667eea; margin-bottom: 5px; }
-        .stat-label { color: #666; font-size: 0.9em; }
-        .feature-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 30px 0; }
-        .feature-item { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); transition: transform 0.3s; }
-        .feature-item:hover { transform: translateY(-5px); }
-        .feature-icon { font-size: 2em; margin-bottom: 10px; }
+        /* Header */
+        .header {
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+        
+        .header-content {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo {
+            font-size: 24px;
+            font-weight: 700;
+            color: #000;
+        }
+        
+        .nav a {
+            text-decoration: none;
+            color: #666;
+            margin: 0 20px;
+            font-size: 14px;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+        
+        .nav a:hover, .nav a.active {
+            color: #000;
+        }
+        
+        /* Main Container */
+        .main {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 40px;
+        }
+        
+        .page-title {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: #000;
+        }
+        
+        .page-subtitle {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 40px;
+        }
+        
+        /* Content Grid */
+        .content-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            margin-bottom: 40px;
+        }
+        
+        @media (max-width: 1200px) {
+            .content-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        /* Form Sections */
+        .form-section {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #000;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group:last-child {
+            margin-bottom: 0;
+        }
+        
+        label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: #1a1a1a;
+        }
+        
+        input[type="text"],
+        input[type="email"],
+        select,
+        textarea {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid #d0d0d0;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+            transition: border-color 0.2s;
+            background: white;
+            color: #000;
+        }
+        
+        input[type="text"]:focus,
+        input[type="email"]:focus,
+        select:focus,
+        textarea:focus {
+            border-color: #000;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.05);
+        }
+        
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        
+        /* Buttons */
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+            width: 100%;
+        }
+        
+        .btn-primary {
+            background: #000;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #333;
+        }
+        
+        .btn-primary:active {
+            transform: scale(0.98);
+        }
+        
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #000;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+        
+        /* Status Messages */
+        .status-message {
+            padding: 16px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        
+        .status-success {
+            background: #f0f9f7;
+            color: #1a5f52;
+            border: 1px solid #d0e8e3;
+        }
+        
+        .status-error {
+            background: #fef0f0;
+            color: #8b3333;
+            border: 1px solid #f0d0d0;
+        }
+        
+        .status-loading {
+            background: #f5f5f5;
+            color: #666;
+            border: 1px solid #e0e0e0;
+        }
+        
+        /* Pain Points Display */
+        .pain-points-section {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            margin-bottom: 40px;
+        }
+        
+        .pain-point-item {
+            padding: 16px;
+            background: #fafafa;
+            border-left: 3px solid #000;
+            margin-bottom: 12px;
+            border-radius: 4px;
+        }
+        
+        .pain-point-item:last-child {
+            margin-bottom: 0;
+        }
+        
+        .pain-point-text {
+            font-size: 14px;
+            color: #1a1a1a;
+            font-weight: 500;
+            margin-bottom: 6px;
+        }
+        
+        .pain-point-meta {
+            font-size: 12px;
+            color: #999;
+        }
+        
+        /* Editor */
+        .editor-section {
+            background: white;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            padding: 0;
+            overflow: hidden;
+        }
+        
+        .editor-header {
+            padding: 20px 30px;
+            border-bottom: 1px solid #e0e0e0;
+            background: #fafafa;
+        }
+        
+        .editor-header h3 {
+            font-size: 16px;
+            font-weight: 600;
+            color: #000;
+        }
+        
+        .editor-toolbar {
+            padding: 15px 30px;
+            background: #fafafa;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .ql-toolbar.ql-snow {
+            background: transparent;
+            border: none;
+            padding: 0;
+        }
+        
+        .ql-toolbar button:hover,
+        .ql-toolbar button.ql-active,
+        .ql-toolbar button:focus,
+        .ql-toolbar button:active {
+            color: #000;
+        }
+        
+        .ql-toolbar.ql-snow .ql-picker-label {
+            color: #666;
+        }
+        
+        .editor-content {
+            padding: 30px;
+            min-height: 600px;
+        }
+        
+        .ql-container.ql-snow {
+            border: none;
+            font-size: 14px;
+            font-family: inherit;
+        }
+        
+        .ql-editor {
+            padding: 0;
+            min-height: 400px;
+        }
+        
+        .ql-editor.ql-blank::before {
+            color: #ccc;
+            font-size: 14px;
+        }
+        
+        /* Metrics */
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        
+        .metric {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            text-align: center;
+        }
+        
+        .metric-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #000;
+            margin-bottom: 8px;
+        }
+        
+        .metric-label {
+            font-size: 12px;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        /* Loading Spinner */
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #e0e0e0;
+            border-top: 3px solid #000;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
         
         @media (max-width: 768px) {
-            .header-container { height: 70px; }
-            .waqzee-logo { height: 40px; }
-            .form-row { flex-direction: column; }
-            .stat-grid { grid-template-columns: 1fr; }
-            .page-header h1 { font-size: 1.8em; }
+            .content-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .metrics {
+                grid-template-columns: 1fr;
+            }
+            
+            .main {
+                padding: 20px;
+            }
+            
+            .page-title {
+                font-size: 24px;
+            }
         }
     </style>
 </head>
 <body>
-    <header class="waqzee-header">
-        <div class="header-container">
-            <a href="https://waqzee.com/">
-                <img src="https://waqzee.com/wp-content/uploads/2025/07/cropped-waqzee-marketing-agency.png" alt="Waqzee Digital" class="waqzee-logo">
-            </a>
-            <nav>
-                <ul class="main-nav" id="mainNav">
-                    <li><a href="https://waqzee.com/">Home</a></li>
-                    <li><a href="https://waqzee.com/about/">About</a></li>
-                    <li><a href="https://waqzee.com/service/">Service</a></li>
-                    <li><a href="https://waqzee.com/contact/">Contact</a></li>
-                    <li><a href="https://waqzee.com/blog/">Blog</a></li>
-                    <li><a href="/tools" class="active">Tools</a></li>
-                    <li><a href="https://waqzee.com/free-plan/" class="cta-button">Free Marketing Plan</a></li>
-                </ul>
+    <!-- Header -->
+    <div class="header">
+        <div class="header-content">
+            <div class="logo">Waqzee</div>
+            <nav class="nav">
+                <a href="https://waqzee.com/">Home</a>
+                <a href="https://waqzee.com/about/">About</a>
+                <a href="https://waqzee.com/service/">Services</a>
+                <a href="/tools" class="active">Tools</a>
             </nav>
-            <button class="mobile-menu-btn" onclick="toggleMenu()"><i class="fas fa-bars"></i></button>
-        </div>
-    </header>
-
-    <div class="main-content">
-        <div class="container">
-            <div class="page-header">
-                <h1>Pain Point Content Writing Tool</h1>
-                <p class="subtitle">Transform Reddit Insights into Compelling Content</p>
-                <div>
-                    <span class="badge">🤖 AI-Powered</span>
-                    <span class="badge">📱 Reddit Integration</span>
-                    <span class="badge">✍️ Human Quality</span>
-                </div>
-            </div>
-
-            <div class="feature-list">
-                <div class="feature-item">
-                    <div class="feature-icon">📥</div>
-                    <h3>Reddit Scraping</h3>
-                    <p>Extract real pain points from any subreddit</p>
-                </div>
-                <div class="feature-item">
-                    <div class="feature-icon">🎯</div>
-                    <h3>Pain Point Analysis</h3>
-                    <p>AI identifies and categorizes problems</p>
-                </div>
-                <div class="feature-item">
-                    <div class="feature-icon">✍️</div>
-                    <h3>Content Generation</h3>
-                    <p>Creates articles addressing all pain points</p>
-                </div>
-                <div class="feature-item">
-                    <div class="feature-icon">💫</div>
-                    <h3>Humanization</h3>
-                    <p>Ensures content sounds authentic</p>
-                </div>
-            </div>
-
-            <div class="section">
-                <h2>🚀 Complete Workflow: Reddit → Content</h2>
-                <p style="margin-bottom: 25px; color: #666;">Scrape Reddit, extract pain points, generate content - all in one click!</p>
-                
-                <div class="form-row">
-                    <div class="form-col">
-                        <label for="reddit_subreddit">📱 Subreddit (without r/):</label>
-                        <input type="text" id="reddit_subreddit" placeholder="entrepreneur" value="entrepreneur">
-                    </div>
-                    <div class="form-col">
-                        <label for="reddit_topic">🎯 Topic/Keyword:</label>
-                        <input type="text" id="reddit_topic" placeholder="starting a business" required>
-                    </div>
-                </div>
-                
-                <div class="form-row">
-                    <div class="form-col">
-                        <label for="reddit_posts">📊 Posts to Analyze:</label>
-                        <select id="reddit_posts">
-                            <option value="25">25 posts (faster)</option>
-                            <option value="50" selected>50 posts (recommended)</option>
-                            <option value="100">100 posts (comprehensive)</option>
-                        </select>
-                    </div>
-                    <div class="form-col">
-                        <label for="reddit_content_type">📝 Content Type:</label>
-                        <select id="reddit_content_type">
-                            <option value="blog post" selected>Blog Post</option>
-                            <option value="guide">Complete Guide</option>
-                            <option value="article">Article</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <button type="button" onclick="runRedditWorkflow()">🚀 Run Complete Workflow</button>
-                <div id="workflowResults"></div>
-            </div>
-
-            <div class="section">
-                <h2>✍️ Quick Content Generation</h2>
-                <p style="margin-bottom: 25px; color: #666;">Generate content without Reddit scraping (faster)</p>
-                
-                <div class="form-row">
-                    <div class="form-col">
-                        <label for="topic">🎯 Topic:</label>
-                        <input type="text" id="topic" placeholder="Email Marketing Tips">
-                    </div>
-                    <div class="form-col">
-                        <label for="content_type">📝 Type:</label>
-                        <select id="content_type">
-                            <option value="blog post">Blog Post</option>
-                            <option value="guide">Guide</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <button type="button" onclick="generateContent()">✍️ Generate Content</button>
-            </div>
-
-            <div id="loading" class="loading">
-                <div class="spinner"></div>
-                <h3>🤖 Waqzee AI Working...</h3>
-                <p>This may take 60-90 seconds</p>
-            </div>
-
-            <div id="results" style="display: none;">
-                <div id="resultContent"></div>
-            </div>
         </div>
     </div>
 
+    <!-- Main Content -->
+    <div class="main">
+        <h1 class="page-title">Content Generation Tool</h1>
+        <p class="page-subtitle">Create compelling content informed by real user research</p>
+
+        <!-- Content Grid -->
+        <div class="content-grid">
+            <!-- Left Column: Form -->
+            <div>
+                <!-- Reddit Research Section -->
+                <div class="form-section">
+                    <h4 class="section-title">Research from Reddit</h4>
+                    
+                    <div class="form-group">
+                        <label>Subreddit</label>
+                        <input type="text" id="reddit_subreddit" placeholder="entrepreneur" value="entrepreneur">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Topic to Search</label>
+                        <input type="text" id="reddit_topic" placeholder="starting a business" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Number of Posts</label>
+                        <select id="reddit_posts">
+                            <option value="25">25 posts</option>
+                            <option value="50" selected>50 posts</option>
+                            <option value="100">100 posts</option>
+                        </select>
+                    </div>
+                    
+                    <button class="btn btn-primary" onclick="runRedditResearch()">Research on Reddit</button>
+                </div>
+
+                <!-- Article Details Section -->
+                <div class="form-section" style="margin-top: 20px;">
+                    <h4 class="section-title">Article Details</h4>
+                    
+                    <div class="form-group">
+                        <label>Article Title</label>
+                        <input type="text" id="article_title" placeholder="e.g., How to Start Your First Business in 30 Days">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>What Do You Already Know?</label>
+                        <textarea id="existing_knowledge" placeholder="Share your existing knowledge, expertise, or data on this topic..."></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>What Makes This Unique?</label>
+                        <textarea id="unique_angle" placeholder="What's your unique perspective or approach? What will make this stand out?"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Content Type</label>
+                        <select id="content_type">
+                            <option value="blog post">Blog Post</option>
+                            <option value="guide">Complete Guide</option>
+                            <option value="tutorial">Tutorial</option>
+                            <option value="case study">Case Study</option>
+                        </select>
+                    </div>
+                    
+                    <button class="btn btn-primary" onclick="generateContent()">Generate Content</button>
+                </div>
+            </div>
+
+            <!-- Right Column: Pain Points & Editor -->
+            <div>
+                <!-- Pain Points Display -->
+                <div id="painPointsSection" class="pain-points-section" style="display: none;">
+                    <h4 class="section-title">Pain Points Identified</h4>
+                    <div id="painPointsList"></div>
+                </div>
+
+                <!-- Metrics -->
+                <div id="metricsSection" class="metrics" style="display: none;">
+                    <div class="metric">
+                        <div class="metric-value" id="postsCount">0</div>
+                        <div class="metric-label">Posts Analyzed</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value" id="painPointsCount">0</div>
+                        <div class="metric-label">Pain Points</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-value" id="wordCount">0</div>
+                        <div class="metric-label">Word Count</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Editor Section -->
+        <div id="editorSection" style="display: none;">
+            <div class="editor-section">
+                <div class="editor-header">
+                    <h3>Edit Your Content</h3>
+                </div>
+                <div class="editor-toolbar" id="editor-toolbar"></div>
+                <div class="editor-content">
+                    <div id="editor"></div>
+                </div>
+                <div style="padding: 20px 30px; border-top: 1px solid #e0e0e0; background: #fafafa;">
+                    <button class="btn btn-primary" onclick="saveContent()">Save & Export</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Messages -->
+        <div id="statusMessage" style="display: none;"></div>
+    </div>
+
+    <!-- Quill Editor -->
+    <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
     <script>
-        function toggleMenu() {
-            document.getElementById('mainNav').classList.toggle('active');
+        let editor = null;
+        let currentContent = "";
+
+        // Initialize Quill editor (lazy load)
+        function initEditor() {
+            if (!editor) {
+                editor = new Quill('#editor', {
+                    theme: 'snow',
+                    modules: {
+                        toolbar: [
+                            ['bold', 'italic', 'underline'],
+                            ['blockquote', 'code-block'],
+                            [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                            [{ 'header': [1, 2, 3, false] }],
+                            ['link'],
+                            ['clean']
+                        ]
+                    },
+                    placeholder: 'Start editing...'
+                });
+            }
         }
-        
-        async function runRedditWorkflow() {
+
+        function showStatus(message, type) {
+            const statusEl = document.getElementById('statusMessage');
+            statusEl.className = 'status-message status-' + type;
+            statusEl.textContent = message;
+            statusEl.style.display = 'block';
+            if (type !== 'loading') {
+                setTimeout(() => { statusEl.style.display = 'none'; }, 5000);
+            }
+        }
+
+        async function runRedditResearch() {
             const subreddit = document.getElementById('reddit_subreddit').value;
             const topic = document.getElementById('reddit_topic').value;
             const posts_limit = document.getElementById('reddit_posts').value;
-            const content_type = document.getElementById('reddit_content_type').value;
-            
-            if (!topic) { alert('⚠️ Please enter a topic!'); return; }
-            
-            document.getElementById('workflowResults').innerHTML = `
-                <div class="loading" style="display: block;">
-                    <div class="spinner"></div>
-                    <h3>🤖 Running Waqzee Workflow...</h3>
-                    <p>Scraping r/${subreddit}...</p>
-                </div>
-            `;
-            
+
+            if (!topic) {
+                showStatus('Please enter a topic', 'error');
+                return;
+            }
+
+            showStatus('Researching Reddit...', 'loading');
+
             try {
                 const response = await fetch('/reddit-to-content', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ subreddit, topic, posts_limit: parseInt(posts_limit), content_type })
+                    body: JSON.stringify({ subreddit, topic, posts_limit: parseInt(posts_limit), content_type: 'blog post' })
                 });
-                
+
                 const result = await response.json();
-                
+
                 if (result.error) {
-                    document.getElementById('workflowResults').innerHTML = `
-                        <div class="error"><h4>❌ Error</h4><p>${result.error}</p></div>
-                    `;
+                    showStatus('Error: ' + result.error, 'error');
                     return;
                 }
-                
+
+                // Display pain points
                 const workflow = result.workflow;
-                document.getElementById('workflowResults').innerHTML = `
-                    <div class="success">
-                        <h3>✅ Workflow Completed!</h3>
-                        <div class="stat-grid">
-                            <div class="stat-card">
-                                <div class="stat-value">${workflow.step1_reddit.posts_scraped}</div>
-                                <div class="stat-label">Posts</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-value">${workflow.step2_pain_points.extracted}</div>
-                                <div class="stat-label">Pain Points</div>
-                            </div>
-                            <div class="stat-card">
-                                <div class="stat-value">${workflow.step3_content.word_count}</div>
-                                <div class="stat-label">Words</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="content-display">
-                        <h4 style="color: #667eea;">📄 Generated Content:</h4>
-                        <div style="white-space: pre-wrap; margin-top: 20px;">${result.final_content}</div>
-                    </div>
-                `;
+                displayPainPoints(workflow.step2_pain_points.pain_points);
+                displayMetrics(workflow);
+
+                // Set title suggestion
+                document.getElementById('article_title').value = `Guide to: ${topic}`;
+
+                showStatus('Reddit research complete. Now review pain points and customize your article.', 'success');
+
             } catch (error) {
-                document.getElementById('workflowResults').innerHTML = `
-                    <div class="error"><h4>❌ Request Failed</h4><p>${error.message}</p></div>
-                `;
+                showStatus('Failed: ' + error.message, 'error');
             }
         }
 
+        function displayPainPoints(painPoints) {
+            const section = document.getElementById('painPointsSection');
+            const list = document.getElementById('painPointsList');
+            list.innerHTML = '';
+
+            painPoints.forEach((point, index) => {
+                const item = document.createElement('div');
+                item.className = 'pain-point-item';
+                item.innerHTML = `
+                    <div class="pain-point-text">${point}</div>
+                    <div class="pain-point-meta">Pain Point ${index + 1} of ${painPoints.length}</div>
+                `;
+                list.appendChild(item);
+            });
+
+            section.style.display = 'block';
+        }
+
+        function displayMetrics(workflow) {
+            document.getElementById('postsCount').textContent = workflow.step1_reddit.posts_scraped;
+            document.getElementById('painPointsCount').textContent = workflow.step2_pain_points.extracted;
+            document.getElementById('wordCount').textContent = workflow.step3_content.word_count;
+            document.getElementById('metricsSection').style.display = 'grid';
+        }
+
         async function generateContent() {
-            const topic = document.getElementById('topic').value;
-            const content_type = document.getElementById('content_type').value;
-            
-            if (!topic) { alert('⚠️ Please enter a topic!'); return; }
-            
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('results').style.display = 'none';
-            
+            const title = document.getElementById('article_title').value;
+            const contentType = document.getElementById('content_type').value;
+            const existingKnowledge = document.getElementById('existing_knowledge').value;
+            const uniqueAngle = document.getElementById('unique_angle').value;
+
+            if (!title) {
+                showStatus('Please enter an article title', 'error');
+                return;
+            }
+
+            showStatus('Generating content...', 'loading');
+
             try {
                 const response = await fetch('/generate-content', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ topic, content_type })
+                    body: JSON.stringify({ topic: title, content_type: contentType })
                 });
-                
+
                 const result = await response.json();
-                document.getElementById('loading').style.display = 'none';
-                
+
                 if (result.error) {
-                    document.getElementById('resultContent').innerHTML = `
-                        <div class="error"><h4>❌ Error</h4><p>${result.error}</p></div>
-                    `;
-                } else {
-                    document.getElementById('resultContent').innerHTML = `
-                        <div class="success"><h3>✅ Content Generated!</h3></div>
-                        <div class="content-display">
-                            <h4 style="color: #667eea;">📄 Your Content:</h4>
-                            <div style="white-space: pre-wrap; margin-top: 20px;">${result.content}</div>
-                        </div>
-                    `;
+                    showStatus('Error: ' + result.error, 'error');
+                    return;
                 }
-                document.getElementById('results').style.display = 'block';
+
+                // Load content into editor
+                initEditor();
+                currentContent = result.content;
+                editor.root.innerHTML = result.content;
+                document.getElementById('editorSection').style.display = 'block';
+
+                showStatus('Content generated! Now you can edit it in the editor below.', 'success');
+
             } catch (error) {
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('resultContent').innerHTML = `
-                    <div class="error"><h4>❌ Failed</h4><p>${error.message}</p></div>
-                `;
-                document.getElementById('results').style.display = 'block';
+                showStatus('Failed: ' + error.message, 'error');
             }
+        }
+
+        function saveContent() {
+            const content = editor.root.innerHTML;
+            const title = document.getElementById('article_title').value || 'article';
+            const blob = new Blob([`<html><body>${content}</body></html>`], { type: 'text/html' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = title.replace(/\s+/g, '-').toLowerCase() + '.html';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            showStatus('Content saved and downloaded!', 'success');
         }
     </script>
 </body>
@@ -492,6 +846,8 @@ def reddit_to_content():
             return jsonify({"error": "Failed to initialize agents"}), 500
         
         reddit_data = reddit_scraper.scrape_for_pain_points(subreddit, topic, posts_limit)
+        
+        logger.info(f"Reddit scraping complete: {reddit_data.get('posts_scraped', 0)} posts found")
         
         pain_analysis = asyncio.run(
             pain_extractor.extract_pain_points_from_posts(reddit_data['posts'], topic, 8)
@@ -575,7 +931,7 @@ def generate_content_simple():
 def health():
     return jsonify({
         "status": "healthy",
-        "service": "Waqzee Pain Point Content Tool",
+        "service": "Waqzee Content Tool",
         "timestamp": datetime.now().isoformat(),
         "agents_loaded": {
             "reddit": RedditScraper is not None,
@@ -627,6 +983,6 @@ def debug():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    logger.info(f"🚀 Starting Waqzee Content Tool on port {port}")
-    logger.info(f"📊 Agents status: Reddit={RedditScraper is not None}, Extractor={PainPointExtractor is not None}, Humanizer={PainPointHumanizer is not None}")
+    logger.info(f"Starting Waqzee Content Tool on port {port}")
+    logger.info(f"Agents status: Reddit={RedditScraper is not None}, Extractor={PainPointExtractor is not None}, Humanizer={PainPointHumanizer is not None}")
     app.run(host="0.0.0.0", port=port, debug=False)
