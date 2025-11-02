@@ -66,8 +66,8 @@ class OpenAIClient:
         
         self.api_key = api_key.strip()
         self.model = model
-        self.client = openai.OpenAI(api_key=self.api_key)
-        self.async_client = openai.AsyncOpenAI(api_key=self.api_key)
+        self.client = openai.OpenAI(api_key=self.api_key, timeout=60.0)
+        self.async_client = openai.AsyncOpenAI(api_key=self.api_key, timeout=60.0)
         logger.info(f"✅ OpenAI client initialized with model: {self.model}")
     
     async def generate_content(self, prompt: str, max_tokens: int = 2000, temperature: float = 0.7) -> str:
