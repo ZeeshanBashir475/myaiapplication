@@ -1,8 +1,3 @@
-"""
-Reddit Scraper for Pain Point Extraction
-Uses PRAW (Python Reddit API Wrapper) to scrape posts and comments
-"""
-
 import praw
 import os
 import logging
