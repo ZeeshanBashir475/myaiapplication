@@ -7,6 +7,7 @@ from datetime import datetime
 import asyncio
 from flask import Flask, request, jsonify, render_template_string
 import statistics
+from collections import Counter
 
 # Setup logging FIRST
 import logging
@@ -22,11 +23,10 @@ if os.path.exists(agents_path):
     if agents_path not in sys.path:
         sys.path.insert(0, agents_path)
         logger.info(f"Added to Python path: {agents_path}")
-    logger.info(f"Files in agents folder: {os.listdir(agents_path)}")
 else:
     logger.error(f"Agents folder not found: {agents_path}")
 
-# Try to import agents safely - each import is independent
+# Try to import agents safely
 RedditScraper = None
 PainPointExtractor = None  
 PainPointHumanizer = None
@@ -49,11 +49,10 @@ try:
 except Exception as e:
     logger.error(f"Failed to import PainPointHumanizer: {e}")
 
-# Check import status
 if all([RedditScraper, PainPointExtractor, PainPointHumanizer]):
     logger.info("All agents imported successfully!")
 else:
-    logger.warning(f"Some agents failed to import: Reddit={RedditScraper is not None}, Extractor={PainPointExtractor is not None}, Humanizer={PainPointHumanizer is not None}")
+    logger.warning(f"Some agents failed to import")
 
 app = Flask(__name__)
 
@@ -94,8 +93,7 @@ class ContentGenerationAgent:
     
     async def generate_content(self, topic: str, content_type: str, target_audience: str,
                              primary_keywords: List[str], search_intent: str, brand_voice: str,
-                             content_goal: str, target_geography: str, user_input: str = "",
-                             analyze_serps: bool = True, pain_points: List[str] = None) -> Dict:
+                             content_goal: str, target_geography: str, pain_points: List[str] = None) -> Dict:
         pain_points_str = '\n'.join([f"• {p}" for p in (pain_points or [])])
         
         prompt = f"""Create a {content_type} about "{topic}" for {target_audience}.
@@ -146,9 +144,8 @@ def create_agents():
         reddit_scraper = RedditScraper() if RedditScraper else None
         pain_extractor = PainPointExtractor(openai_client) if PainPointExtractor else None
         
-        # Skip humanizer for now - it has errors
         humanizer = None
-        logger.info("Humanizer skipped (has import errors)")
+        logger.info("Humanizer skipped")
         
         return generation_agent, reddit_scraper, pain_extractor, humanizer
     except Exception as e:
@@ -157,7 +154,75 @@ def create_agents():
         logger.error(traceback.format_exc())
         return None, None, None, None
 
-# PROFESSIONAL BLACK & WHITE HTML TEMPLATE
+class ContentMetrics:
+    """Calculate SEO and compelling metrics for content"""
+    
+    @staticmethod
+    def calculate(html_content: str, pain_points: List[str] = None) -> Dict:
+        """Calculate comprehensive metrics"""
+        # Strip HTML tags for analysis
+        text = re.sub(r'<[^>]+>', '', html_content)
+        
+        words = text.split()
+        sentences = re.split(r'[.!?]+', text)
+        paragraphs = text.split('\n\n')
+        
+        word_count = len(words)
+        sentence_count = max(1, len([s for s in sentences if s.strip()]))
+        paragraph_count = max(1, len([p for p in paragraphs if p.strip()]))
+        
+        # Unique words
+        unique_words = len(set(w.lower() for w in words))
+        
+        # Readability
+        flesch_kincaid = ContentMetrics.flesch_kincaid(len(words), sentence_count, len([w for w in words if len(w) > 2]))
+        
+        # Headings
+        headings = len(re.findall(r'<h[1-6]>', html_content))
+        
+        # Lists
+        lists = len(re.findall(r'<(ul|ol)>', html_content))
+        
+        # Pain point coverage
+        pain_coverage = 0
+        if pain_points:
+            text_lower = text.lower()
+            matched = sum(1 for p in pain_points if p.lower() in text_lower)
+            pain_coverage = (matched / len(pain_points) * 100) if pain_points else 0
+        
+        # Image tags
+        images = len(re.findall(r'<img', html_content))
+        
+        # Links
+        links = len(re.findall(r'<a\s+href', html_content))
+        
+        # Content structure score
+        structure_score = min(100, (headings * 10) + (lists * 5) + (images * 5))
+        
+        return {
+            'word_count': word_count,
+            'sentence_count': sentence_count,
+            'paragraph_count': paragraph_count,
+            'unique_words': unique_words,
+            'readability_score': max(0, min(100, flesch_kincaid)),
+            'headings_count': headings,
+            'lists_count': lists,
+            'images_count': images,
+            'links_count': links,
+            'pain_points_addressed': pain_coverage,
+            'content_structure_score': structure_score,
+            'uniqueness_score': min(100, (unique_words / max(1, word_count)) * 100),
+            'engagement_score': min(100, ((lists + images + links) / max(1, word_count)) * 10)
+        }
+    
+    @staticmethod
+    def flesch_kincaid(words: int, sentences: int, complex_words: int) -> float:
+        """Calculate Flesch-Kincaid Grade Level"""
+        if sentences == 0 or words == 0:
+            return 0
+        return 0.39 * (words / sentences) + 11.8 * (complex_words / words) - 15.59
+
+# PROFESSIONAL BLACK & WHITE HTML TEMPLATE WITH REAL-TIME ANALYSIS
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -167,6 +232,8 @@ HTML_TEMPLATE = """
     <title>Waqzee - Content Generation Tool</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/atom-one-dark.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -233,21 +300,27 @@ HTML_TEMPLATE = """
             margin-bottom: 40px;
         }
         
-        /* Content Grid */
+        /* Content Grid - 3 columns */
         .content-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 40px;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 30px;
             margin-bottom: 40px;
         }
         
-        @media (max-width: 1200px) {
+        @media (max-width: 1400px) {
+            .content-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+        
+        @media (max-width: 900px) {
             .content-grid {
                 grid-template-columns: 1fr;
             }
         }
         
-        /* Form Sections */
+        /* Form Section */
         .form-section {
             background: white;
             padding: 30px;
@@ -256,25 +329,21 @@ HTML_TEMPLATE = """
         }
         
         .section-title {
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 600;
             margin-bottom: 20px;
             color: #000;
         }
         
         .form-group {
-            margin-bottom: 20px;
-        }
-        
-        .form-group:last-child {
-            margin-bottom: 0;
+            margin-bottom: 16px;
         }
         
         label {
             display: block;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 500;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
             color: #1a1a1a;
         }
         
@@ -283,18 +352,17 @@ HTML_TEMPLATE = """
         select,
         textarea {
             width: 100%;
-            padding: 12px 14px;
+            padding: 10px 12px;
             border: 1px solid #d0d0d0;
             border-radius: 6px;
-            font-size: 14px;
+            font-size: 13px;
             font-family: inherit;
             transition: border-color 0.2s;
             background: white;
             color: #000;
         }
         
-        input[type="text"]:focus,
-        input[type="email"]:focus,
+        input:focus,
         select:focus,
         textarea:focus {
             border-color: #000;
@@ -304,15 +372,15 @@ HTML_TEMPLATE = """
         
         textarea {
             resize: vertical;
-            min-height: 80px;
+            min-height: 70px;
         }
         
         /* Buttons */
         .btn {
-            padding: 12px 24px;
+            padding: 10px 20px;
             border: none;
             border-radius: 6px;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.2s;
@@ -337,6 +405,10 @@ HTML_TEMPLATE = """
             background: #f0f0f0;
             color: #000;
             border: 1px solid #e0e0e0;
+            padding: 8px 16px;
+            width: auto;
+            display: inline-block;
+            margin-right: 8px;
         }
         
         .btn-secondary:hover {
@@ -345,10 +417,15 @@ HTML_TEMPLATE = """
         
         /* Status Messages */
         .status-message {
-            padding: 16px;
+            padding: 12px;
             border-radius: 6px;
-            margin-bottom: 20px;
-            font-size: 14px;
+            margin-bottom: 16px;
+            font-size: 13px;
+            display: none;
+        }
+        
+        .status-message.show {
+            display: block;
         }
         
         .status-success {
@@ -369,38 +446,59 @@ HTML_TEMPLATE = """
             border: 1px solid #e0e0e0;
         }
         
-        /* Pain Points Display */
+        /* Pain Points */
         .pain-points-section {
             background: white;
-            padding: 30px;
+            padding: 20px;
             border-radius: 8px;
             border: 1px solid #e0e0e0;
-            margin-bottom: 40px;
         }
         
         .pain-point-item {
-            padding: 16px;
+            padding: 12px;
             background: #fafafa;
             border-left: 3px solid #000;
-            margin-bottom: 12px;
+            margin-bottom: 10px;
             border-radius: 4px;
+            font-size: 13px;
         }
         
         .pain-point-item:last-child {
             margin-bottom: 0;
         }
         
-        .pain-point-text {
-            font-size: 14px;
-            color: #1a1a1a;
-            font-weight: 500;
-            margin-bottom: 6px;
+        /* Metrics Grid */
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
         }
         
-        .pain-point-meta {
-            font-size: 12px;
-            color: #999;
+        .metric {
+            background: white;
+            padding: 16px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            text-align: center;
         }
+        
+        .metric-value {
+            font-size: 22px;
+            font-weight: 700;
+            color: #000;
+            margin-bottom: 4px;
+        }
+        
+        .metric-label {
+            font-size: 11px;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .metric.good .metric-value { color: #1a5f52; }
+        .metric.warning .metric-value { color: #8b6f00; }
+        .metric.poor .metric-value { color: #8b3333; }
         
         /* Editor */
         .editor-section {
@@ -409,52 +507,49 @@ HTML_TEMPLATE = """
             border: 1px solid #e0e0e0;
             padding: 0;
             overflow: hidden;
+            grid-column: 1 / -1;
         }
         
-        .editor-header {
-            padding: 20px 30px;
+        .editor-tabs {
+            display: flex;
             border-bottom: 1px solid #e0e0e0;
             background: #fafafa;
         }
         
-        .editor-header h3 {
-            font-size: 16px;
-            font-weight: 600;
+        .editor-tab {
+            padding: 12px 20px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            color: #666;
+            border-bottom: 2px solid transparent;
+        }
+        
+        .editor-tab.active {
             color: #000;
+            border-bottom-color: #000;
         }
         
-        .editor-toolbar {
-            padding: 15px 30px;
-            background: #fafafa;
-            border-bottom: 1px solid #e0e0e0;
+        .editor-content {
+            padding: 20px;
+            min-height: 500px;
         }
         
         .ql-toolbar.ql-snow {
             background: transparent;
             border: none;
-            padding: 0;
-        }
-        
-        .ql-toolbar button:hover,
-        .ql-toolbar button.ql-active,
-        .ql-toolbar button:focus,
-        .ql-toolbar button:active {
-            color: #000;
-        }
-        
-        .ql-toolbar.ql-snow .ql-picker-label {
-            color: #666;
-        }
-        
-        .editor-content {
-            padding: 30px;
-            min-height: 600px;
+            border-bottom: 1px solid #e0e0e0;
+            padding: 12px 20px;
+            margin: 0;
         }
         
         .ql-container.ql-snow {
             border: none;
             font-size: 14px;
             font-family: inherit;
+            padding: 20px;
         }
         
         .ql-editor {
@@ -462,50 +557,43 @@ HTML_TEMPLATE = """
             min-height: 400px;
         }
         
-        .ql-editor.ql-blank::before {
-            color: #ccc;
-            font-size: 14px;
-        }
-        
-        /* Metrics */
-        .metrics {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 20px;
-            margin-bottom: 40px;
-        }
-        
-        .metric {
-            background: white;
+        /* Code view */
+        .code-view {
+            background: #1e1e1e;
+            color: #d4d4d4;
             padding: 20px;
-            border-radius: 8px;
-            border: 1px solid #e0e0e0;
-            text-align: center;
-        }
-        
-        .metric-value {
-            font-size: 28px;
-            font-weight: 700;
-            color: #000;
-            margin-bottom: 8px;
-        }
-        
-        .metric-label {
+            border-radius: 6px;
+            overflow-x: auto;
             font-size: 12px;
-            color: #999;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            line-height: 1.5;
+            font-family: 'Monaco', 'Courier New', monospace;
         }
         
-        /* Loading Spinner */
+        .code-view pre {
+            margin: 0;
+        }
+        
+        /* Export buttons */
+        .export-buttons {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+        }
+        
+        .export-buttons .btn-secondary {
+            flex: 1;
+            margin: 0;
+        }
+        
+        /* Spinner */
         .spinner {
-            width: 40px;
-            height: 40px;
+            width: 30px;
+            height: 30px;
             border: 3px solid #e0e0e0;
             border-top: 3px solid #000;
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
-            margin: 0 auto 20px;
+            margin: 0 auto 12px;
         }
         
         @keyframes spin {
@@ -514,20 +602,16 @@ HTML_TEMPLATE = """
         }
         
         @media (max-width: 768px) {
-            .content-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .metrics {
-                grid-template-columns: 1fr;
-            }
-            
             .main {
                 padding: 20px;
             }
             
             .page-title {
                 font-size: 24px;
+            }
+            
+            .metrics {
+                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -551,13 +635,15 @@ HTML_TEMPLATE = """
         <h1 class="page-title">Content Generation Tool</h1>
         <p class="page-subtitle">Create compelling content informed by real user research</p>
 
+        <!-- Status Messages -->
+        <div id="statusMessage" class="status-message"></div>
+
         <!-- Content Grid -->
         <div class="content-grid">
-            <!-- Left Column: Form -->
+            <!-- Column 1: Research Input -->
             <div>
-                <!-- Reddit Research Section -->
                 <div class="form-section">
-                    <h4 class="section-title">Research from Reddit</h4>
+                    <h4 class="section-title">Reddit Research</h4>
                     
                     <div class="form-group">
                         <label>Subreddit</label>
@@ -565,39 +651,40 @@ HTML_TEMPLATE = """
                     </div>
                     
                     <div class="form-group">
-                        <label>Topic to Search</label>
+                        <label>Topic to Research</label>
                         <input type="text" id="reddit_topic" placeholder="starting a business" required>
                     </div>
                     
                     <div class="form-group">
-                        <label>Number of Posts</label>
+                        <label>Posts to Analyze</label>
                         <select id="reddit_posts">
                             <option value="25">25 posts</option>
                             <option value="50" selected>50 posts</option>
                             <option value="100">100 posts</option>
                         </select>
                     </div>
-                    
-                    <button class="btn btn-primary" onclick="runRedditResearch()">Research on Reddit</button>
                 </div>
 
-                <!-- Article Details Section -->
                 <div class="form-section" style="margin-top: 20px;">
                     <h4 class="section-title">Article Details</h4>
                     
                     <div class="form-group">
                         <label>Article Title</label>
-                        <input type="text" id="article_title" placeholder="e.g., How to Start Your First Business in 30 Days">
+                        <input type="text" id="article_title" placeholder="Your article title...">
                     </div>
                     
                     <div class="form-group">
-                        <label>What Do You Already Know?</label>
-                        <textarea id="existing_knowledge" placeholder="Share your existing knowledge, expertise, or data on this topic..."></textarea>
+                        <label>English Variant</label>
+                        <select id="english_variant">
+                            <option value="british">British English</option>
+                            <option value="american" selected>American English</option>
+                            <option value="australian">Australian English</option>
+                        </select>
                     </div>
                     
                     <div class="form-group">
-                        <label>What Makes This Unique?</label>
-                        <textarea id="unique_angle" placeholder="What's your unique perspective or approach? What will make this stand out?"></textarea>
+                        <label>Target Audience</label>
+                        <input type="text" id="target_audience" placeholder="professionals, entrepreneurs...">
                     </div>
                     
                     <div class="form-group">
@@ -610,63 +697,120 @@ HTML_TEMPLATE = """
                         </select>
                     </div>
                     
+                    <div class="form-group">
+                        <label>Your Unique Angle</label>
+                        <textarea id="unique_angle" placeholder="What makes this stand out? Your expertise?"></textarea>
+                    </div>
+                    
                     <button class="btn btn-primary" onclick="generateContent()">Generate Content</button>
                 </div>
             </div>
 
-            <!-- Right Column: Pain Points & Editor -->
+            <!-- Column 2: Pain Points & Metrics -->
             <div>
-                <!-- Pain Points Display -->
                 <div id="painPointsSection" class="pain-points-section" style="display: none;">
                     <h4 class="section-title">Pain Points Identified</h4>
                     <div id="painPointsList"></div>
                 </div>
 
-                <!-- Metrics -->
-                <div id="metricsSection" class="metrics" style="display: none;">
-                    <div class="metric">
-                        <div class="metric-value" id="postsCount">0</div>
-                        <div class="metric-label">Posts Analyzed</div>
+                <div style="margin-top: 20px; display: none;" id="metricsSection">
+                    <div class="form-section">
+                        <h4 class="section-title">Research Metrics</h4>
+                        <div style="font-size: 13px; color: #666;">
+                            <p>Posts Analyzed: <strong id="postsCount">0</strong></p>
+                            <p>Pain Points Found: <strong id="painPointsCount">0</strong></p>
+                            <p>Word Count Generated: <strong id="wordCount">0</strong></p>
+                        </div>
                     </div>
-                    <div class="metric">
-                        <div class="metric-value" id="painPointsCount">0</div>
-                        <div class="metric-label">Pain Points</div>
+                </div>
+            </div>
+
+            <!-- Column 3: Real-time Analysis -->
+            <div>
+                <div class="form-section">
+                    <h4 class="section-title">Real-time Analysis</h4>
+                    <div id="liveMetrics" class="metrics">
+                        <div class="metric" title="How easy the content is to read (higher is better)">
+                            <div class="metric-value" id="readabilityScore">0</div>
+                            <div class="metric-label">Readability</div>
+                        </div>
+                        <div class="metric" title="Unique words vs total words">
+                            <div class="metric-value" id="uniquenessScore">0</div>
+                            <div class="metric-label">Uniqueness</div>
+                        </div>
+                        <div class="metric" title="Percentage of pain points addressed">
+                            <div class="metric-value" id="painCoverageScore">0%</div>
+                            <div class="metric-label">Pain Coverage</div>
+                        </div>
+                        <div class="metric" title="Content structure quality">
+                            <div class="metric-value" id="structureScore">0</div>
+                            <div class="metric-label">Structure</div>
+                        </div>
+                        <div class="metric" title="Words with images and lists">
+                            <div class="metric-value" id="engagementScore">0</div>
+                            <div class="metric-label">Engagement</div>
+                        </div>
+                        <div class="metric" title="Total word count">
+                            <div class="metric-value" id="contentWordCount">0</div>
+                            <div class="metric-label">Word Count</div>
+                        </div>
                     </div>
-                    <div class="metric">
-                        <div class="metric-value" id="wordCount">0</div>
-                        <div class="metric-label">Word Count</div>
+                </div>
+
+                <div class="form-section" style="margin-top: 20px;">
+                    <h4 class="section-title">Quick Tips</h4>
+                    <div style="font-size: 13px; line-height: 1.6; color: #666;">
+                        <p>Add images to increase engagement</p>
+                        <p>Use clear headings to organize content</p>
+                        <p>Include lists and bullet points</p>
+                        <p>Reference pain points directly</p>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Editor Section -->
+        <!-- Editor Section - Full Width -->
         <div id="editorSection" style="display: none;">
             <div class="editor-section">
-                <div class="editor-header">
-                    <h3>Edit Your Content</h3>
+                <div class="editor-tabs">
+                    <button class="editor-tab active" onclick="switchTab('editor')">Editor</button>
+                    <button class="editor-tab" onclick="switchTab('code')">HTML Code</button>
+                    <button class="editor-tab" onclick="switchTab('preview')">Preview</button>
                 </div>
-                <div class="editor-toolbar" id="editor-toolbar"></div>
-                <div class="editor-content">
+
+                <!-- Editor Tab -->
+                <div id="editorTab" class="editor-content">
+                    <div id="editor-toolbar"></div>
                     <div id="editor"></div>
                 </div>
-                <div style="padding: 20px 30px; border-top: 1px solid #e0e0e0; background: #fafafa;">
-                    <button class="btn btn-primary" onclick="saveContent()">Save & Export</button>
+
+                <!-- Code Tab -->
+                <div id="codeTab" class="editor-content" style="display: none; background: #1e1e1e;">
+                    <div class="code-view">
+                        <pre><code id="codeContent" class="language-html"></code></pre>
+                    </div>
+                    <div class="export-buttons">
+                        <button class="btn-secondary" onclick="copyCode()">Copy Code</button>
+                        <button class="btn-secondary" onclick="downloadHTML()">Download HTML</button>
+                    </div>
+                </div>
+
+                <!-- Preview Tab -->
+                <div id="previewTab" class="editor-content" style="display: none; background: white;">
+                    <div id="previewContent"></div>
                 </div>
             </div>
         </div>
-
-        <!-- Status Messages -->
-        <div id="statusMessage" style="display: none;"></div>
     </div>
 
     <!-- Quill Editor -->
     <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
     <script>
         let editor = null;
+        let currentPainPoints = [];
         let currentContent = "";
 
-        // Initialize Quill editor (lazy load)
+        // Initialize Quill editor
         function initEditor() {
             if (!editor) {
                 editor = new Quill('#editor', {
@@ -674,45 +818,65 @@ HTML_TEMPLATE = """
                     modules: {
                         toolbar: [
                             ['bold', 'italic', 'underline'],
+                            [{ 'header': [1, 2, 3, false] }],
                             ['blockquote', 'code-block'],
                             [{ 'list': 'ordered'}, { 'list': 'bullet' }],
-                            [{ 'header': [1, 2, 3, false] }],
-                            ['link'],
+                            ['link', 'image'],
                             ['clean']
                         ]
                     },
-                    placeholder: 'Start editing...'
+                    placeholder: 'Start editing your content here...'
+                });
+
+                // Real-time analysis on content change
+                editor.on('text-change', function() {
+                    updateLiveMetrics();
+                    updateCodeView();
                 });
             }
         }
 
-        function showStatus(message, type) {
+        function showStatus(message, type = 'loading') {
             const statusEl = document.getElementById('statusMessage');
-            statusEl.className = 'status-message status-' + type;
+            statusEl.className = 'status-message show status-' + type;
             statusEl.textContent = message;
-            statusEl.style.display = 'block';
             if (type !== 'loading') {
-                setTimeout(() => { statusEl.style.display = 'none'; }, 5000);
+                setTimeout(() => { statusEl.classList.remove('show'); }, 4000);
             }
         }
 
-        async function runRedditResearch() {
+        async function generateContent() {
             const subreddit = document.getElementById('reddit_subreddit').value;
             const topic = document.getElementById('reddit_topic').value;
-            const posts_limit = document.getElementById('reddit_posts').value;
+            const title = document.getElementById('article_title').value;
+            const contentType = document.getElementById('content_type').value;
+            const englishVariant = document.getElementById('english_variant').value;
 
             if (!topic) {
-                showStatus('Please enter a topic', 'error');
+                showStatus('Please enter a topic to research', 'error');
                 return;
             }
 
-            showStatus('Researching Reddit...', 'loading');
+            if (!title) {
+                showStatus('Please enter an article title', 'error');
+                return;
+            }
+
+            showStatus('Researching Reddit and generating content...', 'loading');
 
             try {
+                const postsLimit = document.getElementById('reddit_posts').value;
                 const response = await fetch('/reddit-to-content', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ subreddit, topic, posts_limit: parseInt(posts_limit), content_type: 'blog post' })
+                    body: JSON.stringify({
+                        subreddit,
+                        topic,
+                        posts_limit: parseInt(postsLimit),
+                        content_type: contentType,
+                        english_variant: englishVariant,
+                        article_title: title
+                    })
                 });
 
                 const result = await response.json();
@@ -722,15 +886,30 @@ HTML_TEMPLATE = """
                     return;
                 }
 
-                // Display pain points
                 const workflow = result.workflow;
-                displayPainPoints(workflow.step2_pain_points.pain_points);
-                displayMetrics(workflow);
+                
+                // Display pain points
+                if (workflow.step2_pain_points.pain_points.length > 0) {
+                    displayPainPoints(workflow.step2_pain_points.pain_points);
+                    currentPainPoints = workflow.step2_pain_points.pain_points;
+                }
 
-                // Set title suggestion
-                document.getElementById('article_title').value = `Guide to: ${topic}`;
+                // Display metrics
+                document.getElementById('postsCount').textContent = workflow.step1_reddit.posts_scraped;
+                document.getElementById('painPointsCount').textContent = workflow.step2_pain_points.extracted;
+                document.getElementById('wordCount').textContent = workflow.step3_content.word_count;
+                document.getElementById('metricsSection').style.display = 'block';
 
-                showStatus('Reddit research complete. Now review pain points and customize your article.', 'success');
+                // Load content into editor
+                initEditor();
+                currentContent = result.final_content;
+                editor.root.innerHTML = result.final_content;
+                document.getElementById('editorSection').style.display = 'block';
+
+                updateLiveMetrics();
+                updateCodeView();
+                
+                showStatus('Content generated successfully! Now edit and refine it.', 'success');
 
             } catch (error) {
                 showStatus('Failed: ' + error.message, 'error');
@@ -745,67 +924,116 @@ HTML_TEMPLATE = """
             painPoints.forEach((point, index) => {
                 const item = document.createElement('div');
                 item.className = 'pain-point-item';
-                item.innerHTML = `
-                    <div class="pain-point-text">${point}</div>
-                    <div class="pain-point-meta">Pain Point ${index + 1} of ${painPoints.length}</div>
-                `;
+                item.innerHTML = `<strong>${index + 1}.</strong> ${point}`;
                 list.appendChild(item);
             });
 
             section.style.display = 'block';
         }
 
-        function displayMetrics(workflow) {
-            document.getElementById('postsCount').textContent = workflow.step1_reddit.posts_scraped;
-            document.getElementById('painPointsCount').textContent = workflow.step2_pain_points.extracted;
-            document.getElementById('wordCount').textContent = workflow.step3_content.word_count;
-            document.getElementById('metricsSection').style.display = 'grid';
+        function updateLiveMetrics() {
+            if (!editor) return;
+            
+            const htmlContent = editor.root.innerHTML;
+            
+            fetch('/analyze-metrics', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    content: htmlContent,
+                    pain_points: currentPainPoints
+                })
+            })
+            .then(r => r.json())
+            .then(data => {
+                const m = data.metrics;
+                
+                // Update metrics display
+                document.getElementById('readabilityScore').textContent = Math.round(m.readability_score);
+                document.getElementById('uniquenessScore').textContent = Math.round(m.uniqueness_score);
+                document.getElementById('painCoverageScore').textContent = Math.round(m.pain_points_addressed) + '%';
+                document.getElementById('structureScore').textContent = Math.round(m.content_structure_score);
+                document.getElementById('engagementScore').textContent = Math.round(m.engagement_score);
+                document.getElementById('contentWordCount').textContent = m.word_count;
+
+                // Color code metrics
+                colorMetrics(m);
+            })
+            .catch(e => console.error('Metrics error:', e));
         }
 
-        async function generateContent() {
-            const title = document.getElementById('article_title').value;
-            const contentType = document.getElementById('content_type').value;
-            const existingKnowledge = document.getElementById('existing_knowledge').value;
-            const uniqueAngle = document.getElementById('unique_angle').value;
+        function colorMetrics(metrics) {
+            const scoreEl = (id, value) => {
+                const el = document.getElementById(id).parentElement;
+                el.className = 'metric';
+                if (value >= 70) el.classList.add('good');
+                else if (value >= 50) el.classList.add('warning');
+                else el.classList.add('poor');
+            };
 
-            if (!title) {
-                showStatus('Please enter an article title', 'error');
-                return;
-            }
+            scoreEl('readabilityScore', metrics.readability_score);
+            scoreEl('uniquenessScore', metrics.uniqueness_score);
+            scoreEl('structureScore', metrics.content_structure_score);
+            scoreEl('engagementScore', metrics.engagement_score);
+        }
 
-            showStatus('Generating content...', 'loading');
+        function updateCodeView() {
+            if (!editor) return;
+            
+            const html = editor.root.innerHTML;
+            const codeEl = document.getElementById('codeContent');
+            codeEl.textContent = html;
+            hljs.highlightElement(codeEl);
+            document.getElementById('previewContent').innerHTML = html;
+        }
 
-            try {
-                const response = await fetch('/generate-content', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ topic: title, content_type: contentType })
-                });
+        function switchTab(tab) {
+            // Hide all tabs
+            document.getElementById('editorTab').style.display = 'none';
+            document.getElementById('codeTab').style.display = 'none';
+            document.getElementById('previewTab').style.display = 'none';
 
-                const result = await response.json();
+            // Remove active class
+            document.querySelectorAll('.editor-tab').forEach(t => t.classList.remove('active'));
 
-                if (result.error) {
-                    showStatus('Error: ' + result.error, 'error');
-                    return;
-                }
+            // Show selected tab
+            const tabMap = {
+                'editor': 'editorTab',
+                'code': 'codeTab',
+                'preview': 'previewTab'
+            };
+            document.getElementById(tabMap[tab]).style.display = 'block';
+            event.target.classList.add('active');
 
-                // Load content into editor
-                initEditor();
-                currentContent = result.content;
-                editor.root.innerHTML = result.content;
-                document.getElementById('editorSection').style.display = 'block';
-
-                showStatus('Content generated! Now you can edit it in the editor below.', 'success');
-
-            } catch (error) {
-                showStatus('Failed: ' + error.message, 'error');
+            if (tab === 'code') {
+                updateCodeView();
             }
         }
 
-        function saveContent() {
-            const content = editor.root.innerHTML;
+        function copyCode() {
+            const code = document.getElementById('codeContent').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                showStatus('Code copied to clipboard!', 'success');
+            });
+        }
+
+        function downloadHTML() {
+            const html = document.getElementById('codeContent').textContent;
             const title = document.getElementById('article_title').value || 'article';
-            const blob = new Blob([`<html><body>${content}</body></html>`], { type: 'text/html' });
+            const blob = new Blob([`<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>${title}</title>
+    <style>
+        body { font-family: -apple-system, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; line-height: 1.6; }
+    </style>
+</head>
+<body>
+${html}
+</body>
+</html>`], { type: 'text/html' });
+            
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -814,7 +1042,7 @@ HTML_TEMPLATE = """
             a.click();
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
-            showStatus('Content saved and downloaded!', 'success');
+            showStatus('HTML file downloaded!', 'success');
         }
     </script>
 </body>
@@ -839,18 +1067,15 @@ def reddit_to_content():
         
         generation_agent, reddit_scraper, pain_extractor, _ = create_agents()
         
-        if not reddit_scraper:
-            return jsonify({"error": "Reddit scraper not available. The agent files may not be properly imported. Check Railway logs for details."}), 500
-        
         if not all([generation_agent, reddit_scraper, pain_extractor]):
             return jsonify({"error": "Failed to initialize agents"}), 500
         
         reddit_data = reddit_scraper.scrape_for_pain_points(subreddit, topic, posts_limit)
         
-        logger.info(f"Reddit scraping complete: {reddit_data.get('posts_scraped', 0)} posts found")
+        logger.info(f"Reddit scraping: {reddit_data.get('posts_scraped', 0)} posts")
         
         pain_analysis = asyncio.run(
-            pain_extractor.extract_pain_points_from_posts(reddit_data['posts'], topic, 8)
+            pain_extractor.extract_pain_points_from_posts(reddit_data.get('posts', []), topic, 8)
         )
         
         pain_points = [pp['pain_point'] if isinstance(pp, dict) else pp 
@@ -859,12 +1084,20 @@ def reddit_to_content():
         if not pain_points:
             pain_points = reddit_data.get('pain_points_extracted', [])[:8]
         
+        # Ensure we have pain points
+        if not pain_points:
+            pain_points = ["Unable to extract specific pain points - please refine your search"]
+        
         content_result = asyncio.run(
             generation_agent.generate_content(
-                topic=topic, content_type=data.get('content_type', 'blog post'),
-                target_audience='professionals', primary_keywords=[topic],
-                search_intent='informational', brand_voice='friendly',
-                content_goal='education', target_geography='global',
+                topic=data.get('article_title', topic),
+                content_type=data.get('content_type', 'blog post'),
+                target_audience=data.get('target_audience', 'professionals'),
+                primary_keywords=[topic],
+                search_intent='informational',
+                brand_voice='friendly',
+                content_goal='education',
+                target_geography='global',
                 pain_points=pain_points
             )
         )
@@ -873,7 +1106,7 @@ def reddit_to_content():
             "success": True,
             "workflow": {
                 "step1_reddit": {
-                    "posts_scraped": reddit_data.get('posts_scraped', 0),
+                    "posts_scraped": reddit_data.get('posts_scraped', len(reddit_data.get('posts', []))),
                     "comments_scraped": reddit_data.get('comments_scraped', 0)
                 },
                 "step2_pain_points": {
@@ -882,49 +1115,30 @@ def reddit_to_content():
                 },
                 "step3_content": {
                     "word_count": len(content_result['improved_content'].split())
-                },
-                "step4_humanization": content_result.get('humanization_analysis', {}).get('overall_assessment', {})
+                }
             },
-            "final_content": content_result['improved_content'],
-            "reddit_sources": [
-                {'title': p.get('title', ''), 'url': p.get('permalink', ''), 'score': p.get('score', 0)}
-                for p in reddit_data.get('posts', [])[:5]
-            ]
+            "final_content": content_result['improved_content']
         })
         
     except Exception as e:
-        logger.error(f"Error in reddit_to_content: {e}")
+        logger.error(f"Error: {e}")
         import traceback
         logger.error(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
-@app.route('/generate-content', methods=['POST'])
-def generate_content_simple():
+@app.route('/analyze-metrics', methods=['POST'])
+def analyze_metrics():
+    """Real-time content analysis"""
     try:
         data = request.get_json()
-        topic = data.get('topic')
+        content = data.get('content', '')
+        pain_points = data.get('pain_points', [])
         
-        if not topic:
-            return jsonify({"error": "Topic required"}), 400
+        metrics = ContentMetrics.calculate(content, pain_points)
         
-        generation_agent, _, _, _ = create_agents()
-        if not generation_agent:
-            return jsonify({"error": "Failed to initialize"}), 500
-        
-        result = asyncio.run(generation_agent.generate_content(
-            topic=topic, content_type=data.get('content_type', 'blog post'),
-            target_audience='professionals', primary_keywords=[topic],
-            search_intent='informational', brand_voice='friendly',
-            content_goal='education', target_geography='global'
-        ))
-        
-        return jsonify({
-            "success": True,
-            "content": result.get('improved_content', result.get('generated_content', ''))
-        })
-        
+        return jsonify({"metrics": metrics})
     except Exception as e:
-        logger.error(f"Error in generate_content: {e}")
+        logger.error(f"Metrics error: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/health')
@@ -932,57 +1146,10 @@ def health():
     return jsonify({
         "status": "healthy",
         "service": "Waqzee Content Tool",
-        "timestamp": datetime.now().isoformat(),
-        "agents_loaded": {
-            "reddit": RedditScraper is not None,
-            "extractor": PainPointExtractor is not None,
-            "humanizer": PainPointHumanizer is not None
-        }
+        "timestamp": datetime.now().isoformat()
     })
-
-@app.route('/debug')
-def debug():
-    """Debug route to check file structure"""
-    import os
-    
-    debug_info = {
-        "current_dir": os.getcwd(),
-        "app_file_location": os.path.abspath(__file__),
-        "python_version": sys.version,
-    }
-    
-    # Check src/agents folder
-    agents_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src', 'agents')
-    if os.path.exists(agents_path):
-        debug_info["agents_folder_exists"] = True
-        debug_info["agents_path"] = agents_path
-        try:
-            debug_info["files_in_agents"] = os.listdir(agents_path)
-        except:
-            debug_info["files_in_agents"] = "Error reading directory"
-    else:
-        debug_info["agents_folder_exists"] = False
-        debug_info["agents_path"] = agents_path
-    
-    # Check if modules loaded
-    debug_info["modules_loaded"] = {
-        "RedditScraper": RedditScraper is not None,
-        "PainPointExtractor": PainPointExtractor is not None,
-        "PainPointHumanizer": PainPointHumanizer is not None
-    }
-    
-    # Check environment variables
-    debug_info["environment"] = {
-        "REDDIT_CLIENT_ID": "present" if os.getenv('REDDIT_CLIENT_ID') else "missing",
-        "REDDIT_CLIENT_SECRET": "present" if os.getenv('REDDIT_CLIENT_SECRET') else "missing",
-        "REDDIT_USER_AGENT": "present" if os.getenv('REDDIT_USER_AGENT') else "missing",
-        "Open_Api_Key": "present" if os.getenv('Open_Api_Key') else "missing"
-    }
-    
-    return jsonify(debug_info)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     logger.info(f"Starting Waqzee Content Tool on port {port}")
-    logger.info(f"Agents status: Reddit={RedditScraper is not None}, Extractor={PainPointExtractor is not None}, Humanizer={PainPointHumanizer is not None}")
     app.run(host="0.0.0.0", port=port, debug=False)
