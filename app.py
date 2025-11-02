@@ -1,6 +1,5 @@
 import re
 import json
-import logging
 import os
 import openai
 from typing import Dict, List
@@ -9,32 +8,52 @@ import asyncio
 from flask import Flask, request, jsonify, render_template_string
 import statistics
 
-# Import from src/agents folder
+# Setup logging FIRST
+import logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+logger.info("🚀 Starting Waqzee Content Tool...")
+
+# Add src/agents to path
 import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src', 'agents'))
+agents_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src', 'agents')
+if os.path.exists(agents_path):
+    if agents_path not in sys.path:
+        sys.path.insert(0, agents_path)
+        logger.info(f"✅ Added to Python path: {agents_path}")
+    logger.info(f"📁 Files in agents folder: {os.listdir(agents_path)}")
+else:
+    logger.error(f"❌ Agents folder not found: {agents_path}")
+
+# Try to import agents safely - each import is independent
+RedditScraper = None
+PainPointExtractor = None  
+PainPointHumanizer = None
 
 try:
     from Reddit_scraper import RedditScraper
-    from Pain_point_extractor import PainPointExtractor
-    from Pain_point_humanizer import PainPointHumanizer
-    logger.info("✅ Successfully imported all agents!")
-except ImportError as e:
-    logger.error(f"❌ Import Error: {e}")
-    import traceback
-    logger.error(f"Traceback: {traceback.format_exc()}")
-    RedditScraper = None
-    PainPointExtractor = None
-    PainPointHumanizer = None
+    logger.info("✅ RedditScraper imported successfully")
 except Exception as e:
-    logger.error(f"❌ Unexpected error importing agents: {e}")
-    import traceback
-    logger.error(f"Traceback: {traceback.format_exc()}")
-    RedditScraper = None
-    PainPointExtractor = None
-    PainPointHumanizer = None
+    logger.error(f"❌ Failed to import RedditScraper: {e}")
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+try:
+    from Pain_point_extractor import PainPointExtractor
+    logger.info("✅ PainPointExtractor imported successfully")
+except Exception as e:
+    logger.error(f"❌ Failed to import PainPointExtractor: {e}")
+
+try:
+    from Pain_point_humanizer import PainPointHumanizer
+    logger.info("✅ PainPointHumanizer imported successfully")
+except Exception as e:
+    logger.error(f"❌ Failed to import PainPointHumanizer: {e}")
+
+# Check import status
+if all([RedditScraper, PainPointExtractor, PainPointHumanizer]):
+    logger.info("🎉 All agents imported successfully!")
+else:
+    logger.warning(f"⚠️ Some agents failed to import: Reddit={RedditScraper is not None}, Extractor={PainPointExtractor is not None}, Humanizer={PainPointHumanizer is not None}")
 
 app = Flask(__name__)
 
@@ -43,12 +62,13 @@ class OpenAIClient:
         if api_key is None:
             api_key = os.getenv('Open_Api_Key')
             if not api_key:
-                raise ValueError("No API key found")
+                raise ValueError("No OpenAI API key found")
         
         self.api_key = api_key.strip()
         self.model = model
         self.client = openai.OpenAI(api_key=self.api_key)
         self.async_client = openai.AsyncOpenAI(api_key=self.api_key)
+        logger.info(f"✅ OpenAI client initialized with model: {self.model}")
     
     async def generate_content(self, prompt: str, max_tokens: int = 2000, temperature: float = 0.7) -> str:
         try:
@@ -61,7 +81,7 @@ class OpenAIClient:
             )
             return response.choices[0].message.content
         except Exception as e:
-            logger.error(f"OpenAI error: {e}")
+            logger.error(f"OpenAI generation error: {e}")
             return f"Error: {str(e)}"
 
 class ContentGenerationAgent:
@@ -87,10 +107,15 @@ Write in {brand_voice} voice, approximately 2000 words."""
         content = await self.openai_client.generate_content(prompt, 4000)
         
         if self.humanizer:
-            analysis = self.humanizer.analyze_content(content, pain_points or [])
-            improved = content
-            if analysis.get('overall_assessment', {}).get('score', 0) < 70:
-                improved = await self.humanizer.generate_enhanced_version(content, analysis)
+            try:
+                analysis = self.humanizer.analyze_content(content, pain_points or [])
+                improved = content
+                if analysis.get('overall_assessment', {}).get('score', 0) < 70:
+                    improved = await self.humanizer.generate_enhanced_version(content, analysis)
+            except Exception as e:
+                logger.error(f"Humanization error: {e}")
+                analysis = {"overall_assessment": {"score": 75, "human_score": 70}}
+                improved = content
         else:
             analysis = {"overall_assessment": {"score": 75, "human_score": 70}}
             improved = content
@@ -106,6 +131,7 @@ def create_agents():
     try:
         api_key = os.getenv('Open_Api_Key')
         if not api_key:
+            logger.error("No OpenAI API key found")
             return None, None, None, None
         
         try:
@@ -126,7 +152,7 @@ def create_agents():
         logger.error(f"Agent creation failed: {e}")
         return None, None, None, None
 
-# COMPLETE HTML TEMPLATE WITH WAQZEE NAVIGATION
+# COMPLETE HTML with Waqzee Navigation
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -137,324 +163,54 @@ HTML_TEMPLATE = """
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; }
         
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
-            background: #f5f5f5;
-        }
-        
-        /* Waqzee Navigation Header */
-        .waqzee-header {
-            background: #ffffff;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            position: sticky;
-            top: 0;
-            z-index: 1000;
-        }
-        
-        .header-container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 0 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            height: 80px;
-        }
-        
-        .waqzee-logo {
-            height: 50px;
-            width: auto;
-        }
-        
-        .main-nav {
-            display: flex;
-            align-items: center;
-            gap: 40px;
-            list-style: none;
-        }
-        
-        .main-nav a {
-            text-decoration: none;
-            color: #2c3e50;
-            font-weight: 500;
-            font-size: 16px;
-            transition: color 0.3s;
-        }
-        
-        .main-nav a:hover {
-            color: #667eea;
-        }
-        
-        .main-nav a.active {
-            color: #667eea;
-            font-weight: 600;
-        }
-        
-        .cta-button {
-            background: linear-gradient(45deg, #2c3e50, #34495e);
-            color: white !important;
-            padding: 12px 30px;
-            border-radius: 25px;
-            font-weight: 600;
-            transition: all 0.3s;
-            box-shadow: 0 4px 15px rgba(44, 62, 80, 0.3);
-        }
-        
-        .cta-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(44, 62, 80, 0.4);
-        }
-        
-        .mobile-menu-btn {
-            display: none;
-            background: none;
-            border: none;
-            font-size: 24px;
-            cursor: pointer;
-            color: #2c3e50;
-        }
+        .waqzee-header { background: #ffffff; box-shadow: 0 2px 10px rgba(0,0,0,0.1); position: sticky; top: 0; z-index: 1000; }
+        .header-container { max-width: 1400px; margin: 0 auto; padding: 0 20px; display: flex; justify-content: space-between; align-items: center; height: 80px; }
+        .waqzee-logo { height: 50px; width: auto; }
+        .main-nav { display: flex; align-items: center; gap: 40px; list-style: none; }
+        .main-nav a { text-decoration: none; color: #2c3e50; font-weight: 500; font-size: 16px; transition: color 0.3s; }
+        .main-nav a:hover { color: #667eea; }
+        .main-nav a.active { color: #667eea; font-weight: 600; }
+        .cta-button { background: linear-gradient(45deg, #2c3e50, #34495e); color: white !important; padding: 12px 30px; border-radius: 25px; font-weight: 600; transition: all 0.3s; box-shadow: 0 4px 15px rgba(44, 62, 80, 0.3); }
+        .cta-button:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(44, 62, 80, 0.4); }
+        .mobile-menu-btn { display: none; background: none; border: none; font-size: 24px; cursor: pointer; color: #2c3e50; }
         
         @media (max-width: 968px) {
-            .main-nav {
-                position: fixed;
-                top: 80px;
-                left: -100%;
-                width: 100%;
-                height: calc(100vh - 80px);
-                background: white;
-                flex-direction: column;
-                padding: 40px;
-                gap: 30px;
-                transition: left 0.3s;
-            }
-            
-            .main-nav.active {
-                left: 0;
-            }
-            
-            .mobile-menu-btn {
-                display: block;
-            }
+            .main-nav { position: fixed; top: 80px; left: -100%; width: 100%; height: calc(100vh - 80px); background: white; flex-direction: column; padding: 40px; gap: 30px; transition: left 0.3s; }
+            .main-nav.active { left: 0; }
+            .mobile-menu-btn { display: block; }
         }
         
-        /* Main Content */
-        .main-content {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: calc(100vh - 80px);
-            padding: 40px 20px;
-        }
-        
-        .container { 
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white; 
-            padding: 40px; 
-            border-radius: 20px; 
-            box-shadow: 0 20px 60px rgba(0,0,0,0.2); 
-        }
-        
-        .page-header {
-            text-align: center;
-            margin-bottom: 40px;
-            padding-bottom: 30px;
-            border-bottom: 3px solid #667eea;
-        }
-        
-        .page-header h1 { 
-            color: #667eea;
-            font-size: 2.5em; 
-            margin-bottom: 10px;
-        }
-        
-        .subtitle {
-            color: #666;
-            font-size: 1.2em;
-            font-weight: 500;
-        }
-        
-        .badge {
-            display: inline-block;
-            background: linear-gradient(45deg, #667eea, #764ba2);
-            color: white;
-            padding: 8px 20px;
-            border-radius: 20px;
-            font-size: 0.9em;
-            font-weight: 600;
-            margin: 10px 5px;
-        }
-        
-        .section {
-            background: #f8f9fa;
-            padding: 30px;
-            border-radius: 15px;
-            margin-bottom: 30px;
-            border-left: 5px solid #667eea;
-        }
-        
-        .section h2 {
-            color: #667eea;
-            margin-bottom: 20px;
-            font-size: 1.8em;
-        }
-        
-        .form-row { 
-            display: flex; 
-            gap: 20px; 
-            margin-bottom: 20px; 
-        }
-        
-        .form-col { 
-            flex: 1; 
-        }
-        
-        label { 
-            display: block; 
-            margin-bottom: 8px; 
-            font-weight: 600; 
-            color: #555;
-            font-size: 0.95em;
-        }
-        
-        input, textarea, select { 
-            width: 100%; 
-            padding: 12px 16px; 
-            border: 2px solid #e1e5e9; 
-            border-radius: 10px; 
-            font-size: 14px; 
-            transition: all 0.3s;
-            font-family: inherit;
-        }
-        
-        input:focus, textarea:focus, select:focus { 
-            border-color: #667eea; 
-            outline: none; 
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); 
-        }
-        
-        button { 
-            width: 100%;
-            padding: 16px 24px; 
-            border: none; 
-            border-radius: 12px; 
-            cursor: pointer; 
-            font-size: 16px; 
-            font-weight: 600; 
-            transition: all 0.3s;
-            font-family: inherit;
-            background: linear-gradient(45deg, #667eea, #764ba2); 
-            color: white;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-        }
-        
-        button:hover { 
-            transform: translateY(-2px); 
-            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.5); 
-        }
-        
-        .loading { 
-            display: none; 
-            text-align: center; 
-            padding: 50px; 
-            background: linear-gradient(135deg, #e3f2fd, #f3e5f5); 
-            border-radius: 15px; 
-            margin-top: 30px;
-        }
-        
-        .spinner {
-            width: 50px;
-            height: 50px;
-            border: 5px solid #f3f3f3;
-            border-top: 5px solid #667eea;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 20px;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
-        .success { 
-            background: linear-gradient(135deg, #e8f5e8, #c8e6c9); 
-            color: #2e7d32; 
-            padding: 25px; 
-            border-radius: 12px; 
-            margin: 20px 0; 
-            border-left: 5px solid #4caf50;
-        }
-        
-        .error { 
-            background: linear-gradient(135deg, #ffebee, #ffcdd2); 
-            color: #d32f2f; 
-            padding: 25px; 
-            border-radius: 12px; 
-            margin: 20px 0; 
-            border-left: 5px solid #f44336;
-        }
-        
-        .content-display {
-            background: white;
-            padding: 30px;
-            border-radius: 12px;
-            margin-top: 20px;
-            border: 2px solid #e1e5e9;
-            max-height: 600px;
-            overflow-y: auto;
-            line-height: 1.8;
-        }
-        
-        .stat-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin: 25px 0;
-        }
-        
-        .stat-card {
-            background: white;
-            padding: 20px;
-            border-radius: 12px;
-            text-align: center;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        }
-        
-        .stat-value {
-            font-size: 2em;
-            font-weight: bold;
-            color: #667eea;
-            margin-bottom: 5px;
-        }
-        
-        .stat-label {
-            color: #666;
-            font-size: 0.9em;
-        }
-        
-        .feature-list {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin: 30px 0;
-        }
-        
-        .feature-item {
-            background: white;
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
-            transition: transform 0.3s;
-        }
-        
-        .feature-item:hover {
-            transform: translateY(-5px);
-        }
-        
-        .feature-icon {
-            font-size: 2em;
-            margin-bottom: 10px;
-        }
+        .main-content { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: calc(100vh - 80px); padding: 40px 20px; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 40px; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+        .page-header { text-align: center; margin-bottom: 40px; padding-bottom: 30px; border-bottom: 3px solid #667eea; }
+        .page-header h1 { color: #667eea; font-size: 2.5em; margin-bottom: 10px; }
+        .subtitle { color: #666; font-size: 1.2em; font-weight: 500; }
+        .badge { display: inline-block; background: linear-gradient(45deg, #667eea, #764ba2); color: white; padding: 8px 20px; border-radius: 20px; font-size: 0.9em; font-weight: 600; margin: 10px 5px; }
+        .section { background: #f8f9fa; padding: 30px; border-radius: 15px; margin-bottom: 30px; border-left: 5px solid #667eea; }
+        .section h2 { color: #667eea; margin-bottom: 20px; font-size: 1.8em; }
+        .form-row { display: flex; gap: 20px; margin-bottom: 20px; }
+        .form-col { flex: 1; }
+        label { display: block; margin-bottom: 8px; font-weight: 600; color: #555; font-size: 0.95em; }
+        input, textarea, select { width: 100%; padding: 12px 16px; border: 2px solid #e1e5e9; border-radius: 10px; font-size: 14px; transition: all 0.3s; font-family: inherit; }
+        input:focus, textarea:focus, select:focus { border-color: #667eea; outline: none; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
+        button { width: 100%; padding: 16px 24px; border: none; border-radius: 12px; cursor: pointer; font-size: 16px; font-weight: 600; transition: all 0.3s; font-family: inherit; background: linear-gradient(45deg, #667eea, #764ba2); color: white; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4); }
+        button:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(102, 126, 234, 0.5); }
+        .loading { display: none; text-align: center; padding: 50px; background: linear-gradient(135deg, #e3f2fd, #f3e5f5); border-radius: 15px; margin-top: 30px; }
+        .spinner { width: 50px; height: 50px; border: 5px solid #f3f3f3; border-top: 5px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .success { background: linear-gradient(135deg, #e8f5e8, #c8e6c9); color: #2e7d32; padding: 25px; border-radius: 12px; margin: 20px 0; border-left: 5px solid #4caf50; }
+        .error { background: linear-gradient(135deg, #ffebee, #ffcdd2); color: #d32f2f; padding: 25px; border-radius: 12px; margin: 20px 0; border-left: 5px solid #f44336; }
+        .content-display { background: white; padding: 30px; border-radius: 12px; margin-top: 20px; border: 2px solid #e1e5e9; max-height: 600px; overflow-y: auto; line-height: 1.8; }
+        .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 25px 0; }
+        .stat-card { background: white; padding: 20px; border-radius: 12px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .stat-value { font-size: 2em; font-weight: bold; color: #667eea; margin-bottom: 5px; }
+        .stat-label { color: #666; font-size: 0.9em; }
+        .feature-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 30px 0; }
+        .feature-item { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); transition: transform 0.3s; }
+        .feature-item:hover { transform: translateY(-5px); }
+        .feature-icon { font-size: 2em; margin-bottom: 10px; }
         
         @media (max-width: 768px) {
             .header-container { height: 70px; }
@@ -466,14 +222,11 @@ HTML_TEMPLATE = """
     </style>
 </head>
 <body>
-    <!-- Waqzee Navigation Header -->
     <header class="waqzee-header">
         <div class="header-container">
             <a href="https://waqzee.com/">
-                <img src="https://waqzee.com/wp-content/uploads/2025/07/cropped-waqzee-marketing-agency.png" 
-                     alt="Waqzee Digital" class="waqzee-logo">
+                <img src="https://waqzee.com/wp-content/uploads/2025/07/cropped-waqzee-marketing-agency.png" alt="Waqzee Digital" class="waqzee-logo">
             </a>
-            
             <nav>
                 <ul class="main-nav" id="mainNav">
                     <li><a href="https://waqzee.com/">Home</a></li>
@@ -485,14 +238,10 @@ HTML_TEMPLATE = """
                     <li><a href="https://waqzee.com/free-plan/" class="cta-button">Free Marketing Plan</a></li>
                 </ul>
             </nav>
-            
-            <button class="mobile-menu-btn" onclick="toggleMenu()">
-                <i class="fas fa-bars"></i>
-            </button>
+            <button class="mobile-menu-btn" onclick="toggleMenu()"><i class="fas fa-bars"></i></button>
         </div>
     </header>
 
-    <!-- Main Content -->
     <div class="main-content">
         <div class="container">
             <div class="page-header">
@@ -505,7 +254,6 @@ HTML_TEMPLATE = """
                 </div>
             </div>
 
-            <!-- Features -->
             <div class="feature-list">
                 <div class="feature-item">
                     <div class="feature-icon">📥</div>
@@ -529,7 +277,6 @@ HTML_TEMPLATE = """
                 </div>
             </div>
 
-            <!-- Reddit Workflow -->
             <div class="section">
                 <h2>🚀 Complete Workflow: Reddit → Content</h2>
                 <p style="margin-bottom: 25px; color: #666;">Scrape Reddit, extract pain points, generate content - all in one click!</p>
@@ -564,14 +311,10 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
                 
-                <button type="button" onclick="runRedditWorkflow()">
-                    🚀 Run Complete Workflow
-                </button>
-                
+                <button type="button" onclick="runRedditWorkflow()">🚀 Run Complete Workflow</button>
                 <div id="workflowResults"></div>
             </div>
 
-            <!-- Quick Generation -->
             <div class="section">
                 <h2>✍️ Quick Content Generation</h2>
                 <p style="margin-bottom: 25px; color: #666;">Generate content without Reddit scraping (faster)</p>
@@ -590,9 +333,7 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
                 
-                <button type="button" onclick="generateContent()">
-                    ✍️ Generate Content
-                </button>
+                <button type="button" onclick="generateContent()">✍️ Generate Content</button>
             </div>
 
             <div id="loading" class="loading">
@@ -618,10 +359,7 @@ HTML_TEMPLATE = """
             const posts_limit = document.getElementById('reddit_posts').value;
             const content_type = document.getElementById('reddit_content_type').value;
             
-            if (!topic) {
-                alert('⚠️ Please enter a topic!');
-                return;
-            }
+            if (!topic) { alert('⚠️ Please enter a topic!'); return; }
             
             document.getElementById('workflowResults').innerHTML = `
                 <div class="loading" style="display: block;">
@@ -635,28 +373,19 @@ HTML_TEMPLATE = """
                 const response = await fetch('/reddit-to-content', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        subreddit: subreddit,
-                        topic: topic,
-                        posts_limit: parseInt(posts_limit),
-                        content_type: content_type
-                    })
+                    body: JSON.stringify({ subreddit, topic, posts_limit: parseInt(posts_limit), content_type })
                 });
                 
                 const result = await response.json();
                 
                 if (result.error) {
                     document.getElementById('workflowResults').innerHTML = `
-                        <div class="error">
-                            <h4>❌ Error</h4>
-                            <p>${result.error}</p>
-                        </div>
+                        <div class="error"><h4>❌ Error</h4><p>${result.error}</p></div>
                     `;
                     return;
                 }
                 
                 const workflow = result.workflow;
-                
                 document.getElementById('workflowResults').innerHTML = `
                     <div class="success">
                         <h3>✅ Workflow Completed!</h3>
@@ -675,21 +404,14 @@ HTML_TEMPLATE = """
                             </div>
                         </div>
                     </div>
-                    
                     <div class="content-display">
                         <h4 style="color: #667eea;">📄 Generated Content:</h4>
-                        <div style="white-space: pre-wrap; margin-top: 20px;">
-                            ${result.final_content}
-                        </div>
+                        <div style="white-space: pre-wrap; margin-top: 20px;">${result.final_content}</div>
                     </div>
                 `;
-                
             } catch (error) {
                 document.getElementById('workflowResults').innerHTML = `
-                    <div class="error">
-                        <h4>❌ Request Failed</h4>
-                        <p>${error.message}</p>
-                    </div>
+                    <div class="error"><h4>❌ Request Failed</h4><p>${error.message}</p></div>
                 `;
             }
         }
@@ -698,10 +420,7 @@ HTML_TEMPLATE = """
             const topic = document.getElementById('topic').value;
             const content_type = document.getElementById('content_type').value;
             
-            if (!topic) {
-                alert('⚠️ Please enter a topic!');
-                return;
-            }
+            if (!topic) { alert('⚠️ Please enter a topic!'); return; }
             
             document.getElementById('loading').style.display = 'block';
             document.getElementById('results').style.display = 'none';
@@ -710,10 +429,7 @@ HTML_TEMPLATE = """
                 const response = await fetch('/generate-content', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        topic: topic,
-                        content_type: content_type
-                    })
+                    body: JSON.stringify({ topic, content_type })
                 });
                 
                 const result = await response.json();
@@ -721,34 +437,22 @@ HTML_TEMPLATE = """
                 
                 if (result.error) {
                     document.getElementById('resultContent').innerHTML = `
-                        <div class="error">
-                            <h4>❌ Error</h4>
-                            <p>${result.error}</p>
-                        </div>
+                        <div class="error"><h4>❌ Error</h4><p>${result.error}</p></div>
                     `;
                 } else {
                     document.getElementById('resultContent').innerHTML = `
-                        <div class="success">
-                            <h3>✅ Content Generated!</h3>
-                        </div>
+                        <div class="success"><h3>✅ Content Generated!</h3></div>
                         <div class="content-display">
                             <h4 style="color: #667eea;">📄 Your Content:</h4>
-                            <div style="white-space: pre-wrap; margin-top: 20px;">
-                                ${result.content}
-                            </div>
+                            <div style="white-space: pre-wrap; margin-top: 20px;">${result.content}</div>
                         </div>
                     `;
                 }
-                
                 document.getElementById('results').style.display = 'block';
-                
             } catch (error) {
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('resultContent').innerHTML = `
-                    <div class="error">
-                        <h4>❌ Failed</h4>
-                        <p>${error.message}</p>
-                    </div>
+                    <div class="error"><h4>❌ Failed</h4><p>${error.message}</p></div>
                 `;
                 document.getElementById('results').style.display = 'block';
             }
@@ -777,31 +481,7 @@ def reddit_to_content():
         generation_agent, reddit_scraper, pain_extractor, _ = create_agents()
         
         if not reddit_scraper:
-            # Show detailed error with file check
-            import os
-            import sys
-            agents_path = os.path.join(os.path.dirname(__file__), 'src', 'agents')
-            error_msg = f"Reddit scraper not available.\n\n"
-            
-            if os.path.exists(agents_path):
-                files = os.listdir(agents_path)
-                error_msg += f"✓ Folder exists: {agents_path}\n"
-                error_msg += f"✓ Files found: {', '.join(files)}\n\n"
-                
-                if 'Reddit_scraper.py' in files:
-                    error_msg += "✓ Reddit_scraper.py EXISTS!\n\n"
-                    error_msg += "The file exists but import failed. Possible causes:\n"
-                    error_msg += "1. Missing dependencies (praw, requests, etc.)\n"
-                    error_msg += "2. Syntax error in Reddit_scraper.py\n"
-                    error_msg += "3. Missing environment variables\n\n"
-                    error_msg += "Check Railway deployment logs for the actual import error."
-                else:
-                    error_msg += "✗ Reddit_scraper.py NOT FOUND in list!\n"
-                    error_msg += "Please rename the file to: Reddit_scraper.py (capital R, underscore)"
-            else:
-                error_msg += f"✗ Folder {agents_path} does not exist!"
-            
-            return jsonify({"error": error_msg}), 500
+            return jsonify({"error": "Reddit scraper not available. The agent files may not be properly imported. Check Railway logs for details."}), 500
         
         if not all([generation_agent, reddit_scraper, pain_extractor]):
             return jsonify({"error": "Failed to initialize agents"}), 500
@@ -820,14 +500,10 @@ def reddit_to_content():
         
         content_result = asyncio.run(
             generation_agent.generate_content(
-                topic=topic,
-                content_type=data.get('content_type', 'blog post'),
-                target_audience='professionals',
-                primary_keywords=[topic],
-                search_intent='informational',
-                brand_voice='friendly',
-                content_goal='education',
-                target_geography='global',
+                topic=topic, content_type=data.get('content_type', 'blog post'),
+                target_audience='professionals', primary_keywords=[topic],
+                search_intent='informational', brand_voice='friendly',
+                content_goal='education', target_geography='global',
                 pain_points=pain_points
             )
         )
@@ -858,10 +534,8 @@ def reddit_to_content():
     except Exception as e:
         logger.error(f"Error in reddit_to_content: {e}")
         import traceback
-        return jsonify({
-            "error": str(e),
-            "details": traceback.format_exc()
-        }), 500
+        logger.error(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/generate-content', methods=['POST'])
 def generate_content_simple():
@@ -877,14 +551,10 @@ def generate_content_simple():
             return jsonify({"error": "Failed to initialize"}), 500
         
         result = asyncio.run(generation_agent.generate_content(
-            topic=topic,
-            content_type=data.get('content_type', 'blog post'),
-            target_audience='professionals',
-            primary_keywords=[topic],
-            search_intent='informational',
-            brand_voice='friendly',
-            content_goal='education',
-            target_geography='global'
+            topic=topic, content_type=data.get('content_type', 'blog post'),
+            target_audience='professionals', primary_keywords=[topic],
+            search_intent='informational', brand_voice='friendly',
+            content_goal='education', target_geography='global'
         ))
         
         return jsonify({
@@ -901,7 +571,12 @@ def health():
     return jsonify({
         "status": "healthy",
         "service": "Waqzee Pain Point Content Tool",
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "agents_loaded": {
+            "reddit": RedditScraper is not None,
+            "extractor": PainPointExtractor is not None,
+            "humanizer": PainPointHumanizer is not None
+        }
     })
 
 @app.route('/debug')
@@ -911,16 +586,19 @@ def debug():
     
     debug_info = {
         "current_dir": os.getcwd(),
-        "app_file_location": __file__,
-        "files_in_current_dir": os.listdir('.') if os.path.exists('.') else [],
+        "app_file_location": os.path.abspath(__file__),
+        "python_version": sys.version,
     }
     
     # Check src/agents folder
-    agents_path = os.path.join(os.path.dirname(__file__), 'src', 'agents')
+    agents_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src', 'agents')
     if os.path.exists(agents_path):
         debug_info["agents_folder_exists"] = True
         debug_info["agents_path"] = agents_path
-        debug_info["files_in_agents"] = os.listdir(agents_path)
+        try:
+            debug_info["files_in_agents"] = os.listdir(agents_path)
+        except:
+            debug_info["files_in_agents"] = "Error reading directory"
     else:
         debug_info["agents_folder_exists"] = False
         debug_info["agents_path"] = agents_path
@@ -932,9 +610,18 @@ def debug():
         "PainPointHumanizer": PainPointHumanizer is not None
     }
     
+    # Check environment variables
+    debug_info["environment"] = {
+        "REDDIT_CLIENT_ID": "present" if os.getenv('REDDIT_CLIENT_ID') else "missing",
+        "REDDIT_CLIENT_SECRET": "present" if os.getenv('REDDIT_CLIENT_SECRET') else "missing",
+        "REDDIT_USER_AGENT": "present" if os.getenv('REDDIT_USER_AGENT') else "missing",
+        "Open_Api_Key": "present" if os.getenv('Open_Api_Key') else "missing"
+    }
+    
     return jsonify(debug_info)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     logger.info(f"🚀 Starting Waqzee Content Tool on port {port}")
+    logger.info(f"📊 Agents status: Reddit={RedditScraper is not None}, Extractor={PainPointExtractor is not None}, Humanizer={PainPointHumanizer is not None}")
     app.run(host="0.0.0.0", port=port, debug=False)
