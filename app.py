@@ -17,8 +17,18 @@ try:
     from Reddit_scraper import RedditScraper
     from Pain_point_extractor import PainPointExtractor
     from Pain_point_humanizer import PainPointHumanizer
+    logger.info("✅ Successfully imported all agents!")
 except ImportError as e:
-    print(f"Warning: Could not import agents: {e}")
+    logger.error(f"❌ Import Error: {e}")
+    import traceback
+    logger.error(f"Traceback: {traceback.format_exc()}")
+    RedditScraper = None
+    PainPointExtractor = None
+    PainPointHumanizer = None
+except Exception as e:
+    logger.error(f"❌ Unexpected error importing agents: {e}")
+    import traceback
+    logger.error(f"Traceback: {traceback.format_exc()}")
     RedditScraper = None
     PainPointExtractor = None
     PainPointHumanizer = None
@@ -769,20 +779,27 @@ def reddit_to_content():
         if not reddit_scraper:
             # Show detailed error with file check
             import os
+            import sys
             agents_path = os.path.join(os.path.dirname(__file__), 'src', 'agents')
             error_msg = f"Reddit scraper not available.\n\n"
-            error_msg += f"Looking for: Reddit_scraper.py in {agents_path}\n\n"
             
             if os.path.exists(agents_path):
                 files = os.listdir(agents_path)
-                error_msg += f"Files found in src/agents/: {', '.join(files)}\n\n"
-                error_msg += "Please ensure files are named:\n"
-                error_msg += "- Reddit_scraper.py (capital R, underscore)\n"
-                error_msg += "- Pain_point_extractor.py (capital P, underscore)\n"
-                error_msg += "- Pain_point_humanizer.py (capital P, underscore)"
+                error_msg += f"✓ Folder exists: {agents_path}\n"
+                error_msg += f"✓ Files found: {', '.join(files)}\n\n"
+                
+                if 'Reddit_scraper.py' in files:
+                    error_msg += "✓ Reddit_scraper.py EXISTS!\n\n"
+                    error_msg += "The file exists but import failed. Possible causes:\n"
+                    error_msg += "1. Missing dependencies (praw, requests, etc.)\n"
+                    error_msg += "2. Syntax error in Reddit_scraper.py\n"
+                    error_msg += "3. Missing environment variables\n\n"
+                    error_msg += "Check Railway deployment logs for the actual import error."
+                else:
+                    error_msg += "✗ Reddit_scraper.py NOT FOUND in list!\n"
+                    error_msg += "Please rename the file to: Reddit_scraper.py (capital R, underscore)"
             else:
-                error_msg += f"Folder {agents_path} does not exist!\n"
-                error_msg += "Please create src/agents/ folder and add the files."
+                error_msg += f"✗ Folder {agents_path} does not exist!"
             
             return jsonify({"error": error_msg}), 500
         
