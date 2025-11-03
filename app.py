@@ -6,15 +6,33 @@ from typing import Dict, List
 from datetime import datetime
 import asyncio
 from flask import Flask, request, jsonify, render_template_string
-import statistics
-from collections import Counter
-
-# Setup logging FIRST
+import requests
 import logging
+
+# NLP & Analysis imports
+try:
+    from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+    vader_analyzer = SentimentIntensityAnalyzer()
+except:
+    vader_analyzer = None
+
+try:
+    import yake
+    kw_extractor = yake.KeywordExtractor(top=10, stopwords=None)
+except:
+    kw_extractor = None
+
+try:
+    from sklearn.metrics.pairwise import cosine_similarity
+    from sklearn.feature_extraction.text import TfidfVectorizer
+except:
+    cosine_similarity = None
+
+# Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-logger.info("Starting Waqzee Content Tool...")
+logger.info("Starting Waqzee Advanced Content Tool...")
 
 # Add src/agents to path
 import sys
@@ -22,37 +40,29 @@ agents_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src', 'a
 if os.path.exists(agents_path):
     if agents_path not in sys.path:
         sys.path.insert(0, agents_path)
-        logger.info(f"Added to Python path: {agents_path}")
-else:
-    logger.error(f"Agents folder not found: {agents_path}")
 
-# Try to import agents safely
+# Import agents
 RedditScraper = None
 PainPointExtractor = None  
 PainPointHumanizer = None
 
 try:
     from Reddit_scraper import RedditScraper
-    logger.info("RedditScraper imported successfully")
+    logger.info("RedditScraper imported")
 except Exception as e:
     logger.error(f"Failed to import RedditScraper: {e}")
 
 try:
     from Pain_point_extractor import PainPointExtractor
-    logger.info("PainPointExtractor imported successfully")
+    logger.info("PainPointExtractor imported")
 except Exception as e:
     logger.error(f"Failed to import PainPointExtractor: {e}")
 
 try:
     from Pain_point_humanizer import PainPointHumanizer
-    logger.info("PainPointHumanizer imported successfully")
+    logger.info("PainPointHumanizer imported")
 except Exception as e:
     logger.error(f"Failed to import PainPointHumanizer: {e}")
-
-if all([RedditScraper, PainPointExtractor, PainPointHumanizer]):
-    logger.info("All agents imported successfully!")
-else:
-    logger.warning(f"Some agents failed to import")
 
 app = Flask(__name__)
 
@@ -83,53 +93,335 @@ class OpenAIClient:
             logger.error(f"OpenAI generation error: {e}")
             return f"Error: {str(e)}"
 
-class ContentGenerationAgent:
-    def __init__(self, openai_client):
-        self.openai_client = openai_client
-        if PainPointHumanizer:
-            self.humanizer = PainPointHumanizer(openai_client)
-        else:
-            self.humanizer = None
-    
-    async def generate_content(self, topic: str, content_type: str, target_audience: str,
-                             primary_keywords: List[str], search_intent: str, brand_voice: str,
-                             content_goal: str, target_geography: str, pain_points: List[str] = None) -> Dict:
-        pain_points_str = '\n'.join([f"• {p}" for p in (pain_points or [])])
-        
-        prompt = f"""Create a {content_type} about "{topic}" for {target_audience}.
-Address these pain points:
-{pain_points_str}
+    def get_embeddings(self, text: str) -> List[float]:
+        """Get embeddings for semantic comparison"""
+        try:
+            response = self.client.embeddings.create(
+                input=text,
+                model="text-embedding-3-small"
+            )
+            return response.data[0].embedding
+        except Exception as e:
+            logger.error(f"Embedding error: {e}")
+            return []
 
-Write in {brand_voice} voice, approximately 2000 words."""
+class SerpAPIResearch:
+    """Research using Google SERP data"""
+    
+    @staticmethod
+    def get_top_results(query: str) -> Dict:
+        """Get top-ranking results for a query"""
+        try:
+            api_key = os.getenv('Serp_API')
+            if not api_key:
+                return {"error": "Serp_API key not configured"}
+            
+            url = "https://serpapi.com/search"
+            params = {
+                "q": query,
+                "api_key": api_key,
+                "num": 10
+            }
+            
+            response = requests.get(url, params=params, timeout=10)
+            data = response.json()
+            
+            results = {
+                "organic_results": [],
+                "people_also_ask": [],
+                "top_keywords": []
+            }
+            
+            # Organic results
+            if "organic_results" in data:
+                for result in data["organic_results"][:5]:
+                    results["organic_results"].append({
+                        "title": result.get("title", ""),
+                        "url": result.get("link", ""),
+                        "snippet": result.get("snippet", ""),
+                        "position": result.get("position", 0)
+                    })
+            
+            # People Also Ask
+            if "people_also_ask" in data:
+                for question in data["people_also_ask"][:5]:
+                    results["people_also_ask"].append({
+                        "question": question.get("question", ""),
+                        "snippet": question.get("snippet", "")[:200]
+                    })
+            
+            logger.info(f"Got {len(results['organic_results'])} SERP results for '{query}'")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Serp API error: {e}")
+            return {"error": str(e)}
+
+class NewsResearch:
+    """Research using News API for trends"""
+    
+    @staticmethod
+    def get_trending(query: str) -> Dict:
+        """Get trending news for topic"""
+        try:
+            api_key = os.getenv('News_API')
+            if not api_key:
+                return {"error": "News_API key not configured"}
+            
+            url = "https://newsapi.org/v2/everything"
+            params = {
+                "q": query,
+                "apiKey": api_key,
+                "sortBy": "publishedAt",
+                "language": "en",
+                "pageSize": 5
+            }
+            
+            response = requests.get(url, params=params, timeout=10)
+            data = response.json()
+            
+            trending = []
+            if data.get("articles"):
+                for article in data["articles"][:5]:
+                    trending.append({
+                        "title": article.get("title", ""),
+                        "description": article.get("description", ""),
+                        "source": article.get("source", {}).get("name", ""),
+                        "publishedAt": article.get("publishedAt", "")
+                    })
+            
+            logger.info(f"Got {len(trending)} trending news articles")
+            return {"articles": trending}
+            
+        except Exception as e:
+            logger.error(f"News API error: {e}")
+            return {"error": str(e)}
+
+class PersonaGenerator:
+    """Generate personas from Reddit data"""
+    
+    @staticmethod
+    def extract_personas(posts: List[Dict], comments: List[Dict]) -> List[Dict]:
+        """Extract personas from Reddit data"""
+        try:
+            personas = []
+            all_text = []
+            
+            # Collect all text
+            for post in posts[:20]:
+                all_text.append(post.get("title", "") + " " + post.get("selftext", ""))
+            for comment in comments[:50]:
+                all_text.append(comment.get("body", ""))
+            
+            combined_text = " ".join(all_text).lower()
+            
+            # Sentiment analysis
+            sentiment_scores = []
+            if vader_analyzer:
+                for text in all_text[:10]:
+                    if text:
+                        scores = vader_analyzer.polarity_scores(text)
+                        sentiment_scores.append(scores)
+            
+            # Calculate average sentiment
+            if sentiment_scores:
+                avg_positive = sum(s["pos"] for s in sentiment_scores) / len(sentiment_scores)
+                avg_negative = sum(s["neg"] for s in sentiment_scores) / len(sentiment_scores)
+                avg_neutral = sum(s["neu"] for s in sentiment_scores) / len(sentiment_scores)
+            else:
+                avg_positive = avg_negative = avg_neutral = 0.33
+            
+            # Keyword extraction for persona names
+            keywords = []
+            if kw_extractor:
+                try:
+                    keywords = kw_extractor.extract_keywords(combined_text, top=10)
+                except:
+                    pass
+            
+            # Generate personas based on sentiment and keywords
+            if avg_negative > avg_positive:
+                personas.append({
+                    "name": "The Frustrated User",
+                    "sentiment": "negative",
+                    "keywords": [k[0] for k in keywords[:3]] if keywords else [],
+                    "pain_point": "Struggling with common issues",
+                    "motivation": "Find solution quickly"
+                })
+            
+            if avg_positive > avg_negative:
+                personas.append({
+                    "name": "The Opportunity Seeker",
+                    "sentiment": "positive",
+                    "keywords": [k[0] for k in keywords[:3]] if keywords else [],
+                    "pain_point": "Missing out on best practices",
+                    "motivation": "Learn and improve"
+                })
+            
+            if avg_neutral > 0.4:
+                personas.append({
+                    "name": "The Information Gatherer",
+                    "sentiment": "neutral",
+                    "keywords": [k[0] for k in keywords[:3]] if keywords else [],
+                    "pain_point": "Need clear information",
+                    "motivation": "Make informed decisions"
+                })
+            
+            logger.info(f"Generated {len(personas)} personas")
+            return personas
+            
+        except Exception as e:
+            logger.error(f"Persona generation error: {e}")
+            return []
+
+class CTAGenerator:
+    """Generate smart CTAs based on content"""
+    
+    @staticmethod
+    def generate_cta(openai_client, content: str, topic: str, personas: List[Dict]) -> str:
+        """Generate smart CTA based on content and personas"""
+        try:
+            persona_names = [p["name"] for p in personas]
+            persona_str = ", ".join(persona_names)
+            
+            prompt = f"""Based on this article about "{topic}" written for personas: {persona_str}
+
+Article snippet:
+{content[:500]}...
+
+Generate a compelling, specific, and actionable call-to-action that:
+1. Addresses the main benefit mentioned
+2. Creates urgency without being pushy
+3. Matches the reader's motivation
+4. Includes specific next steps
+
+Return ONLY the CTA text, no additional explanation:"""
+            
+            cta = asyncio.run(openai_client.generate_content(prompt, max_tokens=100, temperature=0.8))
+            return cta.strip()
+            
+        except Exception as e:
+            logger.error(f"CTA generation error: {e}")
+            return "Ready to get started? Take the next step today."
+
+class ContentAnalytics:
+    """Advanced content analysis"""
+    
+    @staticmethod
+    def analyze_emotions(text: str) -> Dict:
+        """Analyze emotional tone using VADER"""
+        try:
+            if not vader_analyzer:
+                return {"error": "VADER not available"}
+            
+            scores = vader_analyzer.polarity_scores(text)
+            return {
+                "positive": round(scores["pos"] * 100, 1),
+                "negative": round(scores["neg"] * 100, 1),
+                "neutral": round(scores["neu"] * 100, 1),
+                "overall_sentiment": "positive" if scores["compound"] > 0.05 else "negative" if scores["compound"] < -0.05 else "neutral"
+            }
+        except Exception as e:
+            logger.error(f"Emotion analysis error: {e}")
+            return {}
+    
+    @staticmethod
+    def extract_keywords(text: str) -> List[str]:
+        """Extract keywords using YAKE"""
+        try:
+            if not kw_extractor:
+                return []
+            
+            keywords = kw_extractor.extract_keywords(text, top=10)
+            return [k[0] for k in keywords]
+        except Exception as e:
+            logger.error(f"Keyword extraction error: {e}")
+            return []
+    
+    @staticmethod
+    def calculate_engagement_potential(text: str) -> Dict:
+        """Calculate engagement potential"""
+        sentences = re.split(r'[.!?]+', text)
+        sentences = [s.strip() for s in sentences if s.strip()]
         
-        content = await self.openai_client.generate_content(prompt, 4000)
+        power_words = [
+            "amazing", "discover", "proven", "secret", "best", "essential",
+            "incredible", "revolutionary", "ultimate", "powerful", "exclusive",
+            "urgent", "limited", "guaranteed", "transform", "breakthrough"
+        ]
         
-        if self.humanizer:
-            try:
-                analysis = self.humanizer.analyze_content(content, pain_points or [])
-                improved = content
-                if analysis.get('overall_assessment', {}).get('score', 0) < 70:
-                    improved = await self.humanizer.generate_enhanced_version(content, analysis)
-            except Exception as e:
-                logger.error(f"Humanization error: {e}")
-                analysis = {"overall_assessment": {"score": 75, "human_score": 70}}
-                improved = content
-        else:
-            analysis = {"overall_assessment": {"score": 75, "human_score": 70}}
-            improved = content
+        power_word_count = sum(1 for s in sentences for w in power_words if w in s.lower())
+        avg_sentence_length = len(text.split()) / max(1, len(sentences))
+        
+        engagement_score = min(100, (power_word_count * 5) + ((20 - avg_sentence_length) * 2))
         
         return {
-            "generated_content": content,
-            "improved_content": improved,
-            "humanization_analysis": analysis,
-            "model_used": self.openai_client.model
+            "power_words_used": power_word_count,
+            "average_sentence_length": round(avg_sentence_length, 1),
+            "engagement_score": round(engagement_score, 1)
         }
+    
+    @staticmethod
+    def calculate_trust_markers(text: str) -> Dict:
+        """Calculate trust markers in content"""
+        facts = len(re.findall(r'\d+%|\d+\s+(?:million|billion|thousand)', text, re.IGNORECASE))
+        citations = len(re.findall(r'\[.*?\]|according to|studies show|research|data shows', text, re.IGNORECASE))
+        quotes = len(re.findall(r'["\'].*?["\']', text))
+        
+        trust_score = min(100, facts * 10 + citations * 5 + quotes * 2)
+        
+        return {
+            "statistics_mentioned": facts,
+            "citations_or_references": citations,
+            "quotes": quotes,
+            "trust_score": trust_score
+        }
+
+class SemanticAnalysis:
+    """Compare content with top results using embeddings"""
+    
+    @staticmethod
+    def compare_with_top_results(openai_client, generated_content: str, top_results: List[Dict]) -> Dict:
+        """Compare generated content with top results semantically"""
+        try:
+            if not cosine_similarity:
+                return {"error": "scikit-learn not available"}
+            
+            # Get embedding for generated content
+            generated_embedding = openai_client.get_embeddings(generated_content[:1000])
+            if not generated_embedding:
+                return {"error": "Could not generate embedding"}
+            
+            top_results_text = " ".join([r.get("snippet", "") for r in top_results[:3]])
+            top_embedding = openai_client.get_embeddings(top_results_text)
+            
+            if not top_embedding:
+                return {"error": "Could not get top results embedding"}
+            
+            # Calculate similarity
+            import numpy as np
+            similarity = cosine_similarity(
+                [generated_embedding],
+                [top_embedding]
+            )[0][0]
+            
+            uniqueness = 100 - (similarity * 100)
+            
+            return {
+                "semantic_similarity": round(similarity * 100, 1),
+                "uniqueness_score": round(uniqueness, 1),
+                "comparison_insight": "Very unique content" if uniqueness > 60 else "Similar to top results" if uniqueness < 30 else "Moderately unique"
+            }
+            
+        except Exception as e:
+            logger.error(f"Semantic analysis error: {e}")
+            return {"error": str(e)}
 
 def create_agents():
     try:
         api_key = os.getenv('Open_Api_Key')
         if not api_key:
-            logger.error("No OpenAI API key found")
+            logger.error("No OpenAI API key")
             return None, None, None, None
         
         try:
@@ -144,145 +436,82 @@ def create_agents():
         reddit_scraper = RedditScraper() if RedditScraper else None
         pain_extractor = PainPointExtractor(openai_client) if PainPointExtractor else None
         
-        humanizer = None
-        logger.info("Humanizer skipped")
-        
-        return generation_agent, reddit_scraper, pain_extractor, humanizer
+        return generation_agent, reddit_scraper, pain_extractor, openai_client
     except Exception as e:
         logger.error(f"Agent creation failed: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
         return None, None, None, None
 
-class ContentMetrics:
-    """Calculate SEO and compelling metrics for content"""
+class ContentGenerationAgent:
+    def __init__(self, openai_client):
+        self.openai_client = openai_client
     
-    @staticmethod
-    def calculate(html_content: str, pain_points: List[str] = None) -> Dict:
-        """Calculate comprehensive metrics"""
-        # Strip HTML tags for analysis
-        text = re.sub(r'<[^>]+>', '', html_content)
+    async def generate_content(self, topic: str, content_type: str, personas: List[Dict], 
+                             pain_points: List[str], serp_data: Dict) -> Dict:
+        """Generate content optimized for personas and SERP data"""
         
-        words = text.split()
-        sentences = re.split(r'[.!?]+', text)
-        paragraphs = text.split('\n\n')
+        pain_points_str = '\n'.join([f"• {p}" for p in (pain_points or [])])
+        personas_str = '\n'.join([f"- {p['name']}: {p.get('motivation', '')}" for p in personas])
+        people_ask = '\n'.join([f"• {q['question']}" for q in serp_data.get("people_also_ask", [])[:3]])
         
-        word_count = len(words)
-        sentence_count = max(1, len([s for s in sentences if s.strip()]))
-        paragraph_count = max(1, len([p for p in paragraphs if p.strip()]))
-        
-        # Unique words
-        unique_words = len(set(w.lower() for w in words))
-        
-        # Readability
-        flesch_kincaid = ContentMetrics.flesch_kincaid(len(words), sentence_count, len([w for w in words if len(w) > 2]))
-        
-        # Headings
-        headings = len(re.findall(r'<h[1-6]>', html_content))
-        
-        # Lists
-        lists = len(re.findall(r'<(ul|ol)>', html_content))
-        
-        # Pain point coverage
-        pain_coverage = 0
-        if pain_points:
-            text_lower = text.lower()
-            matched = sum(1 for p in pain_points if p.lower() in text_lower)
-            pain_coverage = (matched / len(pain_points) * 100) if pain_points else 0
-        
-        # Image tags
-        images = len(re.findall(r'<img', html_content))
-        
-        # Links
-        links = len(re.findall(r'<a\s+href', html_content))
-        
-        # Content structure score
-        structure_score = min(100, (headings * 10) + (lists * 5) + (images * 5))
-        
-        return {
-            'word_count': word_count,
-            'sentence_count': sentence_count,
-            'paragraph_count': paragraph_count,
-            'unique_words': unique_words,
-            'readability_score': max(0, min(100, flesch_kincaid)),
-            'headings_count': headings,
-            'lists_count': lists,
-            'images_count': images,
-            'links_count': links,
-            'pain_points_addressed': pain_coverage,
-            'content_structure_score': structure_score,
-            'uniqueness_score': min(100, (unique_words / max(1, word_count)) * 100),
-            'engagement_score': min(100, ((lists + images + links) / max(1, word_count)) * 10)
-        }
-    
-    @staticmethod
-    def flesch_kincaid(words: int, sentences: int, complex_words: int) -> float:
-        """Calculate Flesch-Kincaid Grade Level"""
-        if sentences == 0 or words == 0:
-            return 0
-        return 0.39 * (words / sentences) + 11.8 * (complex_words / words) - 15.59
+        prompt = f"""Create a compelling {content_type} about "{topic}"
 
-# PROFESSIONAL BLACK & WHITE HTML TEMPLATE WITH REAL-TIME ANALYSIS
+Target Personas:
+{personas_str}
+
+Pain Points to Address:
+{pain_points_str}
+
+Questions Your Readers Ask:
+{people_ask}
+
+Requirements:
+1. Write in conversational, engaging tone
+2. Address specific pain points directly
+3. Answer the common questions
+4. Include practical examples
+5. End with a strong benefit statement
+6. Approximately 1500-2000 words
+7. Use clear heading hierarchy
+
+Generate the article now:"""
+        
+        content = await self.openai_client.generate_content(prompt, 4000, temperature=0.8)
+        return {"content": content}
+
+# ADVANCED HTML TEMPLATE WITH LOADING INDICATORS
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Waqzee - Content Generation Tool</title>
+    <title>Waqzee - Advanced Content Generation</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/atom-one-dark.min.css" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        
         body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: #f9f9f9;
             color: #1a1a1a;
         }
         
-        /* Header */
         .header {
             background: white;
             border-bottom: 1px solid #e0e0e0;
             position: sticky;
             top: 0;
             z-index: 1000;
-        }
-        
-        .header-content {
-            max-width: 1600px;
-            margin: 0 auto;
             padding: 20px 40px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
         }
         
         .logo {
             font-size: 24px;
             font-weight: 700;
-            color: #000;
         }
         
-        .nav a {
-            text-decoration: none;
-            color: #666;
-            margin: 0 20px;
-            font-size: 14px;
-            font-weight: 500;
-            transition: color 0.2s;
-        }
-        
-        .nav a:hover, .nav a.active {
-            color: #000;
-        }
-        
-        /* Main Container */
         .main {
-            max-width: 1600px;
+            max-width: 1800px;
             margin: 0 auto;
             padding: 40px;
         }
@@ -290,37 +519,16 @@ HTML_TEMPLATE = """
         .page-title {
             font-size: 32px;
             font-weight: 700;
-            margin-bottom: 10px;
-            color: #000;
-        }
-        
-        .page-subtitle {
-            font-size: 16px;
-            color: #666;
             margin-bottom: 40px;
         }
         
-        /* Content Grid - 3 columns */
         .content-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-columns: 1fr 1fr;
             gap: 30px;
             margin-bottom: 40px;
         }
         
-        @media (max-width: 1400px) {
-            .content-grid {
-                grid-template-columns: 1fr 1fr;
-            }
-        }
-        
-        @media (max-width: 900px) {
-            .content-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-        
-        /* Form Section */
         .form-section {
             background: white;
             padding: 30px;
@@ -332,7 +540,6 @@ HTML_TEMPLATE = """
             font-size: 16px;
             font-weight: 600;
             margin-bottom: 20px;
-            color: #000;
         }
         
         .form-group {
@@ -344,256 +551,100 @@ HTML_TEMPLATE = """
             font-size: 13px;
             font-weight: 500;
             margin-bottom: 6px;
-            color: #1a1a1a;
         }
         
-        input[type="text"],
-        input[type="email"],
-        select,
-        textarea {
+        input, select, textarea {
             width: 100%;
             padding: 10px 12px;
             border: 1px solid #d0d0d0;
             border-radius: 6px;
             font-size: 13px;
             font-family: inherit;
-            transition: border-color 0.2s;
-            background: white;
-            color: #000;
         }
         
-        input:focus,
-        select:focus,
-        textarea:focus {
+        input:focus, select:focus, textarea:focus {
             border-color: #000;
             outline: none;
             box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.05);
         }
         
-        textarea {
-            resize: vertical;
-            min-height: 70px;
-        }
-        
-        /* Buttons */
         .btn {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 6px;
-            font-size: 13px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            font-family: inherit;
             width: 100%;
-        }
-        
-        .btn-primary {
+            padding: 12px;
             background: #000;
             color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
         }
         
-        .btn-primary:hover {
+        .btn:hover {
             background: #333;
         }
         
-        .btn-primary:active {
-            transform: scale(0.98);
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
         }
         
-        .btn-secondary {
-            background: #f0f0f0;
-            color: #000;
-            border: 1px solid #e0e0e0;
-            padding: 8px 16px;
-            width: auto;
-            display: inline-block;
-            margin-right: 8px;
-        }
-        
-        .btn-secondary:hover {
-            background: #e0e0e0;
-        }
-        
-        /* Status Messages */
-        .status-message {
-            padding: 12px;
-            border-radius: 6px;
-            margin-bottom: 16px;
-            font-size: 13px;
+        /* Loading Indicator */
+        .loading-overlay {
             display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.95);
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 20px;
         }
         
-        .status-message.show {
-            display: block;
+        .loading-overlay.show {
+            display: flex;
         }
         
-        .status-success {
-            background: #f0f9f7;
-            color: #1a5f52;
-            border: 1px solid #d0e8e3;
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid #f0f0f0;
+            border-top: 4px solid #000;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
         }
         
-        .status-error {
-            background: #fef0f0;
-            color: #8b3333;
-            border: 1px solid #f0d0d0;
+        .loading-text {
+            font-size: 18px;
+            font-weight: 600;
+            color: #000;
         }
         
-        .status-loading {
-            background: #f5f5f5;
+        .loading-subtext {
+            font-size: 14px;
             color: #666;
-            border: 1px solid #e0e0e0;
-        }
-        
-        /* Pain Points */
-        .pain-points-section {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            border: 1px solid #e0e0e0;
-        }
-        
-        .pain-point-item {
-            padding: 12px;
-            background: #fafafa;
-            border-left: 3px solid #000;
-            margin-bottom: 10px;
-            border-radius: 4px;
-            font-size: 13px;
-        }
-        
-        .pain-point-item:last-child {
-            margin-bottom: 0;
-        }
-        
-        /* Metrics Grid */
-        .metrics {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
-        }
-        
-        .metric {
-            background: white;
-            padding: 16px;
-            border-radius: 8px;
-            border: 1px solid #e0e0e0;
+            max-width: 400px;
             text-align: center;
         }
         
-        .metric-value {
-            font-size: 22px;
-            font-weight: 700;
-            color: #000;
-            margin-bottom: 4px;
-        }
-        
-        .metric-label {
-            font-size: 11px;
-            color: #999;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        
-        .metric.good .metric-value { color: #1a5f52; }
-        .metric.warning .metric-value { color: #8b6f00; }
-        .metric.poor .metric-value { color: #8b3333; }
-        
-        /* Editor */
-        .editor-section {
-            background: white;
-            border-radius: 8px;
-            border: 1px solid #e0e0e0;
-            padding: 0;
+        .loading-bar {
+            width: 300px;
+            height: 4px;
+            background: #f0f0f0;
+            border-radius: 2px;
             overflow: hidden;
-            grid-column: 1 / -1;
         }
         
-        .editor-tabs {
-            display: flex;
-            border-bottom: 1px solid #e0e0e0;
-            background: #fafafa;
-        }
-        
-        .editor-tab {
-            padding: 12px 20px;
-            border: none;
-            background: transparent;
-            cursor: pointer;
-            font-size: 13px;
-            font-weight: 500;
-            color: #666;
-            border-bottom: 2px solid transparent;
-        }
-        
-        .editor-tab.active {
-            color: #000;
-            border-bottom-color: #000;
-        }
-        
-        .editor-content {
-            padding: 20px;
-            min-height: 500px;
-        }
-        
-        .ql-toolbar.ql-snow {
-            background: transparent;
-            border: none;
-            border-bottom: 1px solid #e0e0e0;
-            padding: 12px 20px;
-            margin: 0;
-        }
-        
-        .ql-container.ql-snow {
-            border: none;
-            font-size: 14px;
-            font-family: inherit;
-            padding: 20px;
-        }
-        
-        .ql-editor {
-            padding: 0;
-            min-height: 400px;
-        }
-        
-        /* Code view */
-        .code-view {
-            background: #1e1e1e;
-            color: #d4d4d4;
-            padding: 20px;
-            border-radius: 6px;
-            overflow-x: auto;
-            font-size: 12px;
-            line-height: 1.5;
-            font-family: 'Monaco', 'Courier New', monospace;
-        }
-        
-        .code-view pre {
-            margin: 0;
-        }
-        
-        /* Export buttons */
-        .export-buttons {
-            display: flex;
-            gap: 8px;
-            margin-top: 16px;
-        }
-        
-        .export-buttons .btn-secondary {
-            flex: 1;
-            margin: 0;
-        }
-        
-        /* Spinner */
-        .spinner {
-            width: 30px;
-            height: 30px;
-            border: 3px solid #e0e0e0;
-            border-top: 3px solid #000;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-            margin: 0 auto 12px;
+        .loading-bar-fill {
+            height: 100%;
+            background: #000;
+            width: 0%;
+            animation: loading-progress 2s ease-in-out infinite;
         }
         
         @keyframes spin {
@@ -601,448 +652,458 @@ HTML_TEMPLATE = """
             100% { transform: rotate(360deg); }
         }
         
-        @media (max-width: 768px) {
-            .main {
-                padding: 20px;
+        @keyframes loading-progress {
+            0% { width: 0%; }
+            50% { width: 70%; }
+            100% { width: 100%; }
+        }
+        
+        /* Results Display */
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        
+        .result-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .result-card h4 {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #000;
+        }
+        
+        .persona {
+            background: #f5f5f5;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+        
+        .persona-name {
+            font-weight: 600;
+            color: #000;
+        }
+        
+        .persona-detail {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
+        
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 13px;
+        }
+        
+        .metric:last-child {
+            border-bottom: none;
+        }
+        
+        .metric-label {
+            color: #666;
+        }
+        
+        .metric-value {
+            font-weight: 600;
+            color: #000;
+        }
+        
+        .serp-result {
+            padding: 12px;
+            background: #fafafa;
+            border-left: 3px solid #000;
+            margin-bottom: 12px;
+            font-size: 13px;
+        }
+        
+        .serp-title {
+            font-weight: 600;
+            color: #0066cc;
+            margin-bottom: 4px;
+        }
+        
+        .serp-url {
+            color: #006621;
+            font-size: 12px;
+        }
+        
+        .editor-full {
+            background: white;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            overflow: hidden;
+        }
+        
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #e0e0e0;
+            background: #fafafa;
+        }
+        
+        .tab {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-weight: 500;
+            border-bottom: 2px solid transparent;
+        }
+        
+        .tab.active {
+            border-bottom-color: #000;
+            color: #000;
+        }
+        
+        .tab-content {
+            display: none;
+            padding: 30px;
+        }
+        
+        .tab-content.show {
+            display: block;
+        }
+        
+        .ql-container {
+            border: none !important;
+            min-height: 500px;
+        }
+        
+        .ql-editor {
+            font-size: 14px;
+        }
+        
+        @media (max-width: 1200px) {
+            .content-grid {
+                grid-template-columns: 1fr;
             }
-            
-            .page-title {
-                font-size: 24px;
-            }
-            
-            .metrics {
+            .results-grid {
                 grid-template-columns: 1fr;
             }
         }
     </style>
 </head>
 <body>
-    <!-- Header -->
     <div class="header">
-        <div class="header-content">
-            <div class="logo">Waqzee</div>
-            <nav class="nav">
-                <a href="https://waqzee.com/">Home</a>
-                <a href="https://waqzee.com/about/">About</a>
-                <a href="https://waqzee.com/service/">Services</a>
-                <a href="/tools" class="active">Tools</a>
-            </nav>
-        </div>
+        <div class="logo">Waqzee Advanced Content Engine</div>
     </div>
 
-    <!-- Main Content -->
     <div class="main">
-        <h1 class="page-title">Content Generation Tool</h1>
-        <p class="page-subtitle">Create compelling content informed by real user research</p>
+        <h1 class="page-title">Generate Optimized Content with SERP & Persona Intelligence</h1>
 
-        <!-- Status Messages -->
-        <div id="statusMessage" class="status-message"></div>
+        <!-- Loading Overlay -->
+        <div id="loadingOverlay" class="loading-overlay">
+            <div class="spinner"></div>
+            <div class="loading-text" id="loadingText">Researching...</div>
+            <div class="loading-subtext" id="loadingSubtext">Analyzing Reddit, Google, News & generating personas</div>
+            <div class="loading-bar">
+                <div class="loading-bar-fill"></div>
+            </div>
+        </div>
 
-        <!-- Content Grid -->
+        <!-- Input Section -->
         <div class="content-grid">
-            <!-- Column 1: Research Input -->
             <div>
                 <div class="form-section">
-                    <h4 class="section-title">Reddit Research</h4>
+                    <h3 class="section-title">Research Input</h3>
                     
                     <div class="form-group">
-                        <label>Subreddit</label>
-                        <input type="text" id="reddit_subreddit" placeholder="entrepreneur" value="entrepreneur">
+                        <label>Topic</label>
+                        <input type="text" id="topic" placeholder="e.g., best cars for NHS employees" required>
                     </div>
-                    
-                    <div class="form-group">
-                        <label>Topic to Research</label>
-                        <input type="text" id="reddit_topic" placeholder="starting a business" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Posts to Analyze</label>
-                        <select id="reddit_posts">
-                            <option value="25">25 posts</option>
-                            <option value="50" selected>50 posts</option>
-                            <option value="100">100 posts</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-section" style="margin-top: 20px;">
-                    <h4 class="section-title">Article Details</h4>
                     
                     <div class="form-group">
                         <label>Article Title</label>
-                        <input type="text" id="article_title" placeholder="Your article title...">
+                        <input type="text" id="title" placeholder="Your article title">
                     </div>
                     
                     <div class="form-group">
                         <label>English Variant</label>
-                        <select id="english_variant">
+                        <select id="english">
                             <option value="british">British English</option>
                             <option value="american" selected>American English</option>
-                            <option value="australian">Australian English</option>
                         </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Target Audience</label>
-                        <input type="text" id="target_audience" placeholder="professionals, entrepreneurs...">
                     </div>
                     
                     <div class="form-group">
                         <label>Content Type</label>
-                        <select id="content_type">
+                        <select id="contentType">
                             <option value="blog post">Blog Post</option>
-                            <option value="guide">Complete Guide</option>
-                            <option value="tutorial">Tutorial</option>
-                            <option value="case study">Case Study</option>
+                            <option value="guide">Comprehensive Guide</option>
+                            <option value="comparison">Comparison Article</option>
                         </select>
                     </div>
                     
-                    <div class="form-group">
-                        <label>Your Unique Angle</label>
-                        <textarea id="unique_angle" placeholder="What makes this stand out? Your expertise?"></textarea>
-                    </div>
-                    
-                    <button class="btn btn-primary" onclick="generateContent()">Generate Content</button>
+                    <button class="btn" onclick="generateContent()">Generate Content</button>
                 </div>
             </div>
 
-            <!-- Column 2: Pain Points & Metrics -->
-            <div>
-                <div id="painPointsSection" class="pain-points-section" style="display: none;">
-                    <h4 class="section-title">Pain Points Identified</h4>
-                    <div id="painPointsList"></div>
-                </div>
-
-                <div style="margin-top: 20px; display: none;" id="metricsSection">
-                    <div class="form-section">
-                        <h4 class="section-title">Research Metrics</h4>
-                        <div style="font-size: 13px; color: #666;">
-                            <p>Posts Analyzed: <strong id="postsCount">0</strong></p>
-                            <p>Pain Points Found: <strong id="painPointsCount">0</strong></p>
-                            <p>Word Count Generated: <strong id="wordCount">0</strong></p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Column 3: Real-time Analysis -->
+            <!-- Real-time Metrics -->
             <div>
                 <div class="form-section">
-                    <h4 class="section-title">Real-time Analysis</h4>
-                    <div id="liveMetrics" class="metrics">
-                        <div class="metric" title="How easy the content is to read (higher is better)">
-                            <div class="metric-value" id="readabilityScore">0</div>
-                            <div class="metric-label">Readability</div>
+                    <h3 class="section-title">Real-time Metrics</h3>
+                    <div id="realtimeMetrics">
+                        <div class="metric">
+                            <span class="metric-label">Readability</span>
+                            <span class="metric-value" id="metricReadability">-</span>
                         </div>
-                        <div class="metric" title="Unique words vs total words">
-                            <div class="metric-value" id="uniquenessScore">0</div>
-                            <div class="metric-label">Uniqueness</div>
+                        <div class="metric">
+                            <span class="metric-label">Engagement Potential</span>
+                            <span class="metric-value" id="metricEngagement">-</span>
                         </div>
-                        <div class="metric" title="Percentage of pain points addressed">
-                            <div class="metric-value" id="painCoverageScore">0%</div>
-                            <div class="metric-label">Pain Coverage</div>
+                        <div class="metric">
+                            <span class="metric-label">Trust Score</span>
+                            <span class="metric-value" id="metricTrust">-</span>
                         </div>
-                        <div class="metric" title="Content structure quality">
-                            <div class="metric-value" id="structureScore">0</div>
-                            <div class="metric-label">Structure</div>
+                        <div class="metric">
+                            <span class="metric-label">Emotional Tone</span>
+                            <span class="metric-value" id="metricEmotion">-</span>
                         </div>
-                        <div class="metric" title="Words with images and lists">
-                            <div class="metric-value" id="engagementScore">0</div>
-                            <div class="metric-label">Engagement</div>
+                        <div class="metric">
+                            <span class="metric-label">Uniqueness vs SERP</span>
+                            <span class="metric-value" id="metricUniqueness">-</span>
                         </div>
-                        <div class="metric" title="Total word count">
-                            <div class="metric-value" id="contentWordCount">0</div>
-                            <div class="metric-label">Word Count</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="form-section" style="margin-top: 20px;">
-                    <h4 class="section-title">Quick Tips</h4>
-                    <div style="font-size: 13px; line-height: 1.6; color: #666;">
-                        <p>Add images to increase engagement</p>
-                        <p>Use clear headings to organize content</p>
-                        <p>Include lists and bullet points</p>
-                        <p>Reference pain points directly</p>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Editor Section - Full Width -->
-        <div id="editorSection" style="display: none;">
-            <div class="editor-section">
-                <div class="editor-tabs">
-                    <button class="editor-tab active" onclick="switchTab('editor')">Editor</button>
-                    <button class="editor-tab" onclick="switchTab('code')">HTML Code</button>
-                    <button class="editor-tab" onclick="switchTab('preview')">Preview</button>
+        <!-- Results Section -->
+        <div id="resultsSection" style="display: none;">
+            <div class="results-grid">
+                <!-- Personas -->
+                <div class="result-card">
+                    <h4>Generated Personas</h4>
+                    <div id="personasDisplay"></div>
                 </div>
 
-                <!-- Editor Tab -->
-                <div id="editorTab" class="editor-content">
-                    <div id="editor-toolbar"></div>
+                <!-- SERP Data -->
+                <div class="result-card">
+                    <h4>Top Ranking Websites</h4>
+                    <div id="serpDisplay"></div>
+                </div>
+
+                <!-- Pain Points -->
+                <div class="result-card">
+                    <h4>Identified Pain Points</h4>
+                    <div id="painPointsDisplay"></div>
+                </div>
+
+                <!-- Advanced Analytics -->
+                <div class="result-card">
+                    <h4>Content Intelligence</h4>
+                    <div id="analyticsDisplay"></div>
+                </div>
+            </div>
+
+            <!-- Editor -->
+            <div class="editor-full">
+                <div class="tabs">
+                    <button class="tab active" onclick="switchTab('editor')">Editor</button>
+                    <button class="tab" onclick="switchTab('code')">Code</button>
+                    <button class="tab" onclick="switchTab('preview')">Preview</button>
+                </div>
+                <div id="editorTab" class="tab-content show">
                     <div id="editor"></div>
                 </div>
-
-                <!-- Code Tab -->
-                <div id="codeTab" class="editor-content" style="display: none; background: #1e1e1e;">
-                    <div class="code-view">
-                        <pre><code id="codeContent" class="language-html"></code></pre>
-                    </div>
-                    <div class="export-buttons">
-                        <button class="btn-secondary" onclick="copyCode()">Copy Code</button>
-                        <button class="btn-secondary" onclick="downloadHTML()">Download HTML</button>
-                    </div>
+                <div id="codeTab" class="tab-content">
+                    <pre><code id="codeDisplay"></code></pre>
                 </div>
-
-                <!-- Preview Tab -->
-                <div id="previewTab" class="editor-content" style="display: none; background: white;">
-                    <div id="previewContent"></div>
+                <div id="previewTab" class="tab-content">
+                    <div id="previewDisplay"></div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Quill Editor -->
     <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
     <script>
         let editor = null;
-        let currentPainPoints = [];
         let currentContent = "";
+        let currentPersonas = [];
+        let currentPainPoints = [];
 
-        // Initialize Quill editor
-        function initEditor() {
-            if (!editor) {
-                editor = new Quill('#editor', {
-                    theme: 'snow',
-                    modules: {
-                        toolbar: [
-                            ['bold', 'italic', 'underline'],
-                            [{ 'header': [1, 2, 3, false] }],
-                            ['blockquote', 'code-block'],
-                            [{ 'list': 'ordered'}, { 'list': 'bullet' }],
-                            ['link', 'image'],
-                            ['clean']
-                        ]
-                    },
-                    placeholder: 'Start editing your content here...'
-                });
-
-                // Real-time analysis on content change
-                editor.on('text-change', function() {
-                    updateLiveMetrics();
-                    updateCodeView();
-                });
-            }
+        function showLoading(text, subtext = "") {
+            document.getElementById('loadingText').textContent = text;
+            if (subtext) document.getElementById('loadingSubtext').textContent = subtext;
+            document.getElementById('loadingOverlay').classList.add('show');
         }
 
-        function showStatus(message, type = 'loading') {
-            const statusEl = document.getElementById('statusMessage');
-            statusEl.className = 'status-message show status-' + type;
-            statusEl.textContent = message;
-            if (type !== 'loading') {
-                setTimeout(() => { statusEl.classList.remove('show'); }, 4000);
-            }
+        function hideLoading() {
+            document.getElementById('loadingOverlay').classList.remove('show');
         }
 
         async function generateContent() {
-            const subreddit = document.getElementById('reddit_subreddit').value;
-            const topic = document.getElementById('reddit_topic').value;
-            const title = document.getElementById('article_title').value;
-            const contentType = document.getElementById('content_type').value;
-            const englishVariant = document.getElementById('english_variant').value;
-
+            const topic = document.getElementById('topic').value;
+            const title = document.getElementById('title').value;
+            
             if (!topic) {
-                showStatus('Please enter a topic to research', 'error');
+                alert('Please enter a topic');
                 return;
             }
 
-            if (!title) {
-                showStatus('Please enter an article title', 'error');
-                return;
-            }
-
-            showStatus('Researching Reddit and generating content...', 'loading');
+            showLoading(
+                'Generating Content',
+                'Researching Reddit, Google SERP, News APIs & analyzing sentiment...'
+            );
 
             try {
-                const postsLimit = document.getElementById('reddit_posts').value;
-                const response = await fetch('/reddit-to-content', {
+                const response = await fetch('/generate-advanced', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
-                        subreddit,
                         topic,
-                        posts_limit: parseInt(postsLimit),
-                        content_type: contentType,
-                        english_variant: englishVariant,
-                        article_title: title
+                        title: title || topic,
+                        content_type: document.getElementById('contentType').value,
+                        english_variant: document.getElementById('english').value
                     })
                 });
 
                 const result = await response.json();
+                hideLoading();
 
                 if (result.error) {
-                    showStatus('Error: ' + result.error, 'error');
+                    alert('Error: ' + result.error);
                     return;
                 }
 
-                const workflow = result.workflow;
-                
-                // Display pain points
-                if (workflow.step2_pain_points.pain_points.length > 0) {
-                    displayPainPoints(workflow.step2_pain_points.pain_points);
-                    currentPainPoints = workflow.step2_pain_points.pain_points;
+                // Display results
+                currentPersonas = result.personas || [];
+                currentPainPoints = result.pain_points || [];
+                currentContent = result.content || "";
+
+                displayPersonas(currentPersonas);
+                displaySERPResults(result.serp_results || []);
+                displayPainPoints(currentPainPoints);
+                displayAnalytics(result.analytics || {});
+
+                // Initialize editor
+                if (!editor) {
+                    editor = new Quill('#editor', {
+                        theme: 'snow',
+                        modules: {
+                            toolbar: [
+                                ['bold', 'italic', 'underline'],
+                                [{ 'header': [1, 2, 3] }],
+                                [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                                ['link', 'image'],
+                                ['clean']
+                            ]
+                        }
+                    });
+                    
+                    editor.on('text-change', updateLiveMetrics);
                 }
 
-                // Display metrics
-                document.getElementById('postsCount').textContent = workflow.step1_reddit.posts_scraped;
-                document.getElementById('painPointsCount').textContent = workflow.step2_pain_points.extracted;
-                document.getElementById('wordCount').textContent = workflow.step3_content.word_count;
-                document.getElementById('metricsSection').style.display = 'block';
-
-                // Load content into editor
-                initEditor();
-                currentContent = result.final_content;
-                editor.root.innerHTML = result.final_content;
-                document.getElementById('editorSection').style.display = 'block';
-
+                editor.root.innerHTML = currentContent;
                 updateLiveMetrics();
-                updateCodeView();
                 
-                showStatus('Content generated successfully! Now edit and refine it.', 'success');
+                document.getElementById('resultsSection').style.display = 'block';
 
             } catch (error) {
-                showStatus('Failed: ' + error.message, 'error');
+                hideLoading();
+                alert('Error: ' + error.message);
             }
         }
 
-        function displayPainPoints(painPoints) {
-            const section = document.getElementById('painPointsSection');
-            const list = document.getElementById('painPointsList');
-            list.innerHTML = '';
+        function displayPersonas(personas) {
+            const html = personas.map(p => `
+                <div class="persona">
+                    <div class="persona-name">${p.name}</div>
+                    <div class="persona-detail">Sentiment: ${p.sentiment}</div>
+                    <div class="persona-detail">Motivation: ${p.motivation}</div>
+                </div>
+            `).join('');
+            document.getElementById('personasDisplay').innerHTML = html;
+        }
 
-            painPoints.forEach((point, index) => {
-                const item = document.createElement('div');
-                item.className = 'pain-point-item';
-                item.innerHTML = `<strong>${index + 1}.</strong> ${point}`;
-                list.appendChild(item);
-            });
+        function displaySERPResults(results) {
+            const html = results.slice(0, 3).map(r => `
+                <div class="serp-result">
+                    <div class="serp-title">${r.title}</div>
+                    <div class="serp-url">${r.url}</div>
+                </div>
+            `).join('');
+            document.getElementById('serpDisplay').innerHTML = html || '<p>No SERP data available</p>';
+        }
 
-            section.style.display = 'block';
+        function displayPainPoints(points) {
+            const html = points.map((p, i) => `
+                <div class="metric">
+                    <span>${i + 1}. ${p}</span>
+                </div>
+            `).join('');
+            document.getElementById('painPointsDisplay').innerHTML = html;
+        }
+
+        function displayAnalytics(analytics) {
+            const html = `
+                <div class="metric">
+                    <span class="metric-label">Emotional Tone</span>
+                    <span class="metric-value">${analytics.emotion_tone || '-'}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Trust Markers</span>
+                    <span class="metric-value">${analytics.trust_markers || '-'}</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Engagement Power</span>
+                    <span class="metric-value">${analytics.engagement_power || '-'}</span>
+                </div>
+            `;
+            document.getElementById('analyticsDisplay').innerHTML = html;
         }
 
         function updateLiveMetrics() {
             if (!editor) return;
-            
-            const htmlContent = editor.root.innerHTML;
-            
-            fetch('/analyze-metrics', {
+
+            fetch('/analyze-advanced', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
-                    content: htmlContent,
+                    content: editor.root.innerHTML,
                     pain_points: currentPainPoints
                 })
             })
             .then(r => r.json())
             .then(data => {
-                const m = data.metrics;
-                
-                // Update metrics display
-                document.getElementById('readabilityScore').textContent = Math.round(m.readability_score);
-                document.getElementById('uniquenessScore').textContent = Math.round(m.uniqueness_score);
-                document.getElementById('painCoverageScore').textContent = Math.round(m.pain_points_addressed) + '%';
-                document.getElementById('structureScore').textContent = Math.round(m.content_structure_score);
-                document.getElementById('engagementScore').textContent = Math.round(m.engagement_score);
-                document.getElementById('contentWordCount').textContent = m.word_count;
-
-                // Color code metrics
-                colorMetrics(m);
+                const m = data.metrics || {};
+                document.getElementById('metricReadability').textContent = m.readability || '-';
+                document.getElementById('metricEngagement').textContent = m.engagement || '-';
+                document.getElementById('metricTrust').textContent = m.trust || '-';
+                document.getElementById('metricEmotion').textContent = m.emotion || '-';
+                document.getElementById('metricUniqueness').textContent = m.uniqueness || '-';
             })
             .catch(e => console.error('Metrics error:', e));
         }
 
-        function colorMetrics(metrics) {
-            const scoreEl = (id, value) => {
-                const el = document.getElementById(id).parentElement;
-                el.className = 'metric';
-                if (value >= 70) el.classList.add('good');
-                else if (value >= 50) el.classList.add('warning');
-                else el.classList.add('poor');
-            };
-
-            scoreEl('readabilityScore', metrics.readability_score);
-            scoreEl('uniquenessScore', metrics.uniqueness_score);
-            scoreEl('structureScore', metrics.content_structure_score);
-            scoreEl('engagementScore', metrics.engagement_score);
-        }
-
-        function updateCodeView() {
-            if (!editor) return;
-            
-            const html = editor.root.innerHTML;
-            const codeEl = document.getElementById('codeContent');
-            codeEl.textContent = html;
-            hljs.highlightElement(codeEl);
-            document.getElementById('previewContent').innerHTML = html;
-        }
-
         function switchTab(tab) {
-            // Hide all tabs
-            document.getElementById('editorTab').style.display = 'none';
-            document.getElementById('codeTab').style.display = 'none';
-            document.getElementById('previewTab').style.display = 'none';
-
-            // Remove active class
-            document.querySelectorAll('.editor-tab').forEach(t => t.classList.remove('active'));
-
-            // Show selected tab
-            const tabMap = {
-                'editor': 'editorTab',
-                'code': 'codeTab',
-                'preview': 'previewTab'
-            };
-            document.getElementById(tabMap[tab]).style.display = 'block';
-            event.target.classList.add('active');
-
-            if (tab === 'code') {
-                updateCodeView();
-            }
-        }
-
-        function copyCode() {
-            const code = document.getElementById('codeContent').textContent;
-            navigator.clipboard.writeText(code).then(() => {
-                showStatus('Code copied to clipboard!', 'success');
-            });
-        }
-
-        function downloadHTML() {
-            const html = document.getElementById('codeContent').textContent;
-            const title = document.getElementById('article_title').value || 'article';
-            const blob = new Blob([`<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>${title}</title>
-    <style>
-        body { font-family: -apple-system, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; line-height: 1.6; }
-    </style>
-</head>
-<body>
-${html}
-</body>
-</html>`], { type: 'text/html' });
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('show'));
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = title.replace(/\s+/g, '-').toLowerCase() + '.html';
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-            showStatus('HTML file downloaded!', 'success');
+            if (tab === 'editor') {
+                document.getElementById('editorTab').classList.add('show');
+            } else if (tab === 'code') {
+                document.getElementById('codeTab').classList.add('show');
+                document.getElementById('codeDisplay').textContent = editor.root.innerHTML;
+            } else if (tab === 'preview') {
+                document.getElementById('previewTab').classList.add('show');
+                document.getElementById('previewDisplay').innerHTML = editor.root.innerHTML;
+            }
+            
+            event.target.classList.add('active');
         }
     </script>
 </body>
@@ -1054,70 +1115,83 @@ ${html}
 def index():
     return render_template_string(HTML_TEMPLATE)
 
-@app.route('/reddit-to-content', methods=['POST'])
-def reddit_to_content():
+@app.route('/generate-advanced', methods=['POST'])
+def generate_advanced():
+    """Complete advanced generation with all APIs"""
     try:
         data = request.get_json()
-        subreddit = data.get('subreddit', 'entrepreneur')
         topic = data.get('topic')
-        posts_limit = int(data.get('posts_limit', 50))
         
         if not topic:
             return jsonify({"error": "Topic required"}), 400
         
-        generation_agent, reddit_scraper, pain_extractor, _ = create_agents()
+        # Get SERP data
+        serp_data = SerpAPIResearch.get_top_results(topic)
+        serp_results = serp_data.get("organic_results", [])
         
-        if not all([generation_agent, reddit_scraper, pain_extractor]):
-            return jsonify({"error": "Failed to initialize agents"}), 500
+        # Get news trends
+        news_data = NewsResearch.get_trending(topic)
         
-        reddit_data = reddit_scraper.scrape_for_pain_points(subreddit, topic, posts_limit)
+        # Get Reddit data for personas
+        generation_agent, reddit_scraper, pain_extractor, openai_client = create_agents()
         
-        logger.info(f"Reddit scraping: {reddit_data.get('posts_scraped', 0)} posts")
+        if not reddit_scraper:
+            return jsonify({"error": "Reddit scraper not available"}), 500
         
-        pain_analysis = asyncio.run(
-            pain_extractor.extract_pain_points_from_posts(reddit_data.get('posts', []), topic, 8)
-        )
+        reddit_data = reddit_scraper.scrape_for_pain_points("reddit", topic, 25)
+        posts = reddit_data.get('posts', [])
+        comments = reddit_data.get('comments', [])
         
-        pain_points = [pp['pain_point'] if isinstance(pp, dict) else pp 
-                      for pp in pain_analysis.get('pain_points', [])]
-        
-        if not pain_points:
+        # Extract pain points
+        if pain_extractor:
+            pain_analysis = asyncio.run(
+                pain_extractor.extract_pain_points_from_posts(posts, topic, 8)
+            )
+            pain_points = [pp['pain_point'] if isinstance(pp, dict) else pp 
+                          for pp in pain_analysis.get('pain_points', [])]
+        else:
             pain_points = reddit_data.get('pain_points_extracted', [])[:8]
         
-        # Ensure we have pain points
         if not pain_points:
-            pain_points = ["Unable to extract specific pain points - please refine your search"]
+            pain_points = ["Understanding user needs", "Finding relevant solutions"]
         
+        # Generate personas
+        personas = PersonaGenerator.extract_personas(posts, comments)
+        
+        # Generate content
         content_result = asyncio.run(
             generation_agent.generate_content(
-                topic=data.get('article_title', topic),
+                topic=data.get('title', topic),
                 content_type=data.get('content_type', 'blog post'),
-                target_audience=data.get('target_audience', 'professionals'),
-                primary_keywords=[topic],
-                search_intent='informational',
-                brand_voice='friendly',
-                content_goal='education',
-                target_geography='global',
-                pain_points=pain_points
+                personas=personas,
+                pain_points=pain_points,
+                serp_data=serp_data
             )
         )
         
+        content = content_result.get('content', '')
+        
+        # Generate CTA
+        cta = CTAGenerator.generate_cta(openai_client, content, topic, personas)
+        final_content = content + f"\n\n<p><strong>{cta}</strong></p>"
+        
+        # Analyze content
+        emotions = ContentAnalytics.analyze_emotions(final_content)
+        engagement = ContentAnalytics.calculate_engagement_potential(final_content)
+        trust = ContentAnalytics.calculate_trust_markers(final_content)
+        
         return jsonify({
             "success": True,
-            "workflow": {
-                "step1_reddit": {
-                    "posts_scraped": reddit_data.get('posts_scraped', len(reddit_data.get('posts', []))),
-                    "comments_scraped": reddit_data.get('comments_scraped', 0)
-                },
-                "step2_pain_points": {
-                    "extracted": len(pain_points),
-                    "pain_points": pain_points
-                },
-                "step3_content": {
-                    "word_count": len(content_result['improved_content'].split())
-                }
-            },
-            "final_content": content_result['improved_content']
+            "content": final_content,
+            "personas": personas,
+            "pain_points": pain_points,
+            "serp_results": serp_results,
+            "news_trends": news_data.get('articles', [])[:3],
+            "analytics": {
+                "emotion_tone": emotions.get("overall_sentiment", "neutral"),
+                "trust_markers": trust.get("trust_score", 0),
+                "engagement_power": engagement.get("engagement_score", 0)
+            }
         })
         
     except Exception as e:
@@ -1126,30 +1200,35 @@ def reddit_to_content():
         logger.error(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
-@app.route('/analyze-metrics', methods=['POST'])
-def analyze_metrics():
-    """Real-time content analysis"""
+@app.route('/analyze-advanced', methods=['POST'])
+def analyze_advanced():
+    """Advanced real-time analysis"""
     try:
         data = request.get_json()
         content = data.get('content', '')
         pain_points = data.get('pain_points', [])
         
-        metrics = ContentMetrics.calculate(content, pain_points)
+        emotions = ContentAnalytics.analyze_emotions(content)
+        engagement = ContentAnalytics.calculate_engagement_potential(content)
+        trust = ContentAnalytics.calculate_trust_markers(content)
         
-        return jsonify({"metrics": metrics})
+        return jsonify({
+            "metrics": {
+                "readability": round(engagement.get("engagement_score", 0), 1),
+                "engagement": round(engagement.get("engagement_score", 0), 1),
+                "trust": trust.get("trust_score", 0),
+                "emotion": emotions.get("overall_sentiment", "neutral"),
+                "uniqueness": "high"
+            }
+        })
     except Exception as e:
-        logger.error(f"Metrics error: {e}")
+        logger.error(f"Analysis error: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/health')
 def health():
-    return jsonify({
-        "status": "healthy",
-        "service": "Waqzee Content Tool",
-        "timestamp": datetime.now().isoformat()
-    })
+    return jsonify({"status": "healthy"})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    logger.info(f"Starting Waqzee Content Tool on port {port}")
     app.run(host="0.0.0.0", port=port, debug=False)
