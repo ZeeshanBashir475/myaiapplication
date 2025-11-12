@@ -11,6 +11,7 @@ from flask import Flask, request, jsonify, render_template_string, Response
 from flask_cors import CORS
 import requests
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -26,123 +27,147 @@ if os.path.exists(agents_path):
 try:
     import openai
     OPENAI_AVAILABLE = True
+    logger.info("✅ OpenAI imported successfully")
 except ImportError:
     OPENAI_AVAILABLE = False
-    logger.warning("OpenAI not available")
+    logger.warning("❌ OpenAI not available")
 
-# Import agents (with fallbacks)
+# Import agents
 RedditScraper = None
 PainPointExtractor = None
-ContentGenerator = None
-ContentEvaluationAgent = None
+SerpAgent = None
 
 try:
     from Reddit_scraper import RedditScraper
-    logger.info("RedditScraper imported")
+    logger.info("✅ RedditScraper imported")
 except Exception as e:
-    logger.error(f"Failed to import RedditScraper: {e}")
+    logger.error(f"❌ Failed to import RedditScraper: {e}")
 
 try:
     from Pain_point_extractor import PainPointExtractor
-    logger.info("PainPointExtractor imported")
+    logger.info("✅ PainPointExtractor imported")
 except Exception as e:
-    logger.error(f"Failed to import PainPointExtractor: {e}")
+    logger.error(f"❌ Failed to import PainPointExtractor: {e}")
 
 try:
-    from content_generator import ContentGenerator
-    logger.info("ContentGenerator imported")
+    from serp_agent import SerpAgent
+    logger.info("✅ SerpAgent imported")
 except Exception as e:
-    logger.error(f"Failed to import ContentGenerator: {e}")
-
-try:
-    from ContentEvaluationAgent import ContentEvaluationAgent
-    logger.info("ContentEvaluationAgent imported")
-except Exception as e:
-    logger.error(f"Failed to import ContentEvaluationAgent: {e}")
+    logger.error(f"❌ Failed to import SerpAgent: {e}")
 
 app = Flask(__name__)
 CORS(app)
 
-# Global progress tracking for SSE
+# Thread pool for async operations
+executor = ThreadPoolExecutor(max_workers=3)
+
+# Global progress tracking
 progress_updates = []
 
 def add_progress(message: str, percentage: int):
-    """Add progress update for SSE"""
+    """Add progress update"""
+    global progress_updates
     progress_updates.append({
         "message": message,
         "percentage": percentage,
         "timestamp": datetime.now().isoformat()
     })
+    logger.info(f"Progress: {percentage}% - {message}")
 
 class OpenAIClient:
-    """Enhanced OpenAI client for SEO content generation"""
+    """Enhanced OpenAI client"""
     
     def __init__(self):
+        # Check both possible env variable names
         self.api_key = os.getenv('OPENAI_API_KEY') or os.getenv('Open_Api_Key')
         self.available = False
         
-        if not OPENAI_AVAILABLE or not self.api_key:
-            logger.warning("OpenAI not configured")
+        if not OPENAI_AVAILABLE:
+            logger.warning("⚠️ OpenAI package not available")
+            return
+            
+        if not self.api_key:
+            logger.warning("⚠️ No OpenAI API key found in environment variables")
+            logger.info("Checked: OPENAI_API_KEY and Open_Api_Key")
             return
         
         try:
             self.client = openai.OpenAI(api_key=self.api_key, timeout=60.0)
-            self.async_client = openai.AsyncOpenAI(api_key=self.api_key, timeout=60.0)
             self.available = True
-            logger.info("OpenAI client initialized")
+            logger.info("✅ OpenAI client initialized successfully")
         except Exception as e:
-            logger.error(f"OpenAI init failed: {e}")
+            logger.error(f"❌ OpenAI initialization failed: {e}")
     
-    async def generate_seo_article(self, prompt: str, max_tokens: int = 4000) -> str:
-        """Generate SEO-optimized article"""
+    def generate_seo_article(self, prompt: str, max_tokens: int = 4000) -> str:
+        """Generate SEO-optimized article (synchronous)"""
         if not self.available:
-            return "<h1>Content Generation Unavailable</h1><p>Please configure OpenAI API key.</p>"
+            error_msg = "<h1>Content Generation Unavailable</h1><p>OpenAI API key not configured. Please check your Railway environment variables.</p>"
+            logger.error("Cannot generate content - OpenAI not available")
+            return error_msg
         
         try:
-            response = await self.async_client.chat.completions.create(
+            logger.info("🤖 Calling OpenAI API...")
+            response = self.client.chat.completions.create(
                 model="gpt-3.5-turbo-16k",
                 messages=[
-                    {"role": "system", "content": "You are an expert SEO content writer. Create engaging, well-structured HTML content."},
+                    {"role": "system", "content": "You are an expert SEO content writer. Create engaging, well-structured HTML content optimized for search engines and user experience."},
                     {"role": "user", "content": prompt}
                 ],
                 max_tokens=max_tokens,
                 temperature=0.7
             )
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            logger.info(f"✅ Generated content ({len(content)} characters)")
+            return content
+        except openai.APIError as e:
+            logger.error(f"❌ OpenAI API error: {e}")
+            return f"<p>OpenAI API Error: {str(e)}</p>"
         except Exception as e:
-            logger.error(f"Generation error: {e}")
+            logger.error(f"❌ Generation error: {e}")
+            logger.error(traceback.format_exc())
             return f"<p>Error generating content: {str(e)}</p>"
 
-class RedditAnalyzer:
-    """Analyze Reddit for pain points and discussions"""
+def run_async(coro):
+    """Helper to run async functions synchronously"""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+def analyze_reddit(topic: str, subreddits: List[str]) -> Dict:
+    """Analyze Reddit discussions (synchronous wrapper)"""
+    add_progress("🔍 Searching Reddit discussions...", 10)
     
-    @staticmethod
-    async def analyze(topic: str, subreddits: List[str] = None) -> Dict:
-        """Analyze Reddit discussions"""
-        add_progress("🔍 Searching Reddit discussions...", 10)
-        
-        if not subreddits:
-            subreddits = ['askreddit', 'technology', 'business', 'entrepreneur']
-        
-        pain_points = []
-        discussions = []
-        
-        # Use RedditScraper if available
-        if RedditScraper:
-            try:
-                scraper = RedditScraper()
-                for subreddit in subreddits[:3]:
+    pain_points = []
+    discussions = []
+    
+    if not RedditScraper:
+        logger.warning("Reddit scraper not available - using fallback")
+        pain_points = [
+            {'pain': f"Finding reliable information about {topic}", 'subreddit': "general", 'score': 100},
+            {'pain': f"Understanding the complexities of {topic}", 'subreddit': "general", 'score': 80},
+            {'pain': f"Making informed decisions about {topic}", 'subreddit': "general", 'score': 75}
+        ]
+    else:
+        try:
+            scraper = RedditScraper()
+            for subreddit in subreddits[:3]:
+                try:
+                    logger.info(f"Scraping r/{subreddit}...")
                     data = scraper.scrape_for_pain_points(subreddit, topic, 10)
                     
-                    # Extract pain points
+                    # Extract pain points from the data
                     for post in data.get('posts', [])[:5]:
                         title = post.get('title', '')
                         text = post.get('selftext', '')
+                        combined_text = (title + ' ' + text).lower()
                         
                         # Look for pain point indicators
-                        if any(word in (title + text).lower() for word in ['problem', 'issue', 'help', 'struggling', 'frustrated', 'confused']):
+                        if any(word in combined_text for word in ['problem', 'issue', 'help', 'struggling', 'frustrated', 'confused', 'difficult']):
                             pain_points.append({
-                                'pain': title[:150],
+                                'pain': title[:150] if title else "General discussion",
                                 'subreddit': f"r/{subreddit}",
                                 'score': post.get('score', 0)
                             })
@@ -150,148 +175,95 @@ class RedditAnalyzer:
                         discussions.append({
                             'title': title,
                             'subreddit': f"r/{subreddit}",
-                            'url': post.get('url', ''),
+                            'url': post.get('permalink', ''),
                             'score': post.get('score', 0)
                         })
-                
-                add_progress(f"✓ Found {len(pain_points)} pain points from Reddit", 20)
-            except Exception as e:
-                logger.error(f"Reddit scraping error: {e}")
-        
-        # Fallback pain points if no Reddit data
-        if not pain_points:
-            pain_points = [
-                {'pain': f"Finding reliable information about {topic}", 'subreddit': "general", 'score': 100},
-                {'pain': f"Understanding the complexities of {topic}", 'subreddit': "general", 'score': 80},
-                {'pain': f"Making informed decisions about {topic}", 'subreddit': "general", 'score': 75}
-            ]
-        
-        return {
-            'pain_points': pain_points[:10],
-            'discussions': discussions[:5],
-            'summary': f"Analyzed {len(subreddits)} subreddits, found {len(pain_points)} pain points"
-        }
-
-class SerpAnalyzer:
-    """Analyze Google SERP results and competitors"""
-    
-    @staticmethod
-    async def analyze(keyword: str) -> Dict:
-        """Analyze SERP results"""
-        add_progress("🌐 Analyzing Google search results...", 30)
-        
-        try:
-            api_key = os.getenv('Serp_API')
-            if not api_key:
-                return SerpAnalyzer._get_fallback_data(keyword)
+                except Exception as e:
+                    logger.error(f"Error scraping r/{subreddit}: {e}")
+                    continue
             
-            url = "https://serpapi.com/search"
-            params = {
-                "q": keyword,
-                "api_key": api_key,
-                "num": 10,
-                "engine": "google"
-            }
-            
-            response = requests.get(url, params=params, timeout=15)
-            data = response.json()
-            
-            # Extract top results
-            top_results = []
-            for result in data.get("organic_results", [])[:5]:
-                top_results.append({
-                    'title': result.get('title', ''),
-                    'url': result.get('link', ''),
-                    'snippet': result.get('snippet', ''),
-                    'position': result.get('position', 0)
-                })
-            
-            # Extract People Also Ask
-            people_also_ask = []
-            for question in data.get("related_questions", [])[:5]:
-                people_also_ask.append({
-                    'question': question.get('question', ''),
-                    'snippet': question.get('snippet', '')[:200]
-                })
-            
-            # Extract related searches
-            related_keywords = [s.get('query', '') for s in data.get("related_searches", [])[:5]]
-            
-            add_progress(f"✓ Analyzed top {len(top_results)} search results", 40)
-            
-            return {
-                'top_results': top_results,
-                'people_also_ask': people_also_ask,
-                'related_keywords': related_keywords,
-                'opportunities': SerpAnalyzer._identify_opportunities(top_results)
-            }
-            
+            add_progress(f"✓ Found {len(pain_points)} pain points from Reddit", 20)
         except Exception as e:
-            logger.error(f"SERP API error: {e}")
-            return SerpAnalyzer._get_fallback_data(keyword)
+            logger.error(f"Reddit analysis error: {e}")
+            logger.error(traceback.format_exc())
     
-    @staticmethod
-    def _get_fallback_data(keyword: str) -> Dict:
-        """Fallback SERP data"""
-        return {
-            'top_results': [
-                {'title': f"Ultimate Guide to {keyword}", 'url': '#', 'snippet': 'Comprehensive guide...', 'position': 1},
-                {'title': f"Best {keyword} in 2024", 'url': '#', 'snippet': 'Top recommendations...', 'position': 2}
-            ],
-            'people_also_ask': [
-                {'question': f"What is {keyword}?", 'snippet': 'Basic definition...'},
-                {'question': f"How to use {keyword}?", 'snippet': 'Step by step guide...'}
-            ],
-            'related_keywords': [f"{keyword} tips", f"best {keyword}", f"{keyword} guide"],
-            'opportunities': ['Add comparison tables', 'Include user testimonials', 'Add visual guides']
-        }
+    # Fallback if no pain points found
+    if not pain_points:
+        pain_points = [
+            {'pain': f"Finding reliable information about {topic}", 'subreddit': "general", 'score': 100},
+            {'pain': f"Understanding best practices for {topic}", 'subreddit': "general", 'score': 85},
+            {'pain': f"Getting started with {topic}", 'subreddit': "general", 'score': 75}
+        ]
     
-    @staticmethod
-    def _identify_opportunities(top_results: List[Dict]) -> List[str]:
-        """Identify content opportunities"""
-        opportunities = []
-        
-        # Check what's missing in top results
-        has_comparison = any('vs' in r['title'].lower() or 'comparison' in r['title'].lower() for r in top_results)
-        has_guide = any('guide' in r['title'].lower() or 'how to' in r['title'].lower() for r in top_results)
-        has_list = any(any(str(i) in r['title'] for i in range(1, 21)) for r in top_results)
-        
-        if not has_comparison:
-            opportunities.append("Add detailed comparison tables")
-        if not has_guide:
-            opportunities.append("Include step-by-step tutorials")
-        if not has_list:
-            opportunities.append("Create numbered lists for better readability")
-        
-        opportunities.extend([
-            "Include real user testimonials from Reddit",
-            "Add visual elements (charts, infographics)",
-            "Include FAQ section from 'People Also Ask'"
-        ])
-        
-        return opportunities[:5]
+    return {
+        'pain_points': pain_points[:10],
+        'discussions': discussions[:5],
+        'summary': f"Analyzed {len(subreddits)} subreddits, found {len(pain_points)} pain points"
+    }
 
-class SEOContentGenerator:
-    """Generate SEO-optimized content"""
+def analyze_serp(keyword: str) -> Dict:
+    """Analyze SERP results (synchronous)"""
+    add_progress("🌐 Analyzing Google search results...", 30)
     
-    def __init__(self, openai_client: OpenAIClient):
-        self.openai_client = openai_client
+    if not SerpAgent:
+        logger.warning("SERP agent not available - using fallback")
+        return get_fallback_serp_data(keyword)
     
-    async def generate(self, inputs: Dict, reddit_data: Dict, serp_data: Dict) -> Dict:
-        """Generate full SEO article"""
-        add_progress("✍️ Generating SEO-optimized article...", 50)
+    try:
+        agent = SerpAgent()
+        analysis = agent.analyze_keyword(keyword, location="United Kingdom")
         
-        # Build comprehensive prompt
-        pain_points_text = '\n'.join([f"- {p['pain']}" for p in reddit_data['pain_points'][:5]])
-        paa_text = '\n'.join([f"- {q['question']}" for q in serp_data['people_also_ask'][:5]])
-        opportunities_text = '\n'.join([f"- {o}" for o in serp_data['opportunities'][:3]])
+        add_progress(f"✓ Analyzed top {len(analysis['organic_results'])} search results", 40)
         
-        prompt = f"""
+        return {
+            'top_results': analysis['organic_results'][:5],
+            'people_also_ask': analysis['people_also_ask'][:5],
+            'related_keywords': analysis['related_searches'][:5],
+            'opportunities': analysis['content_opportunities'][:5]
+        }
+    except Exception as e:
+        logger.error(f"SERP analysis error: {e}")
+        logger.error(traceback.format_exc())
+        return get_fallback_serp_data(keyword)
+
+def get_fallback_serp_data(keyword: str) -> Dict:
+    """Fallback SERP data"""
+    return {
+        'top_results': [
+            {'title': f"Complete Guide to {keyword}", 'link': '#', 'snippet': 'Comprehensive guide covering all aspects...', 'position': 1},
+            {'title': f"Best {keyword} in 2024", 'link': '#', 'snippet': 'Top recommendations and reviews...', 'position': 2},
+            {'title': f"How to Use {keyword}", 'link': '#', 'snippet': 'Step-by-step tutorial...', 'position': 3}
+        ],
+        'people_also_ask': [
+            {'question': f"What is {keyword}?", 'snippet': 'Definition and overview...'},
+            {'question': f"How does {keyword} work?", 'snippet': 'Explanation of functionality...'},
+            {'question': f"Is {keyword} worth it?", 'snippet': 'Value analysis...'}
+        ],
+        'related_keywords': [f"{keyword} guide", f"best {keyword}", f"{keyword} tips"],
+        'opportunities': [
+            'Add detailed comparison tables',
+            'Include FAQ section',
+            'Add visual guides and infographics',
+            'Include real user testimonials',
+            'Add 2024 updates and trends'
+        ]
+    }
+
+def generate_seo_content(inputs: Dict, reddit_data: Dict, serp_data: Dict, openai_client: OpenAIClient) -> Dict:
+    """Generate SEO content (synchronous)"""
+    add_progress("✍️ Generating SEO-optimized article...", 50)
+    
+    # Build comprehensive prompt
+    pain_points_text = '\n'.join([f"- {p.get('pain', '')}" for p in reddit_data['pain_points'][:5]])
+    paa_text = '\n'.join([f"- {q['question']}" for q in serp_data['people_also_ask'][:5]])
+    opportunities_text = '\n'.join([f"- {o}" for o in serp_data['opportunities'][:3]])
+    
+    prompt = f"""
 Create a comprehensive, SEO-optimized article about "{inputs['main_keyword']}"
 
 Title: {inputs.get('title', inputs['main_keyword'])}
 Tone: {inputs.get('tone', 'Professional yet friendly')}
-Target Audience: {inputs.get('target_country', 'Global')}
+Target Audience: {inputs.get('target_country', 'United Kingdom')}
 
 REDDIT PAIN POINTS TO ADDRESS:
 {pain_points_text}
@@ -308,26 +280,31 @@ USER'S UNIQUE INSIGHTS:
 REQUIREMENTS:
 1. Write 2,400-3,600 words
 2. Use proper HTML formatting (h1, h2, h3, p, ul, li, strong)
-3. Include an emotional hook in the introduction
-4. Address each pain point naturally
-5. Include a FAQ section
-6. Use the main keyword 5-8 times naturally
-7. Include secondary keywords: {', '.join(inputs.get('secondary_keywords', []))}
+3. Include an emotional hook in the introduction that addresses real user pain points
+4. Address each pain point naturally throughout the content
+5. Include a comprehensive FAQ section answering the PAA questions
+6. Use the main keyword "{inputs['main_keyword']}" 5-8 times naturally
+7. Include secondary keywords: {', '.join(inputs.get('secondary_keywords', [])[:3])}
 8. End with a strong call-to-action
+9. Include comparison tables or lists where appropriate
+10. Add section for 2024 updates and latest trends
 
 FORMAT THE ARTICLE WITH:
-- <h1> for the main title
+- <h1> for the main title only
 - <h2> for major sections
 - <h3> for subsections
-- <p> for paragraphs
+- <p> for paragraphs with good spacing
 - <ul> and <li> for lists
-- <strong> for emphasis
+- <strong> for key emphasis
 - <blockquote> for important quotes or statistics
+
+Make the content engaging, scannable, and optimized for both search engines and users.
 
 Write the complete article now:
 """
-        
-        article = await self.openai_client.generate_seo_article(prompt)
+    
+    try:
+        article = openai_client.generate_seo_article(prompt)
         
         # Calculate metrics
         word_count = len(article.split())
@@ -339,222 +316,218 @@ Write the complete article now:
             'content': article,
             'word_count': word_count,
             'keyword_density': round(keyword_density, 2),
-            'readability_score': self._calculate_readability(article),
-            'seo_score': self._calculate_seo_score(article, inputs, serp_data)
+            'readability_score': calculate_readability(article),
+            'seo_score': calculate_seo_score(article, inputs, serp_data)
         }
-    
-    def _calculate_readability(self, text: str) -> str:
-        """Calculate readability score"""
-        sentences = len(re.split(r'[.!?]+', text))
-        words = len(text.split())
-        if sentences == 0:
-            return "N/A"
-        avg_words_per_sentence = words / sentences
-        
-        if avg_words_per_sentence < 15:
-            return "Easy (Grade 6-8)"
-        elif avg_words_per_sentence < 20:
-            return "Medium (Grade 9-10)"
-        else:
-            return "Difficult (Grade 11+)"
-    
-    def _calculate_seo_score(self, content: str, inputs: Dict, serp_data: Dict) -> int:
-        """Calculate SEO score (0-100)"""
-        score = 50  # Base score
-        
-        # Check for key elements
-        if '<h1>' in content: score += 10
-        if '<h2>' in content: score += 10
-        if inputs['main_keyword'].lower() in content.lower(): score += 10
-        if any(kw in content.lower() for kw in inputs.get('secondary_keywords', [])): score += 10
-        if len(content.split()) > 2000: score += 10
-        
-        return min(100, score)
+    except Exception as e:
+        logger.error(f"Content generation error: {e}")
+        logger.error(traceback.format_exc())
+        return {
+            'content': f"<h1>Error Generating Content</h1><p>Failed to generate article: {str(e)}</p><p>Please check your OpenAI API configuration.</p>",
+            'word_count': 0,
+            'keyword_density': 0,
+            'readability_score': 'N/A',
+            'seo_score': 0
+        }
 
-class SEORecommendationEngine:
-    """Generate SEO recommendations like SEMrush/SurferSEO"""
+def calculate_readability(text: str) -> str:
+    """Calculate readability score"""
+    sentences = len(re.split(r'[.!?]+', text))
+    words = len(text.split())
+    if sentences == 0:
+        return "N/A"
+    avg_words_per_sentence = words / sentences
     
-    @staticmethod
-    async def generate_recommendations(article_data: Dict, inputs: Dict, serp_data: Dict) -> List[Dict]:
-        """Generate actionable SEO recommendations"""
-        add_progress("📊 Generating SEO recommendations...", 80)
-        
-        recommendations = []
-        
-        # Keyword recommendations
-        if article_data['keyword_density'] < 1:
-            recommendations.append({
-                'tip': f"Increase usage of main keyword '{inputs['main_keyword']}' to 1-2% density",
-                'impact': 5,
-                'category': 'SEO'
-            })
-        elif article_data['keyword_density'] > 3:
-            recommendations.append({
-                'tip': f"Reduce keyword stuffing - current density is {article_data['keyword_density']}%",
-                'impact': 4,
-                'category': 'SEO'
-            })
-        
-        # Content structure
-        if article_data['word_count'] < 2400:
-            recommendations.append({
-                'tip': f"Expand content to 2,400+ words (current: {article_data['word_count']})",
-                'impact': 5,
-                'category': 'Content'
-            })
-        
-        # Emotional depth
+    if avg_words_per_sentence < 15:
+        return "Easy"
+    elif avg_words_per_sentence < 20:
+        return "Medium"
+    else:
+        return "Advanced"
+
+def calculate_seo_score(content: str, inputs: Dict, serp_data: Dict) -> int:
+    """Calculate SEO score (0-100)"""
+    score = 50  # Base score
+    
+    if '<h1>' in content: score += 10
+    if '<h2>' in content: score += 10
+    if inputs['main_keyword'].lower() in content.lower(): score += 10
+    if any(kw.lower() in content.lower() for kw in inputs.get('secondary_keywords', [])): score += 10
+    if len(content.split()) > 2000: score += 10
+    
+    return min(100, score)
+
+def generate_recommendations(article_data: Dict, inputs: Dict, serp_data: Dict) -> List[Dict]:
+    """Generate SEO recommendations"""
+    add_progress("📊 Generating SEO recommendations...", 80)
+    
+    recommendations = []
+    
+    # Keyword recommendations
+    if article_data['keyword_density'] < 1:
         recommendations.append({
-            'tip': "Add a personal story or case study in the introduction for emotional connection",
-            'impact': 4,
-            'category': 'Emotional Depth'
-        })
-        
-        # Technical SEO
-        recommendations.append({
-            'tip': "Add schema markup for FAQ section to improve SERP visibility",
-            'impact': 3,
-            'category': 'Technical SEO'
-        })
-        
-        # Readability
-        if 'Difficult' in article_data.get('readability_score', ''):
-            recommendations.append({
-                'tip': "Simplify complex sentences - aim for 15-20 words per sentence",
-                'impact': 4,
-                'category': 'Readability'
-            })
-        
-        # Visual elements
-        recommendations.append({
-            'tip': "Add 3-5 relevant images with descriptive alt text containing keywords",
-            'impact': 3,
-            'category': 'UX'
-        })
-        
-        # Internal linking
-        recommendations.append({
-            'tip': "Add 2-3 internal links to related content on your site",
-            'impact': 3,
+            'tip': f"Increase '{inputs['main_keyword']}' usage to 1-2% density",
+            'impact': 5,
             'category': 'SEO'
         })
-        
-        # CTA optimization
+    elif article_data['keyword_density'] > 3:
         recommendations.append({
-            'tip': "Place a mid-article CTA after addressing the main pain point",
+            'tip': f"Reduce keyword density from {article_data['keyword_density']}%",
             'impact': 4,
-            'category': 'Conversion'
+            'category': 'SEO'
         })
-        
-        return recommendations[:8]
-
-class CompetitorAnalyzer:
-    """Analyze and compare with competitors"""
     
-    @staticmethod
-    async def compare(article_data: Dict, serp_data: Dict, reddit_data: Dict) -> Dict:
-        """Compare with top competitors"""
-        add_progress("🏆 Analyzing competitor comparison...", 90)
-        
-        # Create comparison table
-        comparison = {
-            'features': [
-                {
-                    'feature': 'Word Count',
-                    'competitors': 'Average 1,500-2,000',
-                    'you': f"{article_data['word_count']} words",
-                    'advantage': article_data['word_count'] > 2000
-                },
-                {
-                    'feature': 'Emotional Engagement',
-                    'competitors': 'Generic content',
-                    'you': f"Uses {len(reddit_data['pain_points'])} real pain points",
-                    'advantage': True
-                },
-                {
-                    'feature': 'Keyword Optimization',
-                    'competitors': 'Basic optimization',
-                    'you': f"{article_data['keyword_density']}% density + LSI keywords",
-                    'advantage': True
-                },
-                {
-                    'feature': 'Unique Insights',
-                    'competitors': 'Rehashed information',
-                    'you': 'Reddit insights + user data',
-                    'advantage': True
-                },
-                {
-                    'feature': 'Content Structure',
-                    'competitors': 'Standard blog format',
-                    'you': 'FAQ + Tables + Examples',
-                    'advantage': True
-                },
-                {
-                    'feature': 'Readability',
-                    'competitors': 'Variable',
-                    'you': article_data.get('readability_score', 'Optimized'),
-                    'advantage': True
-                }
-            ],
-            'summary': f"""Your article outperforms competitors by:
+    if article_data['word_count'] < 2400:
+        recommendations.append({
+            'tip': f"Expand to 2,400+ words (current: {article_data['word_count']})",
+            'impact': 5,
+            'category': 'Content'
+        })
+    
+    recommendations.extend([
+        {'tip': "Add personal story in intro for emotional connection", 'impact': 4, 'category': 'Engagement'},
+        {'tip': "Include schema markup for FAQ section", 'impact': 3, 'category': 'Technical SEO'},
+        {'tip': "Add 3-5 optimized images with alt text", 'impact': 3, 'category': 'UX'},
+        {'tip': "Add 2-3 internal links to related content", 'impact': 3, 'category': 'SEO'},
+        {'tip': "Place mid-article CTA after main pain point", 'impact': 4, 'category': 'Conversion'}
+    ])
+    
+    return recommendations[:8]
+
+def generate_competitor_comparison(article_data: Dict, serp_data: Dict, reddit_data: Dict) -> Dict:
+    """Generate competitor comparison"""
+    add_progress("🏆 Analyzing competitor comparison...", 90)
+    
+    comparison = {
+        'features': [
+            {
+                'feature': 'Word Count',
+                'competitors': '1,500-2,000 avg',
+                'you': f"{article_data['word_count']} words",
+                'advantage': article_data['word_count'] > 2000
+            },
+            {
+                'feature': 'Emotional Engagement',
+                'competitors': 'Generic content',
+                'you': f"Uses {len(reddit_data['pain_points'])} real pain points",
+                'advantage': True
+            },
+            {
+                'feature': 'Keyword Optimization',
+                'competitors': 'Basic optimization',
+                'you': f"{article_data['keyword_density']}% density + LSI keywords",
+                'advantage': True
+            },
+            {
+                'feature': 'Unique Insights',
+                'competitors': 'Rehashed info',
+                'you': 'Reddit insights + user data',
+                'advantage': True
+            },
+            {
+                'feature': 'Content Structure',
+                'competitors': 'Standard blog',
+                'you': 'FAQ + Tables + Examples',
+                'advantage': True
+            },
+            {
+                'feature': 'Readability',
+                'competitors': 'Variable',
+                'you': article_data.get('readability_score', 'Optimized'),
+                'advantage': True
+            }
+        ],
+        'summary': f"""Your article outperforms competitors by:
 • Integrating {len(reddit_data['pain_points'])} real user pain points from Reddit
 • Providing {article_data['word_count']} words of comprehensive coverage
 • Achieving {article_data.get('seo_score', 80)}% SEO optimization score
-• Addressing gaps identified in top {len(serp_data['top_results'])} SERP results
+• Addressing gaps in top {len(serp_data['top_results'])} SERP results
 • Including unique insights not found in competitor content"""
-        }
-        
-        return comparison
+    }
+    
+    return comparison
 
-# HTML Template with tabs for Article, Metrics, Recommendations, and Competitors
+# HTML Template with Waqzee Black/White Theme
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SEO Article Generator - Advanced AI Content Platform</title>
+    <title>SEO Article Generator - Waqzee Digital</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-            min-height: 100vh;
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
         
+        body {
+            font-family: 'Roboto', sans-serif;
+            background: #000000;
+            color: #ffffff;
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+        
+        /* Header */
         .header {
-            background: rgba(255, 255, 255, 0.95);
+            background: #ffffff;
             padding: 20px 40px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
         }
         
         .logo {
-            font-size: 24px;
-            font-weight: 700;
-            color: #1e3c72;
+            font-size: 32px;
+            font-weight: 900;
+            color: #000000;
+            letter-spacing: -1px;
         }
         
+        .logo-subtitle {
+            font-size: 12px;
+            font-weight: 400;
+            color: #666;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        
+        /* Container */
         .container {
             max-width: 1400px;
-            margin: 30px auto;
+            margin: 40px auto;
             padding: 0 20px;
         }
         
+        /* Input Section */
         .input-section {
-            background: white;
-            border-radius: 12px;
-            padding: 30px;
+            background: #ffffff;
+            color: #000000;
+            border-radius: 0;
+            padding: 40px;
+            margin-bottom: 40px;
+            box-shadow: 0 10px 40px rgba(255,255,255,0.1);
+        }
+        
+        .section-title {
+            font-size: 28px;
+            font-weight: 700;
             margin-bottom: 30px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            color: #000000;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
         
         .input-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 20px;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 25px;
+            margin-bottom: 25px;
         }
         
         .form-group {
@@ -563,24 +536,29 @@ HTML_TEMPLATE = """
         }
         
         label {
-            font-size: 12px;
-            font-weight: 600;
-            color: #666;
-            margin-bottom: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #000000;
+            margin-bottom: 8px;
             text-transform: uppercase;
+            letter-spacing: 1px;
         }
         
         input, select, textarea {
-            padding: 10px 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
+            padding: 12px 15px;
+            border: 2px solid #000000;
+            border-radius: 0;
             font-size: 14px;
-            transition: border-color 0.3s;
+            font-family: 'Roboto', sans-serif;
+            background: #ffffff;
+            color: #000000;
+            transition: all 0.3s;
         }
         
         input:focus, select:focus, textarea:focus {
             outline: none;
-            border-color: #1e3c72;
+            border-color: #666;
+            background: #f5f5f5;
         }
         
         textarea {
@@ -591,52 +569,115 @@ HTML_TEMPLATE = """
         .subreddit-chips {
             display: flex;
             flex-wrap: wrap;
-            gap: 8px;
-            margin-top: 10px;
+            gap: 10px;
+            margin-top: 12px;
         }
         
         .chip {
-            background: #1e3c72;
-            color: white;
-            padding: 5px 12px;
-            border-radius: 20px;
+            background: #000000;
+            color: #ffffff;
+            padding: 8px 15px;
+            border-radius: 0;
             font-size: 12px;
+            font-weight: 500;
             display: inline-flex;
             align-items: center;
-            gap: 5px;
+            gap: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
         
         .chip i {
             cursor: pointer;
+            opacity: 0.7;
+            transition: opacity 0.3s;
+        }
+        
+        .chip i:hover {
+            opacity: 1;
         }
         
         .btn {
-            background: linear-gradient(135deg, #1e3c72, #2a5298);
-            color: white;
+            background: #000000;
+            color: #ffffff;
             border: none;
-            padding: 14px 30px;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 16px;
+            padding: 18px 40px;
+            border-radius: 0;
+            font-weight: 700;
+            font-size: 14px;
             cursor: pointer;
-            transition: transform 0.2s;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-family: 'Roboto', sans-serif;
         }
         
         .btn:hover {
+            background: #333;
             transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
         }
         
         .btn:disabled {
-            background: #ccc;
+            background: #666;
             cursor: not-allowed;
             transform: none;
         }
         
-        .tabs {
-            background: white;
-            border-radius: 12px;
+        .btn i {
+            margin-right: 10px;
+        }
+        
+        /* Progress Bar */
+        .progress-container {
+            background: #ffffff;
+            padding: 30px;
+            border-radius: 0;
+            margin-bottom: 30px;
+            display: none;
+        }
+        
+        .progress-container.active {
+            display: block;
+        }
+        
+        .progress-bar {
+            background: #e0e0e0;
+            height: 40px;
+            border-radius: 0;
             overflow: hidden;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            border: 2px solid #000000;
+        }
+        
+        .progress-fill {
+            background: #000000;
+            height: 100%;
+            transition: width 0.5s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 14px;
+            letter-spacing: 1px;
+        }
+        
+        .progress-text {
+            text-align: center;
+            margin-top: 15px;
+            color: #000000;
+            font-weight: 500;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        /* Tabs */
+        .tabs {
+            background: #ffffff;
+            border-radius: 0;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(255,255,255,0.1);
             display: none;
         }
         
@@ -646,26 +687,31 @@ HTML_TEMPLATE = """
         
         .tab-header {
             display: flex;
-            background: #f5f5f5;
-            border-bottom: 2px solid #e0e0e0;
+            background: #000000;
+            flex-wrap: wrap;
         }
         
         .tab-btn {
             flex: 1;
-            padding: 15px;
+            min-width: 150px;
+            padding: 20px;
             background: none;
             border: none;
-            font-weight: 600;
-            color: #666;
+            font-weight: 700;
+            color: #ffffff;
             cursor: pointer;
             border-bottom: 3px solid transparent;
             transition: all 0.3s;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-family: 'Roboto', sans-serif;
         }
         
         .tab-btn.active {
-            color: #1e3c72;
-            background: white;
-            border-bottom-color: #1e3c72;
+            background: #ffffff;
+            color: #000000;
+            border-bottom-color: #000000;
         }
         
         .tab-btn i {
@@ -674,137 +720,138 @@ HTML_TEMPLATE = """
         
         .tab-content {
             display: none;
-            padding: 30px;
+            padding: 40px;
             max-height: 600px;
             overflow-y: auto;
+            color: #000000;
         }
         
         .tab-content.active {
             display: block;
         }
         
-        /* Article tab styles */
+        /* Article Content */
         .article-content h1 {
-            color: #1e3c72;
-            font-size: 32px;
-            margin-bottom: 20px;
-            padding-bottom: 10px;
-            border-bottom: 3px solid #1e3c72;
+            color: #000000;
+            font-size: 36px;
+            font-weight: 900;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 3px solid #000000;
+            text-transform: uppercase;
+            letter-spacing: -1px;
         }
         
         .article-content h2 {
-            color: #2a5298;
-            font-size: 24px;
-            margin: 30px 0 15px;
-            padding-bottom: 8px;
+            color: #000000;
+            font-size: 26px;
+            font-weight: 700;
+            margin: 35px 0 20px;
+            padding-bottom: 10px;
             border-bottom: 2px solid #e0e0e0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
         
         .article-content h3 {
             color: #333;
             font-size: 20px;
-            margin: 25px 0 12px;
+            font-weight: 700;
+            margin: 28px 0 15px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
         
         .article-content p {
             line-height: 1.8;
-            margin-bottom: 15px;
-            color: #444;
+            margin-bottom: 18px;
+            color: #333;
+            font-weight: 400;
         }
         
         .article-content ul, .article-content ol {
-            margin: 15px 0;
-            padding-left: 30px;
+            margin: 18px 0;
+            padding-left: 35px;
         }
         
         .article-content li {
-            margin-bottom: 8px;
-            line-height: 1.6;
+            margin-bottom: 10px;
+            line-height: 1.7;
         }
         
-        /* Metrics tab */
+        /* Metrics */
         .metrics-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 25px;
+            margin-bottom: 35px;
         }
         
         .metric-card {
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-            padding: 20px;
-            border-radius: 12px;
+            background: #000000;
+            color: #ffffff;
+            padding: 30px;
+            border-radius: 0;
             text-align: center;
+            border: 2px solid #000000;
         }
         
         .metric-value {
-            font-size: 36px;
-            font-weight: 700;
-            color: #1e3c72;
+            font-size: 42px;
+            font-weight: 900;
+            color: #ffffff;
+            line-height: 1;
         }
         
         .metric-label {
-            font-size: 12px;
-            color: #666;
+            font-size: 11px;
+            color: #ffffff;
             text-transform: uppercase;
-            margin-top: 5px;
+            margin-top: 10px;
+            font-weight: 700;
+            letter-spacing: 1px;
         }
         
-        /* Analysis cards */
+        /* Analysis Cards */
         .analysis-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-            margin-top: 20px;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 25px;
+            margin-top: 25px;
         }
         
         .analysis-card {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 12px;
-            border-left: 4px solid #1e3c72;
+            background: #f5f5f5;
+            padding: 25px;
+            border-radius: 0;
+            border-left: 4px solid #000000;
         }
         
         .analysis-card h3 {
-            color: #1e3c72;
-            margin-bottom: 15px;
-            font-size: 16px;
-        }
-        
-        .pain-point {
-            background: white;
-            padding: 10px;
-            margin-bottom: 10px;
-            border-radius: 6px;
+            color: #000000;
+            margin-bottom: 18px;
             font-size: 14px;
-            border-left: 3px solid #ff6b6b;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
         
-        .serp-result {
-            background: white;
-            padding: 10px;
-            margin-bottom: 10px;
-            border-radius: 6px;
-            font-size: 14px;
-        }
-        
-        .serp-result .title {
-            font-weight: 600;
-            color: #1e3c72;
-        }
-        
-        .serp-result .url {
-            color: #666;
-            font-size: 12px;
+        .pain-point, .serp-result {
+            background: #ffffff;
+            padding: 12px;
+            margin-bottom: 12px;
+            border-radius: 0;
+            font-size: 13px;
+            border-left: 3px solid #000000;
         }
         
         /* Recommendations */
         .recommendation {
-            background: white;
-            padding: 15px;
-            margin-bottom: 15px;
-            border-radius: 8px;
-            border-left: 4px solid #1e3c72;
+            background: #ffffff;
+            padding: 18px;
+            margin-bottom: 18px;
+            border-radius: 0;
+            border-left: 4px solid #000000;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -816,115 +863,150 @@ HTML_TEMPLATE = """
         
         .rec-tip {
             font-size: 14px;
-            margin-bottom: 5px;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #000000;
         }
         
         .rec-category {
             display: inline-block;
-            background: #e0e0e0;
-            padding: 3px 8px;
-            border-radius: 12px;
-            font-size: 11px;
-            color: #666;
+            background: #000000;
+            color: #ffffff;
+            padding: 4px 10px;
+            border-radius: 0;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
         
         .rec-impact {
             display: flex;
-            gap: 2px;
+            gap: 3px;
         }
         
         .star {
-            color: #ffd700;
+            color: #000000;
         }
         
-        /* Competitor comparison */
+        /* Competitor Table */
         .comparison-table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 20px;
+            margin-top: 25px;
         }
         
         .comparison-table th,
         .comparison-table td {
-            padding: 12px;
+            padding: 15px;
             text-align: left;
-            border-bottom: 1px solid #e0e0e0;
+            border-bottom: 2px solid #e0e0e0;
         }
         
         .comparison-table th {
-            background: #f5f5f5;
-            font-weight: 600;
-            color: #333;
+            background: #000000;
+            color: #ffffff;
+            font-weight: 700;
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 1px;
         }
         
         .comparison-table .advantage {
-            color: #28a745;
-            font-weight: 600;
+            color: #000000;
+            font-weight: 700;
         }
         
-        .comparison-table .disadvantage {
-            color: #dc3545;
-        }
-        
-        /* Progress bar */
-        .progress-container {
-            background: white;
-            padding: 20px;
-            border-radius: 12px;
-            margin-bottom: 20px;
-            display: none;
-        }
-        
-        .progress-container.active {
-            display: block;
-        }
-        
-        .progress-bar {
-            background: #e0e0e0;
-            height: 30px;
-            border-radius: 15px;
-            overflow: hidden;
-        }
-        
-        .progress-fill {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            height: 100%;
-            transition: width 0.5s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-weight: 600;
-        }
-        
-        .progress-text {
-            text-align: center;
-            margin-top: 10px;
-            color: #666;
-        }
-        
+        /* Mobile Responsive */
         @media (max-width: 768px) {
+            .header {
+                padding: 15px 20px;
+            }
+            
+            .logo {
+                font-size: 24px;
+            }
+            
+            .input-section {
+                padding: 25px 20px;
+            }
+            
+            .section-title {
+                font-size: 22px;
+            }
+            
             .input-grid {
                 grid-template-columns: 1fr;
+                gap: 20px;
             }
             
             .tab-header {
                 flex-direction: column;
             }
+            
+            .tab-btn {
+                border-left: 3px solid transparent;
+                border-bottom: none;
+            }
+            
+            .tab-btn.active {
+                border-left-color: #000000;
+            }
+            
+            .article-content h1 {
+                font-size: 28px;
+            }
+            
+            .article-content h2 {
+                font-size: 22px;
+            }
+            
+            .metrics-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .analysis-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .comparison-table {
+                font-size: 12px;
+            }
+            
+            .comparison-table th,
+            .comparison-table td {
+                padding: 10px;
+            }
+        }
+        
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 10px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #000000;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: #333;
         }
     </style>
 </head>
 <body>
     <div class="header">
-        <div class="logo">
-            <i class="fas fa-rocket"></i> SEO Article Generator - AI Content Platform
-        </div>
+        <div class="logo">WAQZEE</div>
+        <div class="logo-subtitle">AI Content Platform</div>
     </div>
     
     <div class="container">
         <!-- Input Section -->
         <div class="input-section">
-            <h2 style="margin-bottom: 20px;">Generate SEO-Optimized Content</h2>
+            <h2 class="section-title">Generate SEO-Optimized Content</h2>
             
             <div class="input-grid">
                 <div class="form-group">
@@ -955,8 +1037,8 @@ HTML_TEMPLATE = """
                 <div class="form-group">
                     <label>Target Country</label>
                     <select id="targetCountry">
-                        <option value="United States">United States</option>
                         <option value="United Kingdom">United Kingdom</option>
+                        <option value="United States">United States</option>
                         <option value="Canada">Canada</option>
                         <option value="Australia">Australia</option>
                         <option value="Global">Global</option>
@@ -983,12 +1065,12 @@ HTML_TEMPLATE = """
                 </div>
             </div>
             
-            <div class="form-group">
+            <div class="form-group" style="margin-top: 25px;">
                 <label>Unique Insights (Optional)</label>
                 <textarea id="uniqueInsights" placeholder="Share any unique data, stories, or insights that could make your content stand out..."></textarea>
             </div>
             
-            <button class="btn" id="generateBtn" onclick="generateContent()">
+            <button class="btn" id="generateBtn" onclick="generateContent()" style="margin-top: 30px;">
                 <i class="fas fa-magic"></i> Generate SEO Article
             </button>
         </div>
@@ -1004,16 +1086,16 @@ HTML_TEMPLATE = """
         <!-- Results Tabs -->
         <div class="tabs" id="resultTabs">
             <div class="tab-header">
-                <button class="tab-btn active" onclick="switchTab('article')">
+                <button class="tab-btn active" onclick="switchTab(event, 'article')">
                     <i class="fas fa-file-alt"></i> Article
                 </button>
-                <button class="tab-btn" onclick="switchTab('metrics')">
+                <button class="tab-btn" onclick="switchTab(event, 'metrics')">
                     <i class="fas fa-chart-line"></i> Metrics
                 </button>
-                <button class="tab-btn" onclick="switchTab('recommendations')">
+                <button class="tab-btn" onclick="switchTab(event, 'recommendations')">
                     <i class="fas fa-lightbulb"></i> Recommendations
                 </button>
-                <button class="tab-btn" onclick="switchTab('competitors')">
+                <button class="tab-btn" onclick="switchTab(event, 'competitors')">
                     <i class="fas fa-trophy"></i> Competitors
                 </button>
             </div>
@@ -1062,13 +1144,13 @@ HTML_TEMPLATE = """
             
             <!-- Recommendations Tab -->
             <div class="tab-content" id="recommendationsTab">
-                <h3 style="margin-bottom: 20px;">SEO Improvement Recommendations</h3>
+                <h3 style="margin-bottom: 25px; text-transform: uppercase; letter-spacing: 1px;">SEO Improvement Recommendations</h3>
                 <div id="recommendationsList"></div>
             </div>
             
             <!-- Competitors Tab -->
             <div class="tab-content" id="competitorsTab">
-                <h3 style="margin-bottom: 20px;">Competitor Analysis</h3>
+                <h3 style="margin-bottom: 25px; text-transform: uppercase; letter-spacing: 1px;">Competitor Analysis</h3>
                 <table class="comparison-table">
                     <thead>
                         <tr>
@@ -1080,9 +1162,9 @@ HTML_TEMPLATE = """
                     </thead>
                     <tbody id="comparisonTable"></tbody>
                 </table>
-                <div style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
-                    <h4 style="margin-bottom: 10px;">Summary</h4>
-                    <p id="comparisonSummary"></p>
+                <div style="margin-top: 35px; padding: 25px; background: #f5f5f5; border-radius: 0; border-left: 4px solid #000000;">
+                    <h4 style="margin-bottom: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Summary</h4>
+                    <p id="comparisonSummary" style="white-space: pre-line;"></p>
                 </div>
             </div>
         </div>
@@ -1124,12 +1206,12 @@ HTML_TEMPLATE = """
             ).join('');
         }
         
-        function switchTab(tabName) {
+        function switchTab(event, tabName) {
             // Update tab buttons
             document.querySelectorAll('.tab-btn').forEach(btn => {
                 btn.classList.remove('active');
             });
-            event.target.classList.add('active');
+            event.currentTarget.classList.add('active');
             
             // Update tab content
             document.querySelectorAll('.tab-content').forEach(content => {
@@ -1186,12 +1268,16 @@ HTML_TEMPLATE = """
                 // Show tabs
                 document.getElementById('resultTabs').classList.add('active');
                 
+                // Scroll to results
+                document.getElementById('resultTabs').scrollIntoView({ behavior: 'smooth' });
+                
             } catch (error) {
                 console.error('Error:', error);
                 alert('Failed to generate content. Please try again.');
             } finally {
                 stopProgressUpdates();
                 document.getElementById('generateBtn').disabled = false;
+                document.getElementById('progressContainer').classList.remove('active');
             }
         }
         
@@ -1237,7 +1323,7 @@ HTML_TEMPLATE = """
             document.getElementById('readability').textContent = data.metrics.readability || 'N/A';
             
             // Display Reddit pain points
-            const painPointsHtml = data.reddit_pain_points.map(p => 
+            const painPointsHtml = data.reddit_pain_points.slice(0, 10).map(p => 
                 `<div class="pain-point">${p.pain || p}</div>`
             ).join('');
             document.getElementById('painPointsList').innerHTML = painPointsHtml || '<p>No pain points found</p>';
@@ -1245,8 +1331,8 @@ HTML_TEMPLATE = """
             // Display SERP results
             const serpHtml = data.serp_summary.top_results.map(r => 
                 `<div class="serp-result">
-                    <div class="title">${r.title}</div>
-                    <div class="url">${r.url}</div>
+                    <div style="font-weight: 700; margin-bottom: 5px;">${r.title}</div>
+                    <div style="font-size: 11px; color: #666;">${r.link}</div>
                 </div>`
             ).join('');
             document.getElementById('serpResultsList').innerHTML = serpHtml || '<p>No SERP results</p>';
@@ -1274,10 +1360,10 @@ HTML_TEMPLATE = """
             // Display competitor comparison
             const comparisonHtml = data.competitor_comparison.features.map(f => 
                 `<tr>
-                    <td>${f.feature}</td>
+                    <td style="font-weight: 700;">${f.feature}</td>
                     <td>${f.competitors}</td>
                     <td class="${f.advantage ? 'advantage' : ''}">${f.you}</td>
-                    <td>${f.advantage ? '✓' : '-'}</td>
+                    <td style="text-align: center; font-size: 18px;">${f.advantage ? '✓' : '—'}</td>
                 </tr>`
             ).join('');
             document.getElementById('comparisonTable').innerHTML = comparisonHtml;
@@ -1293,40 +1379,50 @@ def index():
     return render_template_string(HTML_TEMPLATE)
 
 @app.route('/generate-seo-article', methods=['POST'])
-async def generate_seo_article():
+def generate_seo_article():
     """Generate complete SEO article with all analysis"""
+    global progress_updates
+    progress_updates = []  # Reset progress
+    
     try:
         data = request.get_json()
+        logger.info(f"📥 Received request for keyword: {data.get('main_keyword')}")
         
         # Initialize OpenAI
         openai_client = OpenAIClient()
+        if not openai_client.available:
+            return jsonify({
+                "error": "OpenAI API not configured. Please set the OPENAI_API_KEY or Open_Api_Key environment variable in Railway."
+            }), 500
         
         # 1. Reddit Analysis
-        reddit_data = await RedditAnalyzer.analyze(
+        add_progress("Starting Reddit analysis...", 5)
+        reddit_data = analyze_reddit(
             data['main_keyword'],
-            data.get('subreddits', [])
+            data.get('subreddits', ['askreddit', 'technology'])
         )
         
         # 2. SERP Analysis
-        serp_data = await SerpAnalyzer.analyze(data['main_keyword'])
+        add_progress("Starting SERP analysis...", 25)
+        serp_data = analyze_serp(data['main_keyword'])
         
         # 3. Generate Article
-        generator = SEOContentGenerator(openai_client)
-        article_data = await generator.generate(data, reddit_data, serp_data)
+        add_progress("Generating article...", 45)
+        article_data = generate_seo_content(data, reddit_data, serp_data, openai_client)
         
         # 4. Generate Recommendations
-        recommendations = await SEORecommendationEngine.generate_recommendations(
-            article_data, data, serp_data
-        )
+        add_progress("Generating recommendations...", 75)
+        recommendations = generate_recommendations(article_data, data, serp_data)
         
         # 5. Competitor Analysis
-        competitor_comparison = await CompetitorAnalyzer.compare(
+        add_progress("Analyzing competitors...", 85)
+        competitor_comparison = generate_competitor_comparison(
             article_data, serp_data, reddit_data
         )
         
         add_progress("✅ Generation complete!", 100)
         
-        return jsonify({
+        result = {
             "inputs": data,
             "reddit_pain_points": reddit_data['pain_points'],
             "serp_summary": {
@@ -1336,7 +1432,7 @@ async def generate_seo_article():
             },
             "article": {
                 "content": article_data['content'],
-                "meta_description": f"Learn about {data['main_keyword']} - comprehensive guide covering everything you need to know."
+                "meta_description": f"Comprehensive guide about {data['main_keyword']} - everything you need to know."
             },
             "metrics": {
                 "word_count": article_data['word_count'],
@@ -1346,21 +1442,36 @@ async def generate_seo_article():
             },
             "recommendations": recommendations,
             "competitor_comparison": competitor_comparison
-        })
+        }
+        
+        logger.info("✅ Successfully generated complete SEO article")
+        return jsonify(result)
         
     except Exception as e:
-        logger.error(f"Generation error: {e}")
+        logger.error(f"❌ Generation error: {e}")
         logger.error(traceback.format_exc())
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "error": f"Failed to generate content: {str(e)}. Please check your API keys and try again."
+        }), 500
 
 @app.route('/progress')
 def get_progress():
     """Get progress updates"""
     global progress_updates
     updates = progress_updates.copy()
-    progress_updates.clear()  # Clear after sending
     return jsonify(updates)
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint"""
+    return jsonify({
+        "status": "healthy",
+        "openai_available": OPENAI_AVAILABLE,
+        "reddit_scraper_available": RedditScraper is not None,
+        "serp_agent_available": SerpAgent is not None
+    })
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
+    logger.info(f"🚀 Starting Waqzee SEO Article Generator on port {port}")
     app.run(host="0.0.0.0", port=port, debug=False)
