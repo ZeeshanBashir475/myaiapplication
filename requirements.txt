@@ -1,9 +1,20 @@
+# Core Framework
 flask==3.0.0
 flask-cors==4.0.0
-openai==1.6.1
-requests==2.31.0
-praw==7.7.1
-beautifulsoup4==4.12.2
-lxml==4.9.3
-python-dotenv==1.0.0
 gunicorn==21.2.0
+
+# AI/ML
+openai==1.12.0
+
+# Web Scraping & APIs
+requests==2.31.0
+beautifulsoup4==4.12.2
+
+# Reddit API
+praw==7.7.1
+
+# Async Support
+aiohttp==3.9.1
+
+# Utilities
+python-dotenv==1.0.0
