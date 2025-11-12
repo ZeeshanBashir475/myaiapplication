@@ -79,7 +79,7 @@ class OpenAIClient:
     
     def __init__(self):
         # Check both possible env variable names
-        self.api_key = os.getenv('OPENAI_API_KEY') or os.getenv('Open_Api_Key')
+       self.api_key = os.getenv('OPENAI_API_KEY') or os.getenv('Open_Api_Key')
         self.available = False
         
         if not OPENAI_AVAILABLE:
