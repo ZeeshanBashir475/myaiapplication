@@ -455,7 +455,7 @@ def generate_competitor_comparison(article_data: Dict, serp_data: Dict, reddit_d
         'summary': f"""Your article outperforms competitors by:
 • Integrating {len(reddit_data['pain_points'])} real user pain points from Reddit
 • Providing {article_data['word_count']} words of comprehensive coverage
-• Achieving {article_data.get('seo_score', 80)}% SEO optimization score
+• Achieving {article_data.get('seo_score', 80)}% SEO optimisation score
 • Addressing gaps in top {len(serp_data['top_results'])} SERP results
 • Including unique insights not found in competitor content"""
     }
@@ -1021,7 +1021,8 @@ HTML_TEMPLATE = """
     <div class="container">
         <!-- Input Section -->
         <div class="input-section">
-            <h2 class="section-title">Generate SEO-Optimized Content</h2>
+            <h2 class="section-title">CompellSEO</h2>
+            <p> CompellSEO is an AI-powered content generator that creates compelling, keyword-optimized articles tailored to your audience’s pain points and tone of voice. It analyzes SERPs and competitors, helping you craft content that not only ranks higher but also connects with readers on a human level.</p>
             
             <div class="input-grid">
                 <div class="form-group">
