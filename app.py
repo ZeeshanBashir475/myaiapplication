@@ -19,7 +19,7 @@ if os.path.exists(agents_path):
     if agents_path not in sys.path:
         sys.path.insert(0, agents_path)
 
-# Import OpenAI with latest version support
+# Import OpenAI - LATEST VERSION
 try:
     from openai import OpenAI
     OPENAI_AVAILABLE = True
@@ -53,7 +53,7 @@ except Exception as e:
     logger.error(f"❌ Failed to import CompellingSEOStrategist: {e}")
 
 try:
-    from Nlp_agent import NLPAgent
+    from nlp_agent import NLPAgent
     logger.info("✅ NLPAgent imported")
 except Exception as e:
     logger.error(f"❌ Failed to import NLPAgent: {e}")
@@ -69,7 +69,7 @@ nlp_agent = None
 try:
     nlp_agent = NLPAgent()
     if nlp_agent and nlp_agent.available:
-        logger.info("✅ Global NLP Agent initialized and ready")
+        logger.info("✅ Global NLP Agent initialized")
 except Exception as e:
     logger.error(f"❌ Failed to initialize NLP Agent: {e}")
 
@@ -84,7 +84,7 @@ def add_progress(message: str, percentage: int):
     logger.info(f"Progress: {percentage}% - {message}")
 
 class OpenAIClient:
-    """Latest OpenAI client (v1.54+)"""
+    """OpenAI client with latest API (v1.54+)"""
     
     def __init__(self):
         self.api_key = os.getenv('OPENAI_API_KEY') or os.getenv('Open_Api_Key')
@@ -99,13 +99,12 @@ class OpenAIClient:
             return
         
         try:
-            logger.info("Creating OpenAI client (latest version)...")
+            logger.info("Creating OpenAI client...")
             self.client = OpenAI(api_key=self.api_key)
             
             # Test the client
             logger.info("Testing OpenAI client...")
-            models = self.client.models.list()
-            logger.info(f"✅ OpenAI client working - {len(models.data)} models available")
+            self.client.models.list()
             
             self.available = True
             logger.info("✅ OpenAI client initialized successfully")
@@ -113,6 +112,29 @@ class OpenAIClient:
         except Exception as e:
             logger.error(f"❌ OpenAI initialization failed: {e}")
             logger.error(traceback.format_exc())
+    
+    def generate_seo_article(self, prompt: str, max_tokens: int = 4000) -> str:
+        """Generate SEO-optimized article"""
+        if not self.available:
+            return "<h1>Content Generation Unavailable</h1><p>OpenAI API key not configured.</p>"
+        
+        try:
+            logger.info("🤖 Calling OpenAI API...")
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo-16k",
+                messages=[
+                    {"role": "system", "content": "You are an expert SEO content writer. Create engaging, well-structured HTML content optimized for search engines and user experience."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=max_tokens,
+                temperature=0.7
+            )
+            content = response.choices[0].message.content
+            logger.info(f"✅ Generated {len(content)} characters")
+            return content
+        except Exception as e:
+            logger.error(f"❌ Generation error: {e}")
+            return f"<p>Error: {str(e)}</p>"
 
 def analyze_reddit(topic: str, subreddits: List[str]) -> Dict:
     """Analyze Reddit discussions"""
@@ -124,13 +146,12 @@ def analyze_reddit(topic: str, subreddits: List[str]) -> Dict:
         logger.warning("Reddit scraper not available - using fallback")
         pain_points = [
             {'pain': f"Finding reliable information about {topic}", 'subreddit': "general", 'score': 100},
-            {'pain': f"Understanding the complexities of {topic}", 'subreddit': "general", 'score': 80},
-            {'pain': f"Making informed decisions about {topic}", 'subreddit': "general", 'score': 75}
+            {'pain': f"Understanding the complexities of {topic}", 'subreddit': "general", 'score': 80}
         ]
     else:
         try:
             scraper = RedditScraper()
-            for subreddit in subreddits[:5]:
+            for subreddit in subreddits[:3]:
                 try:
                     logger.info(f"Scraping r/{subreddit}...")
                     data = scraper.scrape_for_pain_points(subreddit, topic, 10)
@@ -138,9 +159,9 @@ def analyze_reddit(topic: str, subreddits: List[str]) -> Dict:
                     for post in data.get('posts', [])[:5]:
                         title = post.get('title', '')
                         text = post.get('selftext', '')
-                        combined_text = (title + ' ' + text).lower()
+                        combined = (title + ' ' + text).lower()
                         
-                        if any(word in combined_text for word in ['problem', 'issue', 'help', 'struggling', 'frustrated', 'confused', 'difficult']):
+                        if any(w in combined for w in ['problem', 'issue', 'help', 'struggling']):
                             pain_points.append({
                                 'pain': title[:150] if title else "General discussion",
                                 'subreddit': f"r/{subreddit}",
@@ -148,61 +169,43 @@ def analyze_reddit(topic: str, subreddits: List[str]) -> Dict:
                             })
                 except Exception as e:
                     logger.error(f"Error scraping r/{subreddit}: {e}")
-                    continue
             
             add_progress(f"✓ Found {len(pain_points)} pain points", 20)
         except Exception as e:
-            logger.error(f"Reddit analysis error: {e}")
+            logger.error(f"Reddit error: {e}")
     
     if not pain_points:
         pain_points = [
-            {'pain': f"Finding reliable information about {topic}", 'subreddit': "general", 'score': 100},
-            {'pain': f"Understanding best practices for {topic}", 'subreddit': "general", 'score': 85}
+            {'pain': f"Finding reliable information about {topic}", 'subreddit': "general", 'score': 100}
         ]
     
     return {'pain_points': pain_points[:10]}
 
-def analyze_serp(keyword: str, num_competitors: int = 5, custom_urls: List[str] = None) -> Dict:
+def analyze_serp(keyword: str, num_competitors: int = 5) -> Dict:
     """Analyze SERP results"""
     add_progress("🌐 Analyzing Google search results...", 30)
     
     if not SerpAgent:
         logger.warning("SERP agent not available - using fallback")
         return {
-            'top_results': [
-                {'title': f"Guide to {keyword}", 'link': '#', 'snippet': 'Comprehensive guide...', 'position': i+1}
-                for i in range(num_competitors)
-            ],
-            'people_also_ask': [
-                {'question': f"What is {keyword}?", 'snippet': 'Definition...'},
-                {'question': f"How does {keyword} work?", 'snippet': 'Explanation...'}
-            ],
-            'opportunities': ['Add FAQ section', 'Include examples', 'Add statistics']
+            'top_results': [{'title': f"Guide to {keyword}", 'link': '#', 'snippet': 'Comprehensive guide...', 'position': i+1} for i in range(num_competitors)],
+            'people_also_ask': [{'question': f"What is {keyword}?", 'snippet': 'Definition...'}],
+            'opportunities': ['Add FAQ section', 'Include examples']
         }
     
     try:
         agent = SerpAgent()
         analysis = agent.analyze_keyword(keyword, location="United Kingdom")
         
-        # If custom URLs provided, prioritize them
-        if custom_urls:
-            for i, url in enumerate(custom_urls[:num_competitors]):
-                analysis['organic_results'].insert(i, {
-                    'title': f"Custom Competitor {i+1}",
-                    'link': url,
-                    'snippet': 'Custom competitor URL',
-                    'position': i+1
-                })
-        
         add_progress(f"✓ Analyzed {num_competitors} competitors", 40)
         
         return {
             'top_results': analysis['organic_results'][:num_competitors],
-            'people_also_ask': analysis.get('people_also_ask', [])[:8],
+            'people_also_ask': analysis.get('people_also_ask', [])[:5],
             'opportunities': analysis.get('content_opportunities', [])[:5]
         }
     except Exception as e:
-        logger.error(f"SERP analysis error: {e}")
+        logger.error(f"SERP error: {e}")
         return {
             'top_results': [],
             'people_also_ask': [],
@@ -214,23 +217,21 @@ def analyze_competitor_nlp(serp_data: Dict) -> Dict:
     if not nlp_agent or not nlp_agent.available:
         return {'competitor_entities': [], 'nlp_available': False}
     
-    add_progress("🧠 Analyzing competitor content with NLP...", 35)
+    add_progress("🧠 Analyzing competitor content...", 35)
     
     try:
-        competitor_text = " ".join([r.get('snippet', '') for r in serp_data.get('top_results', [])[:3]])
+        comp_text = " ".join([r.get('snippet', '') for r in serp_data.get('top_results', [])[:3]])
         
-        if not competitor_text.strip():
+        if not comp_text.strip():
             return {'competitor_entities': [], 'nlp_available': False}
         
-        entities = nlp_agent.extract_entities(competitor_text)
-        categories = nlp_agent.get_category(competitor_text)
-        sentiment = nlp_agent.get_sentiment(competitor_text)
+        entities = nlp_agent.extract_entities(comp_text)
+        sentiment = nlp_agent.get_sentiment(comp_text)
         
         logger.info(f"✅ Found {len(entities)} competitor entities")
         
         return {
             'competitor_entities': entities[:15],
-            'competitor_categories': categories,
             'competitor_sentiment': sentiment,
             'nlp_available': True
         }
@@ -239,25 +240,22 @@ def analyze_competitor_nlp(serp_data: Dict) -> Dict:
         return {'competitor_entities': [], 'nlp_available': False}
 
 def generate_content(params: Dict, reddit_data: Dict, serp_data: Dict, competitor_nlp: Dict, openai_client: OpenAIClient) -> Dict:
-    """Generate SEO content with Writer Agent"""
-    add_progress("✍️ Generating article with AI Writer Agent...", 50)
+    """Generate SEO content"""
+    add_progress("✍️ Generating article...", 50)
     
     try:
+        # Try Writer Agent first
         if CompellingSEOStrategist and openai_client.available:
             strategist = CompellingSEOStrategist(api_key=openai_client.api_key)
             
             if strategist.available:
                 logger.info("📝 Using Compelling SEO Strategist")
                 
-                # Enhance unique insights with NLP data
+                # Enhance insights with NLP data
                 unique_insights = params.get('unique_insights', '')
                 if competitor_nlp.get('competitor_entities'):
                     top_entities = [e['name'] for e in competitor_nlp['competitor_entities'][:5]]
                     unique_insights += f"\n\nKey entities to cover: {', '.join(top_entities)}"
-                
-                # Add brand mentions
-                if params.get('brand_mentions'):
-                    unique_insights += f"\n\nMention these brands: {params['brand_mentions']}"
                 
                 result = strategist.write_article(
                     main_keyword=params['main_keyword'],
@@ -269,7 +267,7 @@ def generate_content(params: Dict, reddit_data: Dict, serp_data: Dict, competito
                     reddit_data=reddit_data,
                     unique_insights=unique_insights,
                     title=params.get('title', params['main_keyword']),
-                    max_tokens=int(params.get('word_count_goal', 2500) * 1.5)
+                    max_tokens=4000
                 )
                 
                 if result['success']:
@@ -280,24 +278,54 @@ def generate_content(params: Dict, reddit_data: Dict, serp_data: Dict, competito
                         'success': True
                     }
         
-        # Fallback
-        logger.warning("Using fallback content generation")
+        # Fallback to basic generation
+        logger.warning("Using fallback generation")
+        pain_points_text = '\n'.join([f"- {p.get('pain', '')}" for p in reddit_data['pain_points'][:5]])
+        paa_text = '\n'.join([f"- {q['question']}" for q in serp_data['people_also_ask'][:5]])
+        
+        prompt = f"""
+Create a comprehensive, SEO-optimized article about "{params['main_keyword']}"
+
+Title: {params.get('title', params['main_keyword'])}
+Tone: {params.get('tone', 'Professional yet friendly')}
+Target: {params.get('target_country', 'United Kingdom')}
+
+REDDIT PAIN POINTS:
+{pain_points_text}
+
+PEOPLE ALSO ASK:
+{paa_text}
+
+USER INSIGHTS:
+{params.get('unique_insights', 'None provided')}
+
+Write a complete 2,400+ word article with proper HTML formatting (h1, h2, p, ul, li).
+"""
+        
+        article = openai_client.generate_seo_article(prompt)
+        
+        add_progress("✓ Article generated", 70)
+        
         return {
-            'content': f"<h1>{params.get('title', params['main_keyword'])}</h1><p>Content generation in progress...</p>",
-            'word_count': 0,
-            'success': False
+            'content': article,
+            'word_count': len(article.split()),
+            'success': True
         }
         
     except Exception as e:
         logger.error(f"Content generation error: {e}")
-        return {'content': f"<h1>Error</h1><p>{str(e)}</p>", 'word_count': 0, 'success': False}
+        return {
+            'content': f"<h1>Error</h1><p>{str(e)}</p>",
+            'word_count': 0,
+            'success': False
+        }
 
 def analyze_article_nlp(content: str, competitor_nlp: Dict) -> Dict:
     """NLP analysis of generated article"""
     if not nlp_agent or not nlp_agent.available:
         return {'nlp_available': False}
     
-    add_progress("🧠 Analyzing generated article...", 75)
+    add_progress("🧠 Analyzing article...", 75)
     
     try:
         clean_text = re.sub(r'<[^>]+>', ' ', content)
@@ -315,32 +343,23 @@ def analyze_article_nlp(content: str, competitor_nlp: Dict) -> Dict:
             
             coverage_score = len(covered) / len(comp_names) if comp_names else 1.0
             
+            grade = "A+" if coverage_score >= 0.9 else "A" if coverage_score >= 0.8 else "B" if coverage_score >= 0.7 else "C" if coverage_score >= 0.6 else "D"
+            
             entity_coverage = {
-                'coverage_score': round(coverage_score, 4),
                 'coverage_percentage': round(coverage_score * 100, 2),
-                'covered_count': len(covered),
-                'missing_count': len(missing),
-                'missing_entities': list(missing)[:10],
-                'grade': get_grade(coverage_score)
+                'grade': grade,
+                'missing_entities': list(missing)[:10]
             }
         
         return {
             'article_entities': analysis['entities'][:15],
             'article_sentiment': analysis['sentiment'],
             'entity_coverage': entity_coverage,
-            'nlp_available': True,
-            'stats': analysis['stats']
+            'nlp_available': True
         }
     except Exception as e:
         logger.error(f"Article NLP error: {e}")
         return {'nlp_available': False}
-
-def get_grade(score: float) -> str:
-    if score >= 0.9: return "A+"
-    elif score >= 0.8: return "A"
-    elif score >= 0.7: return "B"
-    elif score >= 0.6: return "C"
-    else: return "D"
 
 def calculate_metrics(content: str, params: Dict) -> Dict:
     """Calculate SEO metrics"""
@@ -355,89 +374,185 @@ def calculate_metrics(content: str, params: Dict) -> Dict:
     if kw_count > 0: seo_score += 10
     if words > 2000: seo_score += 20
     
+    sentences = len(re.split(r'[.!?]+', content))
+    avg_words = words / sentences if sentences > 0 else 0
+    readability = "Easy" if avg_words < 15 else "Medium" if avg_words < 20 else "Advanced"
+    
     return {
         'word_count': words,
         'keyword_density': round(kw_density, 2),
-        'seo_score': min(100, seo_score)
+        'seo_score': min(100, seo_score),
+        'readability': readability
     }
 
-# HTML Template with comprehensive inputs
+def generate_recommendations(metrics: Dict, params: Dict, article_nlp: Dict) -> List[Dict]:
+    """Generate SEO recommendations"""
+    add_progress("📊 Generating recommendations...", 80)
+    
+    recs = []
+    
+    if metrics['keyword_density'] < 1:
+        recs.append({'tip': f"Increase '{params['main_keyword']}' usage to 1-2%", 'impact': 5, 'category': 'SEO'})
+    
+    if metrics['word_count'] < 2400:
+        recs.append({'tip': f"Expand to 2,400+ words (current: {metrics['word_count']})", 'impact': 5, 'category': 'Content'})
+    
+    if article_nlp.get('entity_coverage', {}).get('coverage_percentage', 100) < 70:
+        recs.append({'tip': "Improve entity coverage - add missing key topics", 'impact': 5, 'category': 'Entity SEO'})
+    
+    recs.extend([
+        {'tip': "Add personal story in intro", 'impact': 4, 'category': 'Engagement'},
+        {'tip': "Include schema markup for FAQ", 'impact': 3, 'category': 'Technical SEO'},
+        {'tip': "Add 3-5 images with alt text", 'impact': 3, 'category': 'UX'}
+    ])
+    
+    return recs[:8]
+
+def generate_competitor_comparison(metrics: Dict, serp_data: Dict, reddit_data: Dict, article_nlp: Dict) -> Dict:
+    """Generate competitor comparison"""
+    add_progress("🏆 Analyzing competitors...", 90)
+    
+    features = [
+        {
+            'feature': 'Word Count',
+            'competitors': '1,500-2,000 avg',
+            'you': f"{metrics['word_count']} words",
+            'advantage': metrics['word_count'] > 2000
+        },
+        {
+            'feature': 'Emotional Engagement',
+            'competitors': 'Generic',
+            'you': f"Uses {len(reddit_data['pain_points'])} real pain points",
+            'advantage': True
+        },
+        {
+            'feature': 'Keyword Optimization',
+            'competitors': 'Basic',
+            'you': f"{metrics['keyword_density']}% density",
+            'advantage': True
+        }
+    ]
+    
+    if article_nlp.get('entity_coverage'):
+        coverage = article_nlp['entity_coverage']
+        features.append({
+            'feature': 'Entity Coverage',
+            'competitors': '100% baseline',
+            'you': f"{coverage['coverage_percentage']:.0f}% (Grade: {coverage['grade']})",
+            'advantage': coverage['coverage_percentage'] >= 80
+        })
+    
+    summary = f"""Your article outperforms competitors by:
+• Integrating {len(reddit_data['pain_points'])} real pain points
+• Providing {metrics['word_count']} words of coverage
+• Achieving {metrics['seo_score']}% SEO score"""
+    
+    if article_nlp.get('entity_coverage'):
+        summary += f"\n• Entity coverage: {article_nlp['entity_coverage']['coverage_percentage']:.0f}% (Grade: {article_nlp['entity_coverage']['grade']})"
+    
+    return {'features': features, 'summary': summary}
+
+# Keep the exact same HTML template from original (with Waqzee black/white theme)
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CompellSEO - Professional Content Platform</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
+    <title>SEO Article Generator - Waqzee Digital</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Inter', sans-serif; background: #0a0a0a; color: #fff; line-height: 1.6; }
-        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px 40px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
-        .logo { font-size: 36px; font-weight: 900; color: #fff; letter-spacing: -1px; }
-        .tagline { font-size: 14px; color: rgba(255,255,255,0.9); margin-top: 5px; }
+        body { font-family: 'Roboto', sans-serif; background: #000000; color: #ffffff; min-height: 100vh; line-height: 1.6; }
+        .header { background: #ffffff; padding: 20px 40px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); position: sticky; top: 0; z-index: 100; }
+        .logo { font-size: 32px; font-weight: 900; color: #000000; letter-spacing: -1px; }
+        .logo-subtitle { font-size: 12px; font-weight: 400; color: #666; letter-spacing: 2px; text-transform: uppercase; }
         .container { max-width: 1400px; margin: 40px auto; padding: 0 20px; }
-        .section { background: #1a1a1a; border-radius: 12px; padding: 40px; margin-bottom: 30px; border: 1px solid #333; }
-        .section-title { font-size: 18px; font-weight: 700; color: #667eea; margin-bottom: 25px; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 10px; }
-        .section-title i { font-size: 20px; }
-        .input-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 25px; }
+        .input-section { background: #ffffff; color: #000000; padding: 40px; margin-bottom: 40px; box-shadow: 0 10px 40px rgba(255,255,255,0.1); }
+        .section-title { font-size: 28px; font-weight: 700; margin-bottom: 30px; color: #000000; text-transform: uppercase; letter-spacing: 1px; }
+        .input-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 25px; margin-bottom: 25px; }
         .form-group { display: flex; flex-direction: column; }
         .form-group.full-width { grid-column: 1 / -1; }
-        label { font-size: 12px; font-weight: 600; color: #999; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
-        input, select, textarea { padding: 12px 16px; border: 2px solid #333; border-radius: 8px; font-size: 14px; font-family: 'Inter', sans-serif; background: #0a0a0a; color: #fff; transition: all 0.3s; }
-        input:focus, select:focus, textarea:focus { outline: none; border-color: #667eea; background: #1a1a1a; }
+        label { font-size: 11px; font-weight: 700; color: #000000; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+        input, select, textarea { padding: 12px 15px; border: 2px solid #000000; font-size: 14px; font-family: 'Roboto', sans-serif; background: #ffffff; color: #000000; transition: all 0.3s; }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: #666; background: #f5f5f5; }
         textarea { resize: vertical; min-height: 100px; }
-        .btn { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; border: none; padding: 18px 40px; border-radius: 8px; font-weight: 700; font-size: 14px; cursor: pointer; transition: all 0.3s; text-transform: uppercase; letter-spacing: 1px; margin-top: 20px; }
-        .btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4); }
-        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-        .toggle { display: flex; align-items: center; gap: 10px; }
-        .toggle input[type="checkbox"] { width: 50px; height: 26px; }
-        .progress-container { background: #1a1a1a; padding: 30px; border-radius: 12px; margin-bottom: 30px; border: 1px solid #333; display: none; }
+        .subreddit-chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+        .chip { background: #000000; color: #ffffff; padding: 8px 15px; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 8px; text-transform: uppercase; letter-spacing: 1px; }
+        .chip i { cursor: pointer; opacity: 0.7; transition: opacity 0.3s; }
+        .chip i:hover { opacity: 1; }
+        .btn { background: #000000; color: #ffffff; border: none; padding: 18px 40px; font-weight: 700; font-size: 14px; cursor: pointer; transition: all 0.3s; text-transform: uppercase; letter-spacing: 2px; font-family: 'Roboto', sans-serif; }
+        .btn:hover { background: #333; transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .btn:disabled { background: #666; cursor: not-allowed; transform: none; }
+        .btn i { margin-right: 10px; }
+        .progress-container { background: #ffffff; padding: 30px; margin-bottom: 30px; display: none; }
         .progress-container.active { display: block; }
-        .progress-bar { background: #333; height: 40px; border-radius: 20px; overflow: hidden; }
-        .progress-fill { background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); height: 100%; transition: width 0.5s ease; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; }
-        .progress-text { text-align: center; margin-top: 15px; color: #999; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; }
-        .tabs { background: #1a1a1a; border-radius: 12px; overflow: hidden; border: 1px solid #333; display: none; margin-top: 30px; }
+        .progress-bar { background: #e0e0e0; height: 40px; overflow: hidden; border: 2px solid #000000; }
+        .progress-fill { background: #000000; height: 100%; transition: width 0.5s ease; display: flex; align-items: center; justify-content: center; color: #ffffff; font-weight: 700; font-size: 14px; letter-spacing: 1px; }
+        .progress-text { text-align: center; margin-top: 15px; color: #000000; font-weight: 500; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; }
+        .tabs { background: #ffffff; overflow: hidden; box-shadow: 0 10px 40px rgba(255,255,255,0.1); display: none; }
         .tabs.active { display: block; }
-        .tab-header { display: flex; background: #0a0a0a; flex-wrap: wrap; border-bottom: 2px solid #333; }
-        .tab-btn { flex: 1; min-width: 150px; padding: 20px; background: none; border: none; font-weight: 600; color: #999; cursor: pointer; transition: all 0.3s; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 3px solid transparent; }
-        .tab-btn.active { color: #667eea; border-bottom-color: #667eea; background: #1a1a1a; }
-        .tab-content { display: none; padding: 40px; max-height: 600px; overflow-y: auto; }
+        .tab-header { display: flex; background: #000000; flex-wrap: wrap; }
+        .tab-btn { flex: 1; min-width: 150px; padding: 20px; background: none; border: none; font-weight: 700; color: #ffffff; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.3s; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; font-family: 'Roboto', sans-serif; }
+        .tab-btn.active { background: #ffffff; color: #000000; border-bottom-color: #000000; }
+        .tab-btn i { margin-right: 8px; }
+        .tab-content { display: none; padding: 40px; max-height: 600px; overflow-y: auto; color: #000000; }
         .tab-content.active { display: block; }
-        .metric-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 12px; text-align: center; }
-        .metric-value { font-size: 42px; font-weight: 900; }
-        .metric-label { font-size: 11px; margin-top: 10px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px; }
-        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 25px; margin-bottom: 30px; }
-        .info-box { background: rgba(102, 126, 234, 0.1); border-left: 4px solid #667eea; padding: 15px; border-radius: 8px; margin-bottom: 20px; color: #ccc; font-size: 14px; }
+        .article-content h1 { color: #000000; font-size: 36px; font-weight: 900; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 3px solid #000000; text-transform: uppercase; letter-spacing: -1px; }
+        .article-content h2 { color: #000000; font-size: 26px; font-weight: 700; margin: 35px 0 20px; padding-bottom: 10px; border-bottom: 2px solid #e0e0e0; text-transform: uppercase; letter-spacing: 1px; }
+        .article-content p { line-height: 1.8; margin-bottom: 18px; color: #333; font-weight: 400; }
+        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 25px; margin-bottom: 35px; }
+        .metric-card { background: #000000; color: #ffffff; padding: 30px; text-align: center; border: 2px solid #000000; }
+        .metric-value { font-size: 42px; font-weight: 900; color: #ffffff; line-height: 1; }
+        .metric-label { font-size: 11px; color: #ffffff; text-transform: uppercase; margin-top: 10px; font-weight: 700; letter-spacing: 1px; }
+        .analysis-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 25px; margin-top: 25px; }
+        .analysis-card { background: #f5f5f5; padding: 25px; border-left: 4px solid #000000; }
+        .analysis-card h3 { color: #000000; margin-bottom: 18px; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+        .pain-point { background: #ffffff; padding: 12px; margin-bottom: 12px; font-size: 13px; border-left: 3px solid #000000; }
+        .recommendation { background: #ffffff; padding: 18px; margin-bottom: 18px; border-left: 4px solid #000000; display: flex; justify-content: space-between; align-items: center; }
+        .rec-tip { font-size: 14px; margin-bottom: 8px; font-weight: 500; color: #000000; }
+        .rec-category { display: inline-block; background: #000000; color: #ffffff; padding: 4px 10px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+        .rec-impact { display: flex; gap: 3px; }
+        .star { color: #000000; }
+        .comparison-table { width: 100%; border-collapse: collapse; margin-top: 25px; }
+        .comparison-table th, .comparison-table td { padding: 15px; text-align: left; border-bottom: 2px solid #e0e0e0; }
+        .comparison-table th { background: #000000; color: #ffffff; font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: 1px; }
+        .comparison-table .advantage { color: #000000; font-weight: 700; }
     </style>
 </head>
 <body>
     <div class="header">
-        <div class="logo">WAQZEE CompellSEO</div>
-        <div class="tagline">AI-Powered Content Generation with Advanced NLP Analysis</div>
+        <div class="logo">WAQZEE</div>
+        <div class="logo-subtitle">AI Content Platform</div>
     </div>
     
     <div class="container">
-        <!-- Section 1: Core SEO Inputs -->
-        <div class="section">
-            <h2 class="section-title"><i class="fas fa-search"></i> Core SEO Inputs</h2>
+        <div class="input-section">
+            <h2 class="section-title">CompellSEO</h2>
+            <p>AI-powered content generator with advanced NLP analysis and competitor insights.</p>
+            <br><br>
+            
             <div class="input-grid">
                 <div class="form-group">
                     <label>Main Keyword *</label>
-                    <input type="text" id="mainKeyword" placeholder="how to save money on car insurance UK" required>
+                    <input type="text" id="mainKeyword" placeholder="e.g., car insurance UK" required>
                 </div>
                 <div class="form-group">
-                    <label>Article Title</label>
-                    <input type="text" id="title" placeholder="10 Proven Ways to Save on Car Insurance">
+                    <label>Article Title *</label>
+                    <input type="text" id="title" placeholder="e.g., Complete Guide to Car Insurance">
                 </div>
                 <div class="form-group">
-                    <label>Search Intent</label>
-                    <select id="searchIntent">
-                        <option value="Informational">Informational</option>
-                        <option value="Commercial">Commercial</option>
-                        <option value="Transactional">Transactional</option>
-                        <option value="Navigational">Navigational</option>
+                    <label>Secondary Keywords</label>
+                    <input type="text" id="secondaryKeywords" placeholder="auto insurance, vehicle coverage">
+                </div>
+                <div class="form-group">
+                    <label>Tone of Voice</label>
+                    <select id="tone">
+                        <option value="friendly">Friendly & Conversational</option>
+                        <option value="professional">Professional & Expert</option>
+                        <option value="bold">Bold & Persuasive</option>
+                        <option value="emotional">Emotional & Empathetic</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -452,172 +567,60 @@ HTML_TEMPLATE = """
                 <div class="form-group">
                     <label>Language</label>
                     <select id="language">
-                        <option value="English">English</option>
-                        <option value="Spanish">Spanish</option>
-                        <option value="French">French</option>
-                        <option value="German">German</option>
+                        <option value="en">English</option>
+                        <option value="es">Spanish</option>
+                        <option value="fr">French</option>
                     </select>
-                </div>
-                <div class="form-group full-width">
-                    <label>Secondary Keywords (comma-separated)</label>
-                    <input type="text" id="secondaryKeywords" placeholder="car insurance discounts, cheap insurance UK, best quotes">
                 </div>
             </div>
-        </div>
-
-        <!-- Section 2: Tone, Style & Persona -->
-        <div class="section">
-            <h2 class="section-title"><i class="fas fa-palette"></i> Tone, Style & Persona</h2>
-            <div class="input-grid">
-                <div class="form-group">
-                    <label>Tone of Voice</label>
-                    <select id="tone">
-                        <option value="friendly">Friendly & Conversational</option>
-                        <option value="professional">Professional & Expert</option>
-                        <option value="bold">Persuasive & Bold</option>
-                        <option value="emotional">Authoritative</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Content Type</label>
-                    <select id="contentType">
-                        <option value="blog">Blog Post</option>
-                        <option value="landing">Landing Page</option>
-                        <option value="listicle">Listicle</option>
-                        <option value="howto">How-to Guide</option>
-                    </select>
-                </div>
-                <div class="form-group full-width">
-                    <label>Target Audience</label>
-                    <input type="text" id="targetAudience" placeholder="UK car owners, drivers under 30, cost-conscious families">
-                </div>
-                <div class="form-group full-width">
-                    <label>Brand Voice Keywords (Optional)</label>
-                    <input type="text" id="brandVoice" placeholder="trustworthy, expert, helpful, local">
+            
+            <div class="form-group full-width">
+                <label>Subreddits to Search</label>
+                <input type="text" id="subredditInput" placeholder="Enter subreddit and press Enter">
+                <div class="subreddit-chips" id="subredditChips">
+                    <span class="chip">r/askreddit <i class="fas fa-times" onclick="removeChip(this)"></i></span>
+                    <span class="chip">r/technology <i class="fas fa-times" onclick="removeChip(this)"></i></span>
                 </div>
             </div>
-        </div>
-
-        <!-- Section 3: Research & Competitor Data -->
-        <div class="section">
-            <h2 class="section-title"><i class="fas fa-chart-line"></i> Research & Competitor Data</h2>
-            <div class="input-grid">
-                <div class="form-group">
-                    <label>Number of Competitors to Analyze</label>
-                    <select id="numCompetitors">
-                        <option value="3">3 Competitors</option>
-                        <option value="5" selected>5 Competitors</option>
-                        <option value="7">7 Competitors</option>
-                        <option value="10">10 Competitors</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Competitor Analysis Depth</label>
-                    <select id="analysisDepth">
-                        <option value="basic">Basic</option>
-                        <option value="advanced" selected>Advanced (with NLP)</option>
-                    </select>
-                </div>
-                <div class="form-group full-width">
-                    <label>Subreddits to Search (comma-separated)</label>
-                    <input type="text" id="subreddits" placeholder="ukpersonalfinance, CarTalkUK, AskUK" value="ukpersonalfinance, AskUK">
-                </div>
-                <div class="form-group full-width">
-                    <label>Competitor URLs (Optional - one per line)</label>
-                    <textarea id="competitorUrls" placeholder="https://www.comparethemarket.com
-https://www.moneysupermarket.com"></textarea>
-                </div>
-            </div>
-        </div>
-
-        <!-- Section 4: Unique & Contextual Inputs -->
-        <div class="section">
-            <h2 class="section-title"><i class="fas fa-lightbulb"></i> Unique Content & Context</h2>
-            <div class="input-grid">
-                <div class="form-group full-width">
-                    <label>Unique Insights & Data</label>
-                    <textarea id="uniqueInsights" placeholder="Our data shows 30% of drivers don't compare insurance yearly..."></textarea>
-                </div>
-                <div class="form-group full-width">
-                    <label>Brand or Product Mentions</label>
-                    <textarea id="brandMentions" placeholder="Include references to Aviva, Direct Line, MoneySuperMarket"></textarea>
-                </div>
-                <div class="form-group full-width">
-                    <label>Topics to Avoid</label>
-                    <textarea id="topicsAvoid" placeholder="Avoid mentioning insurance scams, controversial claims"></textarea>
-                </div>
-                <div class="form-group full-width">
-                    <label>Internal Links (Optional)</label>
-                    <textarea id="internalLinks" placeholder="/insurance-guides
-/car-tips"></textarea>
-                </div>
-            </div>
-        </div>
-
-        <!-- Section 5: Output Controls -->
-        <div class="section">
-            <h2 class="section-title"><i class="fas fa-cog"></i> Output Controls</h2>
-            <div class="info-box">
-                <i class="fas fa-info-circle"></i> Output settings control the format and structure of your generated content.
-            </div>
-            <div class="input-grid">
-                <div class="form-group">
-                    <label>Word Count Goal</label>
-                    <input type="number" id="wordCountGoal" value="2500" min="500" max="5000" step="100">
-                </div>
-                <div class="form-group">
-                    <label>Output Format</label>
-                    <select id="outputFormat">
-                        <option value="html" selected>HTML</option>
-                        <option value="markdown">Markdown</option>
-                        <option value="plain">Plain Text</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Include Tables/FAQs</label>
-                    <div class="toggle">
-                        <input type="checkbox" id="includeFaqs" checked>
-                        <span>Generate FAQ section</span>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Generate Meta Tags</label>
-                    <div class="toggle">
-                        <input type="checkbox" id="generateMeta" checked>
-                        <span>Title & description</span>
-                    </div>
-                </div>
+            
+            <div class="form-group full-width">
+                <label>Unique Insights (Optional)</label>
+                <textarea id="uniqueInsights" placeholder="Share unique data or insights..."></textarea>
             </div>
             
             <button class="btn" id="generateBtn" onclick="generateContent()">
                 <i class="fas fa-magic"></i> Generate SEO Article
             </button>
         </div>
-
-        <!-- Progress Bar -->
+        
         <div class="progress-container" id="progressContainer">
             <div class="progress-bar">
                 <div class="progress-fill" id="progressFill" style="width: 0%">0%</div>
             </div>
             <div class="progress-text" id="progressText">Initializing...</div>
         </div>
-
-        <!-- Results Tabs -->
+        
         <div class="tabs" id="resultTabs">
             <div class="tab-header">
                 <button class="tab-btn active" onclick="switchTab(event, 'article')">
                     <i class="fas fa-file-alt"></i> Article
                 </button>
                 <button class="tab-btn" onclick="switchTab(event, 'metrics')">
-                    <i class="fas fa-chart-bar"></i> Metrics
+                    <i class="fas fa-chart-line"></i> Metrics
                 </button>
                 <button class="tab-btn" onclick="switchTab(event, 'nlp')">
                     <i class="fas fa-brain"></i> NLP Analysis
                 </button>
+                <button class="tab-btn" onclick="switchTab(event, 'recommendations')">
+                    <i class="fas fa-lightbulb"></i> Recommendations
+                </button>
+                <button class="tab-btn" onclick="switchTab(event, 'competitors')">
+                    <i class="fas fa-trophy"></i> Competitors
+                </button>
             </div>
             
             <div class="tab-content active" id="articleTab">
-                <div id="articleContent"></div>
+                <div class="article-content" id="articleContent"></div>
             </div>
             
             <div class="tab-content" id="metricsTab">
@@ -631,12 +634,27 @@ https://www.moneysupermarket.com"></textarea>
                         <div class="metric-label">SEO Score</div>
                     </div>
                     <div class="metric-card">
-                        <div class="metric-value" id="entityCoverage">N/A</div>
-                        <div class="metric-label">Entity Coverage</div>
+                        <div class="metric-value" id="keywordDensity">0%</div>
+                        <div class="metric-label">Keyword Density</div>
                     </div>
                     <div class="metric-card">
-                        <div class="metric-value" id="sentimentLabel">N/A</div>
-                        <div class="metric-label">Sentiment</div>
+                        <div class="metric-value" id="readability">N/A</div>
+                        <div class="metric-label">Readability</div>
+                    </div>
+                </div>
+                
+                <div class="analysis-grid">
+                    <div class="analysis-card">
+                        <h3><i class="fab fa-reddit"></i> Reddit Pain Points</h3>
+                        <div id="painPointsList"></div>
+                    </div>
+                    <div class="analysis-card">
+                        <h3><i class="fab fa-google"></i> SERP Results</h3>
+                        <div id="serpResultsList"></div>
+                    </div>
+                    <div class="analysis-card">
+                        <h3><i class="fas fa-question-circle"></i> People Also Ask</h3>
+                        <div id="paaList"></div>
                     </div>
                 </div>
             </div>
@@ -645,53 +663,88 @@ https://www.moneysupermarket.com"></textarea>
                 <h3 style="margin-bottom: 20px;">NLP Analysis Results</h3>
                 <div id="nlpResults"></div>
             </div>
+            
+            <div class="tab-content" id="recommendationsTab">
+                <h3 style="margin-bottom: 25px;">SEO Recommendations</h3>
+                <div id="recommendationsList"></div>
+            </div>
+            
+            <div class="tab-content" id="competitorsTab">
+                <h3 style="margin-bottom: 25px;">Competitor Analysis</h3>
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>Feature</th>
+                            <th>Competitors</th>
+                            <th>Your Article</th>
+                            <th>Advantage</th>
+                        </tr>
+                    </thead>
+                    <tbody id="comparisonTable"></tbody>
+                </table>
+                <div style="margin-top: 35px; padding: 25px; background: #f5f5f5; border-left: 4px solid #000000;">
+                    <h4 style="margin-bottom: 12px; font-weight: 700;">Summary</h4>
+                    <p id="comparisonSummary" style="white-space: pre-line;"></p>
+                </div>
+            </div>
         </div>
     </div>
     
     <script>
+        let subreddits = ['askreddit', 'technology'];
         let progressInterval;
+        
+        document.getElementById('subredditInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                const value = this.value.trim().replace('r/', '');
+                if (value && !subreddits.includes(value)) {
+                    subreddits.push(value);
+                    updateChips();
+                    this.value = '';
+                }
+            }
+        });
+        
+        function removeChip(el) {
+            const chip = el.parentElement;
+            const sub = chip.textContent.replace('r/', '').trim();
+            subreddits = subreddits.filter(s => s !== sub);
+            chip.remove();
+        }
+        
+        function updateChips() {
+            document.getElementById('subredditChips').innerHTML = 
+                subreddits.map(s => `<span class="chip">r/${s} <i class="fas fa-times" onclick="removeChip(this)"></i></span>`).join('');
+        }
         
         function switchTab(event, tabName) {
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
             event.currentTarget.classList.add('active');
-            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             document.getElementById(tabName + 'Tab').classList.add('active');
         }
         
         async function generateContent() {
             const mainKeyword = document.getElementById('mainKeyword').value.trim();
-            if (!mainKeyword) { alert('Please enter a main keyword'); return; }
+            const title = document.getElementById('title').value.trim();
+            if (!mainKeyword || !title) { alert('Please enter keyword and title'); return; }
             
             document.getElementById('progressContainer').classList.add('active');
             document.getElementById('generateBtn').disabled = true;
             
             const data = {
                 main_keyword: mainKeyword,
-                title: document.getElementById('title').value.trim(),
+                title: title,
                 secondary_keywords: document.getElementById('secondaryKeywords').value.split(',').map(k => k.trim()).filter(k => k),
-                search_intent: document.getElementById('searchIntent').value,
+                tone: document.getElementById('tone').value,
                 target_country: document.getElementById('targetCountry').value,
                 language: document.getElementById('language').value,
-                tone: document.getElementById('tone').value,
-                content_type: document.getElementById('contentType').value,
-                target_audience: document.getElementById('targetAudience').value,
-                brand_voice: document.getElementById('brandVoice').value,
-                num_competitors: parseInt(document.getElementById('numCompetitors').value),
-                analysis_depth: document.getElementById('analysisDepth').value,
-                subreddits: document.getElementById('subreddits').value.split(',').map(s => s.trim()).filter(s => s),
-                competitor_urls: document.getElementById('competitorUrls').value.split('\n').map(u => u.trim()).filter(u => u),
                 unique_insights: document.getElementById('uniqueInsights').value,
-                brand_mentions: document.getElementById('brandMentions').value,
-                topics_avoid: document.getElementById('topicsAvoid').value,
-                internal_links: document.getElementById('internalLinks').value,
-                word_count_goal: parseInt(document.getElementById('wordCountGoal').value),
-                output_format: document.getElementById('outputFormat').value,
-                include_faqs: document.getElementById('includeFaqs').checked,
-                generate_meta: document.getElementById('generateMeta').checked
+                subreddits: subreddits
             };
             
             try {
-                startProgressUpdates();
+                startProgress();
                 const response = await fetch('/generate-seo-article', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -704,65 +757,87 @@ https://www.moneysupermarket.com"></textarea>
                 document.getElementById('resultTabs').scrollIntoView({ behavior: 'smooth' });
             } catch (error) {
                 console.error('Error:', error);
-                alert('Failed to generate content. Check console for details.');
+                alert('Failed to generate content');
             } finally {
-                stopProgressUpdates();
+                stopProgress();
                 document.getElementById('generateBtn').disabled = false;
                 document.getElementById('progressContainer').classList.remove('active');
             }
         }
         
-        function startProgressUpdates() {
+        function startProgress() {
             progressInterval = setInterval(async () => {
                 try {
-                    const response = await fetch('/progress');
-                    const data = await response.json();
+                    const res = await fetch('/progress');
+                    const data = await res.json();
                     if (data.length > 0) {
                         const latest = data[data.length - 1];
                         updateProgress(latest.percentage, latest.message);
                     }
-                } catch (e) { console.error('Progress error:', e); }
+                } catch (e) { }
             }, 1000);
         }
         
-        function stopProgressUpdates() {
-            if (progressInterval) { clearInterval(progressInterval); }
+        function stopProgress() {
+            if (progressInterval) clearInterval(progressInterval);
             updateProgress(100, 'Complete!');
         }
         
-        function updateProgress(percentage, text) {
-            document.getElementById('progressFill').style.width = percentage + '%';
-            document.getElementById('progressFill').textContent = percentage + '%';
+        function updateProgress(pct, text) {
+            document.getElementById('progressFill').style.width = pct + '%';
+            document.getElementById('progressFill').textContent = pct + '%';
             document.getElementById('progressText').textContent = text;
         }
         
         function displayResults(data) {
-            document.getElementById('articleContent').innerHTML = data.article.content || '<p>No content generated</p>';
-            document.getElementById('wordCount').textContent = data.metrics.word_count || 0;
-            document.getElementById('seoScore').textContent = data.metrics.seo_score || 0;
+            document.getElementById('articleContent').innerHTML = data.article.content;
+            document.getElementById('wordCount').textContent = data.metrics.word_count;
+            document.getElementById('seoScore').textContent = data.metrics.seo_score;
+            document.getElementById('keywordDensity').textContent = data.metrics.keyword_density + '%';
+            document.getElementById('readability').textContent = data.metrics.readability;
             
-            if (data.article_nlp && data.article_nlp.entity_coverage) {
-                document.getElementById('entityCoverage').textContent = data.article_nlp.entity_coverage.grade || 'N/A';
-            }
+            document.getElementById('painPointsList').innerHTML = data.reddit_pain_points.map(p => 
+                `<div class="pain-point">${p.pain || p}</div>`
+            ).join('');
             
-            if (data.article_nlp && data.article_nlp.article_sentiment) {
-                document.getElementById('sentimentLabel').textContent = data.article_nlp.article_sentiment.label.toUpperCase();
-            }
+            document.getElementById('serpResultsList').innerHTML = data.serp_summary.top_results.map(r => 
+                `<div class="pain-point"><strong>${r.title}</strong></div>`
+            ).join('');
             
-            let nlpHtml = '<p style="color:#999">NLP analysis complete</p>';
+            document.getElementById('paaList').innerHTML = data.serp_summary.people_also_ask.map(q => 
+                `<div class="pain-point">${q.question}</div>`
+            ).join('');
+            
+            let nlpHtml = '<p>NLP analysis complete</p>';
             if (data.article_nlp && data.article_nlp.nlp_available) {
-                nlpHtml = `
-                    <h4 style="color:#667eea; margin-bottom:15px;">Article Entities (Top 10):</h4>
-                    <ul style="color:#ccc; line-height:1.8;">${data.article_nlp.article_entities.slice(0,10).map(e => 
-                        `<li><strong>${e.name}</strong> (${e.type}) - Salience: ${e.salience}</li>`
-                    ).join('')}</ul>
-                    ${data.article_nlp.entity_coverage ? `
-                        <h4 style="color:#667eea; margin:25px 0 15px;">Entity Coverage: ${data.article_nlp.entity_coverage.grade} (${data.article_nlp.entity_coverage.coverage_percentage}%)</h4>
-                        <p style="color:#ccc;">Missing entities: ${data.article_nlp.entity_coverage.missing_entities.slice(0,5).join(', ')}</p>
-                    ` : ''}
-                `;
+                nlpHtml = `<h4>Article Entities:</h4><ul>` + 
+                    data.article_nlp.article_entities.slice(0,10).map(e => `<li>${e.name} (${e.type})</li>`).join('') +
+                    `</ul>`;
+                if (data.article_nlp.entity_coverage) {
+                    nlpHtml += `<h4 style="margin-top:20px;">Entity Coverage: ${data.article_nlp.entity_coverage.grade} (${data.article_nlp.entity_coverage.coverage_percentage}%)</h4>`;
+                }
             }
             document.getElementById('nlpResults').innerHTML = nlpHtml;
+            
+            document.getElementById('recommendationsList').innerHTML = data.recommendations.map(r => 
+                `<div class="recommendation">
+                    <div>
+                        <div class="rec-tip">${r.tip}</div>
+                        <span class="rec-category">${r.category}</span>
+                    </div>
+                    <div class="rec-impact">${'<i class="fas fa-star star"></i>'.repeat(r.impact)}</div>
+                </div>`
+            ).join('');
+            
+            document.getElementById('comparisonTable').innerHTML = data.competitor_comparison.features.map(f => 
+                `<tr>
+                    <td style="font-weight:700;">${f.feature}</td>
+                    <td>${f.competitors}</td>
+                    <td class="${f.advantage ? 'advantage' : ''}">${f.you}</td>
+                    <td style="text-align:center; font-size:18px;">${f.advantage ? '✓' : '—'}</td>
+                </tr>`
+            ).join('');
+            document.getElementById('comparisonSummary').textContent = data.competitor_comparison.summary;
         }
     </script>
 </body>
@@ -775,7 +850,7 @@ def index():
 
 @app.route('/generate-seo-article', methods=['POST'])
 def generate_seo_article():
-    """Generate complete SEO article with comprehensive inputs"""
+    """Generate complete SEO article"""
     global progress_updates
     progress_updates = []
     
@@ -786,36 +861,31 @@ def generate_seo_article():
         # Initialize OpenAI
         openai_client = OpenAIClient()
         if not openai_client.available:
-            return jsonify({"error": "OpenAI API not configured. Please set OPENAI_API_KEY environment variable."}), 500
+            return jsonify({"error": "OpenAI API not configured. Set OPENAI_API_KEY in Railway."}), 500
         
         # 1. Reddit Analysis
-        reddit_data = analyze_reddit(
-            params['main_keyword'],
-            params.get('subreddits', ['askreddit'])
-        )
+        reddit_data = analyze_reddit(params['main_keyword'], params.get('subreddits', ['askreddit']))
         
         # 2. SERP Analysis
-        serp_data = analyze_serp(
-            params['main_keyword'],
-            params.get('num_competitors', 5),
-            params.get('competitor_urls')
-        )
+        serp_data = analyze_serp(params['main_keyword'], 5)
         
-        # 3. Competitor NLP
-        competitor_nlp = {}
-        if params.get('analysis_depth') == 'advanced':
-            competitor_nlp = analyze_competitor_nlp(serp_data)
+        # 3. Competitor NLP (if available)
+        competitor_nlp = analyze_competitor_nlp(serp_data)
         
         # 4. Generate Content
         article_data = generate_content(params, reddit_data, serp_data, competitor_nlp, openai_client)
         
-        # 5. Article NLP
-        article_nlp = {}
-        if params.get('analysis_depth') == 'advanced':
-            article_nlp = analyze_article_nlp(article_data['content'], competitor_nlp)
+        # 5. Article NLP (if available)
+        article_nlp = analyze_article_nlp(article_data['content'], competitor_nlp)
         
         # 6. Calculate Metrics
         metrics = calculate_metrics(article_data['content'], params)
+        
+        # 7. Recommendations
+        recommendations = generate_recommendations(metrics, params, article_nlp)
+        
+        # 8. Competitor Comparison
+        competitor_comparison = generate_competitor_comparison(metrics, serp_data, reddit_data, article_nlp)
         
         add_progress("✅ Complete!", 100)
         
@@ -826,12 +896,11 @@ def generate_seo_article():
                 "top_results": serp_data['top_results'],
                 "people_also_ask": serp_data['people_also_ask']
             },
-            "competitor_nlp": competitor_nlp,
-            "article": {
-                "content": article_data['content']
-            },
+            "article": {"content": article_data['content']},
             "metrics": metrics,
-            "article_nlp": article_nlp
+            "article_nlp": article_nlp,
+            "recommendations": recommendations,
+            "competitor_comparison": competitor_comparison
         }
         
         logger.info("✅ Article generated successfully")
