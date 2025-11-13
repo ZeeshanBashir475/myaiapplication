@@ -1,0 +1,483 @@
+"""
+Compelling SEO Strategist Agent
+Advanced content writing agent that creates high-performing SEO articles
+balanced with human connection and emotional resonance.
+"""
+
+import os
+import logging
+from typing import Dict, List, Optional
+import openai
+
+logger = logging.getLogger(__name__)
+
+
+class CompellingSEOStrategist:
+    """
+    Expert SEO and content strategist specialized in writing long-form,
+    high-performing articles that balance SEO optimization with human connection.
+    """
+    
+    def __init__(self, api_key: Optional[str] = None):
+        """Initialize the SEO Strategist with OpenAI client"""
+        self.api_key = api_key or os.getenv('OPENAI_API_KEY') or os.getenv('Open_Api_Key')
+        
+        if not self.api_key:
+            logger.warning("⚠️ No OpenAI API key provided")
+            self.client = None
+            self.available = False
+        else:
+            try:
+                self.client = openai.OpenAI(api_key=self.api_key)
+                # Test the client
+                self.client.models.list()
+                self.available = True
+                logger.info("✅ Compelling SEO Strategist initialized successfully")
+            except Exception as e:
+                logger.error(f"❌ Failed to initialize OpenAI client: {e}")
+                self.client = None
+                self.available = False
+    
+    def analyze_competitor_length(self, serp_data: Dict) -> Dict[str, int]:
+        """
+        Analyze competitor content lengths and determine optimal length.
+        
+        Args:
+            serp_data: SERP analysis data containing top results
+            
+        Returns:
+            Dictionary with length recommendations
+        """
+        top_results = serp_data.get('top_results', [])
+        
+        # Extract snippet lengths as proxy for content depth
+        # In production, you'd fetch full pages, but we'll estimate based on available data
+        snippet_lengths = []
+        for result in top_results[:5]:
+            snippet = result.get('snippet', '')
+            # Rough estimate: full articles are typically 20-30x snippet length
+            estimated_words = len(snippet.split()) * 25
+            snippet_lengths.append(estimated_words)
+        
+        if not snippet_lengths:
+            # Default recommendation
+            return {
+                'min_words': 2000,
+                'target_words': 2400,
+                'max_words': 3000,
+                'strategy': 'standard_depth'
+            }
+        
+        avg_competitor_length = sum(snippet_lengths) / len(snippet_lengths)
+        
+        # Determine strategy based on competitor average
+        if avg_competitor_length < 800:
+            # Competitors are shallow - go deeper
+            return {
+                'min_words': 1000,
+                'target_words': 1200,
+                'max_words': 1500,
+                'strategy': 'depth_advantage',
+                'competitor_avg': int(avg_competitor_length)
+            }
+        elif avg_competitor_length < 1500:
+            # Medium depth - go 30% deeper
+            return {
+                'min_words': 1500,
+                'target_words': 2000,
+                'max_words': 2400,
+                'strategy': 'comprehensive',
+                'competitor_avg': int(avg_competitor_length)
+            }
+        else:
+            # Already deep content - go 10-20% more comprehensive
+            target = int(avg_competitor_length * 1.15)
+            return {
+                'min_words': target - 400,
+                'target_words': target,
+                'max_words': target + 600,
+                'strategy': 'ultra_comprehensive',
+                'competitor_avg': int(avg_competitor_length)
+            }
+    
+    def extract_competitor_topics(self, serp_data: Dict) -> List[str]:
+        """
+        Extract key topics and themes from top-ranking competitors.
+        
+        Args:
+            serp_data: SERP analysis data
+            
+        Returns:
+            List of key topics to cover
+        """
+        topics = []
+        
+        # Extract from titles
+        for result in serp_data.get('top_results', [])[:5]:
+            title = result.get('title', '')
+            # Extract meaningful phrases (simple approach)
+            if title:
+                topics.append(title)
+        
+        # Extract from People Also Ask
+        for paa in serp_data.get('people_also_ask', [])[:5]:
+            question = paa.get('question', '')
+            if question:
+                topics.append(question)
+        
+        # Extract from opportunities
+        topics.extend(serp_data.get('opportunities', [])[:3])
+        
+        return topics[:10]  # Top 10 most important topics
+    
+    def build_strategic_prompt(
+        self,
+        main_keyword: str,
+        secondary_keywords: List[str],
+        tone: str,
+        target_country: str,
+        language: str,
+        serp_data: Dict,
+        reddit_data: Dict,
+        unique_insights: str,
+        title: str = ""
+    ) -> str:
+        """
+        Build a comprehensive, strategic prompt for content generation.
+        
+        Args:
+            main_keyword: Primary keyword to target
+            secondary_keywords: List of secondary keywords
+            tone: Desired tone of voice
+            target_country: Target country/region
+            language: Content language
+            serp_data: SERP analysis data
+            reddit_data: Reddit pain points and discussions
+            unique_insights: User-provided unique insights
+            title: Article title
+            
+        Returns:
+            Strategic prompt for content generation
+        """
+        # Analyze competitor length
+        length_strategy = self.analyze_competitor_length(serp_data)
+        
+        # Extract competitor topics
+        competitor_topics = self.extract_competitor_topics(serp_data)
+        
+        # Format Reddit pain points
+        pain_points = reddit_data.get('pain_points', [])[:8]
+        pain_points_text = '\n'.join([
+            f"- {p.get('pain', p) if isinstance(p, dict) else p} (from r/{p.get('subreddit', 'general') if isinstance(p, dict) else 'general'})"
+            for p in pain_points
+        ])
+        
+        # Format People Also Ask
+        paa_questions = serp_data.get('people_also_ask', [])[:8]
+        paa_text = '\n'.join([
+            f"- {q.get('question', q) if isinstance(q, dict) else q}"
+            for q in paa_questions
+        ])
+        
+        # Format competitor topics
+        topics_text = '\n'.join([f"- {topic}" for topic in competitor_topics])
+        
+        # Format opportunities
+        opportunities = serp_data.get('opportunities', [])[:5]
+        opportunities_text = '\n'.join([f"- {opp}" for opp in opportunities])
+        
+        # Secondary keywords formatted
+        secondary_kw_text = ', '.join(secondary_keywords[:5]) if secondary_keywords else 'Not provided'
+        
+        # Map tone to writing style
+        tone_mapping = {
+            'friendly': 'Friendly & Conversational - Write like you\'re talking to a friend over coffee',
+            'professional': 'Professional & Expert - Authoritative yet accessible, like a trusted consultant',
+            'bold': 'Bold & Persuasive - Confident, direct, and action-oriented',
+            'emotional': 'Emotional & Empathetic - Deeply understanding and emotionally aware'
+        }
+        tone_guidance = tone_mapping.get(tone, tone)
+        
+        prompt = f"""You are "The Compelling SEO Strategist" — an expert SEO and content strategist specialized in writing long-form, high-performing articles that balance SEO optimization with human connection.
+
+## INPUTS PROVIDED:
+
+### Core Keywords:
+- Main Keyword: "{main_keyword}"
+- Secondary Keywords: {secondary_kw_text}
+
+### Article Details:
+- Title: {title or f"Comprehensive Guide to {main_keyword}"}
+- Tone of Voice: {tone_guidance}
+- Target Audience: {target_country}
+- Language: {language}
+
+### SERP Intelligence (Top Competitors Analysis):
+**Competitor Content Strategy:**
+- Average competitor length: {length_strategy.get('competitor_avg', 'N/A')} words
+- Recommended strategy: {length_strategy.get('strategy', 'comprehensive')}
+- Your target length: {length_strategy['min_words']}-{length_strategy['target_words']} words
+
+**Key Topics Covered by Top-Ranking Pages:**
+{topics_text}
+
+### Real Human Pain Points (From Reddit):
+{pain_points_text if pain_points_text else '- General questions about ' + main_keyword}
+
+### People Also Ask (Google):
+{paa_text if paa_text else '- Common questions about ' + main_keyword}
+
+### Content Opportunities (Gaps in Current Top Results):
+{opportunities_text if opportunities_text else '- Provide comprehensive coverage\n- Include practical examples\n- Add visual elements'}
+
+### Unique Insights/Data:
+{unique_insights if unique_insights else 'Use general best practices and up-to-date information'}
+
+---
+
+## YOUR OBJECTIVE:
+
+1. **Analyze & Strategize:**
+   - Review the topics covered by top SERP pages
+   - Identify what makes them rank (comprehensiveness, structure, user value)
+   - Determine content gaps and opportunities to add unique value
+
+2. **Structure for Excellence:**
+   - Create an article that's {length_strategy.get('strategy', 'comprehensive')} — aim for {length_strategy['target_words']} words
+   - This is approximately 10-20% more comprehensive than current top results
+   - Structure with clear H2 and H3 headings for scannability
+
+3. **Lead with Emotion:**
+   - Start with a powerful hook that addresses a real pain point from Reddit
+   - Make readers feel understood before you educate them
+   - Use storytelling elements where appropriate
+
+4. **Integrate All Intelligence:**
+   - Naturally weave in all competitor topics
+   - Address every pain point throughout the article
+   - Answer all "People Also Ask" questions (especially in FAQ section)
+   - Incorporate the unique insights to differentiate from competitors
+
+---
+
+## WRITING GUIDELINES:
+
+### Style & Voice:
+- Write with a **natural, human-like flow** — no robotic or formulaic language
+- Adopt the specified tone: {tone_guidance}
+- Use varied sentence structures and paragraph lengths for rhythm
+- Include transitional phrases for coherence
+
+### Content Structure:
+- **Introduction (8-12% of article):**
+  - Hook with an emotional pain point or compelling scenario
+  - Promise what the reader will learn
+  - Establish credibility briefly
+
+- **Main Body (75-80% of article):**
+  - Use descriptive H2 headings for major sections
+  - Use H3 for subsections
+  - Include examples, analogies, or mini case studies
+  - Use bullet points and numbered lists strategically for readability
+  - Bold key concepts or action items
+  - Address pain points naturally throughout
+
+- **FAQ Section (5-10% of article):**
+  - Answer all "People Also Ask" questions
+  - Use clear Q&A format
+  - Keep answers concise but complete
+
+- **Conclusion (5-8% of article):**
+  - Summarize key takeaways
+  - Include a strong call-to-action
+  - End with encouragement or next steps
+
+### SEO Best Practices:
+- Use main keyword "{main_keyword}" naturally 6-10 times (target 1-2% density)
+- Include secondary keywords contextually throughout
+- Use semantic/LSI keywords naturally (related terms and phrases)
+- Front-load important keywords in H2 headings where natural
+- Write meta-worthy content (quotable stats, clear answers, unique insights)
+
+### Engagement & Value:
+- **Specificity over generality:** Use concrete examples and numbers
+- **Show, don't just tell:** Include scenarios, before/after comparisons
+- **Anticipate objections:** Address common concerns proactively
+- **Add original value:** Don't just rehash what competitors say
+- **Make it actionable:** Include clear steps or frameworks where relevant
+
+---
+
+## CONTENT LENGTH STRATEGY:
+
+Based on competitor analysis:
+- **Minimum:** {length_strategy['min_words']} words (maintain quality threshold)
+- **Target:** {length_strategy['target_words']} words (optimal for outranking)
+- **Maximum:** {length_strategy['max_words']} words (comprehensive without padding)
+
+**Priority:** If the topic is inherently simple, prioritize **clarity and completeness** over hitting the maximum word count. Never pad content with fluff — every paragraph must provide value.
+
+---
+
+## FORMATTING REQUIREMENTS:
+
+Use proper HTML formatting:
+- `<h1>` for the main title ONLY (use the provided title)
+- `<h2>` for major sections
+- `<h3>` for subsections
+- `<p>` for paragraphs (keep paragraphs 2-4 sentences for readability)
+- `<ul>` and `<li>` for unordered lists
+- `<ol>` and `<li>` for ordered/numbered lists
+- `<strong>` for emphasis on key terms
+- `<blockquote>` for important quotes or statistics
+- `<table>` for comparison tables if relevant
+
+Add appropriate spacing between sections for visual clarity.
+
+---
+
+## DELIVERABLE:
+
+Write the complete SEO-optimized article NOW.
+
+**Important:** Return ONLY the final HTML-formatted article. Do not include any meta-commentary, reasoning steps, or explanations about your process. Start directly with the `<h1>` tag.
+
+The article should:
+- Feel expert-written and emotionally aware
+- Be distinctly more valuable than what currently ranks in SERPs
+- Balance SEO optimization with genuine human connection
+- Position the reader for success after reading
+
+BEGIN WRITING:"""
+        
+        return prompt
+    
+    def write_article(
+        self,
+        main_keyword: str,
+        secondary_keywords: List[str],
+        tone: str,
+        target_country: str,
+        language: str,
+        serp_data: Dict,
+        reddit_data: Dict,
+        unique_insights: str = "",
+        title: str = "",
+        max_tokens: int = 4000
+    ) -> Dict[str, any]:
+        """
+        Generate a comprehensive SEO article using the Compelling SEO Strategist approach.
+        
+        Args:
+            main_keyword: Primary keyword
+            secondary_keywords: List of secondary keywords
+            tone: Desired tone of voice
+            target_country: Target country/region
+            language: Content language
+            serp_data: SERP analysis data
+            reddit_data: Reddit pain points
+            unique_insights: User-provided unique insights
+            title: Article title
+            max_tokens: Maximum tokens for generation
+            
+        Returns:
+            Dictionary containing the article and metadata
+        """
+        if not self.available:
+            logger.error("❌ Cannot generate article - OpenAI client not available")
+            return {
+                'content': "<h1>Content Generation Unavailable</h1><p>OpenAI API key not configured. Please check your environment variables.</p>",
+                'word_count': 0,
+                'success': False
+            }
+        
+        try:
+            # Build strategic prompt
+            logger.info(f"🎯 Building strategic prompt for '{main_keyword}'...")
+            prompt = self.build_strategic_prompt(
+                main_keyword=main_keyword,
+                secondary_keywords=secondary_keywords,
+                tone=tone,
+                target_country=target_country,
+                language=language,
+                serp_data=serp_data,
+                reddit_data=reddit_data,
+                unique_insights=unique_insights,
+                title=title
+            )
+            
+            logger.info("🤖 Generating article with Compelling SEO Strategist...")
+            
+            # Generate content using OpenAI
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo-16k",  # Use 16k for longer content
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert SEO content strategist who writes compelling, human-centric articles that rank highly in search engines while deeply connecting with readers."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                max_tokens=max_tokens,
+                temperature=0.7,
+                presence_penalty=0.1,  # Encourage diverse vocabulary
+                frequency_penalty=0.1   # Reduce repetition
+            )
+            
+            article_content = response.choices[0].message.content.strip()
+            word_count = len(article_content.split())
+            
+            logger.info(f"✅ Article generated successfully ({word_count} words)")
+            
+            return {
+                'content': article_content,
+                'word_count': word_count,
+                'success': True,
+                'model_used': 'gpt-3.5-turbo-16k',
+                'length_strategy': self.analyze_competitor_length(serp_data)
+            }
+            
+        except openai.APIError as e:
+            logger.error(f"❌ OpenAI API error: {e}")
+            return {
+                'content': f"<h1>API Error</h1><p>OpenAI API Error: {str(e)}</p>",
+                'word_count': 0,
+                'success': False,
+                'error': str(e)
+            }
+        except Exception as e:
+            logger.error(f"❌ Article generation error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {
+                'content': f"<h1>Generation Error</h1><p>Error: {str(e)}</p>",
+                'word_count': 0,
+                'success': False,
+                'error': str(e)
+            }
+
+
+# Standalone test function
+if __name__ == "__main__":
+    # Test the agent
+    logging.basicConfig(level=logging.INFO)
+    
+    strategist = CompellingSEOStrategist()
+    
+    if strategist.available:
+        print("✅ Compelling SEO Strategist is ready!")
+        
+        # Test competitor length analysis
+        test_serp = {
+            'top_results': [
+                {'title': 'Test Article', 'snippet': 'This is a test snippet with some words ' * 10}
+            ] * 5
+        }
+        
+        length_rec = strategist.analyze_competitor_length(test_serp)
+        print(f"Length recommendation: {length_rec}")
+    else:
+        print("❌ Agent not available - check API key")
