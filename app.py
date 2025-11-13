@@ -530,10 +530,10 @@ HTML_TEMPLATE = """
     <div class="container">
         <div class="input-section">
             <h2 class="section-title">CompellSEO</h2>
-            <p>CompellSEO is an AI-powered content optimiSation tool that helps you create SEO-ready articles backed by real-time data. <BR>
-It analySes top-ranking competitors, Reddit discussions, and Google NLP insights to show exactly what makes great content perform, then helps you write something better. <BR>
+            <p>CompellSEO is an AI-powered content optimiSation tool that helps you create SEO-ready articles backed by real-time data. </p>
+<p> It analySes top-ranking competitors, Reddit discussions, and Google NLP insights to show exactly what makes great content perform, then helps you write something better. </p>
 
-<BR> Get real-time SEO scores, entity coverage, and keyword optimization feedback as you write — just like SurferSEO, but smarter, faster, and uniquely tailored to your niche. <BR> </p>
+<p> Get real-time SEO scores, entity coverage, and keyword optimization feedback as you write — just like SurferSEO, but smarter, faster, and uniquely tailored to your niche.  </p>
             <br><br>
             
             <div class="input-grid">
