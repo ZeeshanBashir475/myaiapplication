@@ -50,7 +50,7 @@ except Exception as e:
     logger.error(f"❌ Failed to import PainPointExtractor: {e}")
 
 try:
-    from serp_agent import SerpAgent
+    from Serp_agent import SerpAgent
     logger.info("✅ SerpAgent imported")
 except Exception as e:
     logger.error(f"❌ Failed to import SerpAgent: {e}")
@@ -92,11 +92,21 @@ class OpenAIClient:
             return
         
         try:
-            self.client = openai.OpenAI(api_key=self.api_key, timeout=60.0)
+            # Initialize OpenAI client with only supported parameters
+            # NOTE: 'proxies' parameter is NOT supported in current OpenAI library
+            self.client = openai.OpenAI(
+                api_key=self.api_key,
+                timeout=60.0
+                # DO NOT add 'proxies' parameter - it's not supported!
+            )
             self.available = True
             logger.info("✅ OpenAI client initialized successfully")
+        except TypeError as e:
+            logger.error(f"❌ OpenAI initialization failed - parameter error: {e}")
+            logger.error("This usually means an unsupported parameter was passed")
         except Exception as e:
             logger.error(f"❌ OpenAI initialization failed: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
     
     def generate_seo_article(self, prompt: str, max_tokens: int = 4000) -> str:
         """Generate SEO-optimized article (synchronous)"""
@@ -1388,12 +1398,17 @@ def generate_seo_article():
         data = request.get_json()
         logger.info(f"📥 Received request for keyword: {data.get('main_keyword')}")
         
-        # Initialize OpenAI
+        # Initialize OpenAI with detailed logging
+        logger.info("🔧 Initializing OpenAI client...")
         openai_client = OpenAIClient()
+        logger.info(f"🔧 OpenAI client available: {openai_client.available}")
+        
         if not openai_client.available:
-            return jsonify({
-                "error": "OpenAI API not configured. Please set the OPENAI_API_KEY or Open_Api_Key environment variable in Railway."
-            }), 500
+            error_msg = "OpenAI API not configured. Please set the OPENAI_API_KEY or Open_Api_Key environment variable in Railway."
+            logger.error(f"❌ {error_msg}")
+            return jsonify({"error": error_msg}), 500
+        
+        logger.info("✅ OpenAI client initialized successfully")
         
         # 1. Reddit Analysis
         add_progress("Starting Reddit analysis...", 5)
