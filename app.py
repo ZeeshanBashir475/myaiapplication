@@ -64,7 +64,7 @@ except Exception as e:
     logger.error(f"❌ Failed to import CompellingSEOStrategist: {e}")
 
 try:
-    from nlp_agent import NLPAgent
+    from Nlp_agent import NLPAgent
     logger.info("✅ NLPAgent imported")
 except Exception as e:
     logger.error(f"❌ Failed to import NLPAgent: {e}")
