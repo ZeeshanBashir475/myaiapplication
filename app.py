@@ -4,14 +4,10 @@ import os
 import sys
 import logging
 import traceback
-import asyncio
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional
 from datetime import datetime
-from flask import Flask, request, jsonify, render_template_string, Response
+from flask import Flask, request, jsonify, render_template_string
 from flask_cors import CORS
-import requests
-import time
-from concurrent.futures import ThreadPoolExecutor
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -23,18 +19,17 @@ if os.path.exists(agents_path):
     if agents_path not in sys.path:
         sys.path.insert(0, agents_path)
 
-# Import OpenAI
+# Import OpenAI with latest version support
 try:
-    import openai
+    from openai import OpenAI
     OPENAI_AVAILABLE = True
-    logger.info("✅ OpenAI imported successfully")
+    logger.info("✅ OpenAI (latest version) imported successfully")
 except ImportError:
     OPENAI_AVAILABLE = False
     logger.warning("❌ OpenAI not available")
 
 # Import agents
 RedditScraper = None
-PainPointExtractor = None
 SerpAgent = None
 CompellingSEOStrategist = None
 NLPAgent = None
@@ -44,12 +39,6 @@ try:
     logger.info("✅ RedditScraper imported")
 except Exception as e:
     logger.error(f"❌ Failed to import RedditScraper: {e}")
-
-try:
-    from Pain_point_extractor import PainPointExtractor
-    logger.info("✅ PainPointExtractor imported")
-except Exception as e:
-    logger.error(f"❌ Failed to import PainPointExtractor: {e}")
 
 try:
     from Serp_agent import SerpAgent
@@ -64,16 +53,13 @@ except Exception as e:
     logger.error(f"❌ Failed to import CompellingSEOStrategist: {e}")
 
 try:
-    from Nlp_agent import NLPAgent
+    from nlp_agent import NLPAgent
     logger.info("✅ NLPAgent imported")
 except Exception as e:
     logger.error(f"❌ Failed to import NLPAgent: {e}")
 
 app = Flask(__name__)
 CORS(app)
-
-# Thread pool for async operations
-executor = ThreadPoolExecutor(max_workers=3)
 
 # Global progress tracking
 progress_updates = []
@@ -82,12 +68,10 @@ progress_updates = []
 nlp_agent = None
 try:
     nlp_agent = NLPAgent()
-    if nlp_agent.available:
+    if nlp_agent and nlp_agent.available:
         logger.info("✅ Global NLP Agent initialized and ready")
-    else:
-        logger.warning("⚠️ NLP Agent initialized but not available (check credentials)")
 except Exception as e:
-    logger.error(f"❌ Failed to initialize global NLP Agent: {e}")
+    logger.error(f"❌ Failed to initialize NLP Agent: {e}")
 
 def add_progress(message: str, percentage: int):
     """Add progress update"""
@@ -100,10 +84,9 @@ def add_progress(message: str, percentage: int):
     logger.info(f"Progress: {percentage}% - {message}")
 
 class OpenAIClient:
-    """Enhanced OpenAI client"""
+    """Latest OpenAI client (v1.54+)"""
     
     def __init__(self):
-        # Check both possible env variable names
         self.api_key = os.getenv('OPENAI_API_KEY') or os.getenv('Open_Api_Key')
         self.available = False
         
@@ -112,45 +95,30 @@ class OpenAIClient:
             return
             
         if not self.api_key:
-            logger.warning("⚠️ No OpenAI API key found in environment variables")
-            logger.info("Checked: OPENAI_API_KEY and Open_Api_Key")
+            logger.warning("⚠️ No OpenAI API key found")
             return
         
         try:
-            logger.info(f"Creating OpenAI client...")
-            logger.info(f"API Key found: {self.api_key[:15]}...")
-            
-            self.client = openai.OpenAI(api_key=self.api_key)
+            logger.info("Creating OpenAI client (latest version)...")
+            self.client = OpenAI(api_key=self.api_key)
             
             # Test the client
             logger.info("Testing OpenAI client...")
-            test_response = self.client.models.list()
-            logger.info(f"✅ OpenAI client test successful - found {len(test_response.data)} models")
+            models = self.client.models.list()
+            logger.info(f"✅ OpenAI client working - {len(models.data)} models available")
             
             self.available = True
-            logger.info("✅ OpenAI client initialized and tested successfully")
+            logger.info("✅ OpenAI client initialized successfully")
             
         except Exception as e:
             logger.error(f"❌ OpenAI initialization failed: {e}")
-            logger.error(f"Error type: {type(e).__name__}")
-            import traceback
-            logger.error(f"Full traceback:\n{traceback.format_exc()}")
-
-def run_async(coro):
-    """Helper to run async functions synchronously"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
+            logger.error(traceback.format_exc())
 
 def analyze_reddit(topic: str, subreddits: List[str]) -> Dict:
-    """Analyze Reddit discussions (synchronous wrapper)"""
+    """Analyze Reddit discussions"""
     add_progress("🔍 Searching Reddit discussions...", 10)
     
     pain_points = []
-    discussions = []
     
     if not RedditScraper:
         logger.warning("Reddit scraper not available - using fallback")
@@ -162,7 +130,7 @@ def analyze_reddit(topic: str, subreddits: List[str]) -> Dict:
     else:
         try:
             scraper = RedditScraper()
-            for subreddit in subreddits[:3]:
+            for subreddit in subreddits[:5]:
                 try:
                     logger.info(f"Scraping r/{subreddit}...")
                     data = scraper.scrape_for_pain_points(subreddit, topic, 10)
@@ -178,300 +146,174 @@ def analyze_reddit(topic: str, subreddits: List[str]) -> Dict:
                                 'subreddit': f"r/{subreddit}",
                                 'score': post.get('score', 0)
                             })
-                        
-                        discussions.append({
-                            'title': title,
-                            'subreddit': f"r/{subreddit}",
-                            'url': post.get('permalink', ''),
-                            'score': post.get('score', 0)
-                        })
                 except Exception as e:
                     logger.error(f"Error scraping r/{subreddit}: {e}")
                     continue
             
-            add_progress(f"✓ Found {len(pain_points)} pain points from Reddit", 20)
+            add_progress(f"✓ Found {len(pain_points)} pain points", 20)
         except Exception as e:
             logger.error(f"Reddit analysis error: {e}")
-            logger.error(traceback.format_exc())
     
     if not pain_points:
         pain_points = [
             {'pain': f"Finding reliable information about {topic}", 'subreddit': "general", 'score': 100},
-            {'pain': f"Understanding best practices for {topic}", 'subreddit': "general", 'score': 85},
-            {'pain': f"Getting started with {topic}", 'subreddit': "general", 'score': 75}
+            {'pain': f"Understanding best practices for {topic}", 'subreddit': "general", 'score': 85}
         ]
     
-    return {
-        'pain_points': pain_points[:10],
-        'discussions': discussions[:5],
-        'summary': f"Analyzed {len(subreddits)} subreddits, found {len(pain_points)} pain points"
-    }
+    return {'pain_points': pain_points[:10]}
 
-def analyze_serp(keyword: str) -> Dict:
-    """Analyze SERP results (synchronous)"""
+def analyze_serp(keyword: str, num_competitors: int = 5, custom_urls: List[str] = None) -> Dict:
+    """Analyze SERP results"""
     add_progress("🌐 Analyzing Google search results...", 30)
     
     if not SerpAgent:
         logger.warning("SERP agent not available - using fallback")
-        return get_fallback_serp_data(keyword)
+        return {
+            'top_results': [
+                {'title': f"Guide to {keyword}", 'link': '#', 'snippet': 'Comprehensive guide...', 'position': i+1}
+                for i in range(num_competitors)
+            ],
+            'people_also_ask': [
+                {'question': f"What is {keyword}?", 'snippet': 'Definition...'},
+                {'question': f"How does {keyword} work?", 'snippet': 'Explanation...'}
+            ],
+            'opportunities': ['Add FAQ section', 'Include examples', 'Add statistics']
+        }
     
     try:
         agent = SerpAgent()
         analysis = agent.analyze_keyword(keyword, location="United Kingdom")
         
-        add_progress(f"✓ Analyzed top {len(analysis['organic_results'])} search results", 40)
+        # If custom URLs provided, prioritize them
+        if custom_urls:
+            for i, url in enumerate(custom_urls[:num_competitors]):
+                analysis['organic_results'].insert(i, {
+                    'title': f"Custom Competitor {i+1}",
+                    'link': url,
+                    'snippet': 'Custom competitor URL',
+                    'position': i+1
+                })
+        
+        add_progress(f"✓ Analyzed {num_competitors} competitors", 40)
         
         return {
-            'top_results': analysis['organic_results'][:5],
-            'people_also_ask': analysis['people_also_ask'][:5],
-            'related_keywords': analysis['related_searches'][:5],
-            'opportunities': analysis['content_opportunities'][:5]
+            'top_results': analysis['organic_results'][:num_competitors],
+            'people_also_ask': analysis.get('people_also_ask', [])[:8],
+            'opportunities': analysis.get('content_opportunities', [])[:5]
         }
     except Exception as e:
         logger.error(f"SERP analysis error: {e}")
-        logger.error(traceback.format_exc())
-        return get_fallback_serp_data(keyword)
-
-def get_fallback_serp_data(keyword: str) -> Dict:
-    """Fallback SERP data"""
-    return {
-        'top_results': [
-            {'title': f"Complete Guide to {keyword}", 'link': '#', 'snippet': 'Comprehensive guide covering all aspects...', 'position': 1},
-            {'title': f"Best {keyword} in 2024", 'link': '#', 'snippet': 'Top recommendations and reviews...', 'position': 2},
-            {'title': f"How to Use {keyword}", 'link': '#', 'snippet': 'Step-by-step tutorial...', 'position': 3}
-        ],
-        'people_also_ask': [
-            {'question': f"What is {keyword}?", 'snippet': 'Definition and overview...'},
-            {'question': f"How does {keyword} work?", 'snippet': 'Explanation of functionality...'},
-            {'question': f"Is {keyword} worth it?", 'snippet': 'Value analysis...'}
-        ],
-        'related_keywords': [f"{keyword} guide", f"best {keyword}", f"{keyword} tips"],
-        'opportunities': [
-            'Add detailed comparison tables',
-            'Include FAQ section',
-            'Add visual guides and infographics',
-            'Include real user testimonials',
-            'Add 2024 updates and trends'
-        ]
-    }
-
-def analyze_competitor_content_nlp(serp_data: Dict) -> Dict:
-    """
-    Use NLP Agent to analyze competitor content and extract insights.
-    
-    Args:
-        serp_data: SERP analysis results
-        
-    Returns:
-        Dictionary with NLP analysis of competitors
-    """
-    if not nlp_agent or not nlp_agent.available:
-        logger.warning("NLP Agent not available - skipping competitor NLP analysis")
         return {
-            'competitor_entities': [],
-            'competitor_categories': [],
-            'competitor_sentiment': {'score': 0, 'magnitude': 0, 'label': 'neutral'},
-            'nlp_available': False
+            'top_results': [],
+            'people_also_ask': [],
+            'opportunities': []
         }
+
+def analyze_competitor_nlp(serp_data: Dict) -> Dict:
+    """NLP analysis of competitors"""
+    if not nlp_agent or not nlp_agent.available:
+        return {'competitor_entities': [], 'nlp_available': False}
     
     add_progress("🧠 Analyzing competitor content with NLP...", 35)
     
     try:
-        # Combine top competitor snippets for analysis
-        competitor_text = " ".join([
-            result.get('snippet', '') 
-            for result in serp_data.get('top_results', [])[:3]
-        ])
+        competitor_text = " ".join([r.get('snippet', '') for r in serp_data.get('top_results', [])[:3]])
         
         if not competitor_text.strip():
-            logger.warning("No competitor text available for NLP analysis")
-            return {
-                'competitor_entities': [],
-                'competitor_categories': [],
-                'competitor_sentiment': {'score': 0, 'magnitude': 0, 'label': 'neutral'},
-                'nlp_available': True
-            }
+            return {'competitor_entities': [], 'nlp_available': False}
         
-        # Analyze competitor content
         entities = nlp_agent.extract_entities(competitor_text)
         categories = nlp_agent.get_category(competitor_text)
         sentiment = nlp_agent.get_sentiment(competitor_text)
         
-        logger.info(f"✅ NLP analysis found {len(entities)} entities, {len(categories)} categories")
+        logger.info(f"✅ Found {len(entities)} competitor entities")
         
         return {
-            'competitor_entities': entities[:15],  # Top 15 entities
+            'competitor_entities': entities[:15],
             'competitor_categories': categories,
             'competitor_sentiment': sentiment,
-            'nlp_available': True,
-            'entity_summary': {
-                'total_entities': len(entities),
-                'top_entities': [e['name'] for e in entities[:5]],
-                'entity_types': list(set([e['type'] for e in entities]))
-            }
+            'nlp_available': True
         }
-        
     except Exception as e:
-        logger.error(f"❌ Competitor NLP analysis error: {e}")
-        return {
-            'competitor_entities': [],
-            'competitor_categories': [],
-            'competitor_sentiment': {'score': 0, 'magnitude': 0, 'label': 'neutral'},
-            'nlp_available': False,
-            'error': str(e)
-        }
+        logger.error(f"Competitor NLP error: {e}")
+        return {'competitor_entities': [], 'nlp_available': False}
 
-def generate_seo_content(inputs: Dict, reddit_data: Dict, serp_data: Dict, competitor_nlp: Dict, openai_client: OpenAIClient) -> Dict:
-    """Generate SEO content using the Compelling SEO Strategist agent"""
-    add_progress("✍️ Generating SEO-optimized article with Compelling SEO Strategist...", 50)
+def generate_content(params: Dict, reddit_data: Dict, serp_data: Dict, competitor_nlp: Dict, openai_client: OpenAIClient) -> Dict:
+    """Generate SEO content with Writer Agent"""
+    add_progress("✍️ Generating article with AI Writer Agent...", 50)
     
     try:
-        # Initialize the Compelling SEO Strategist
-        if CompellingSEOStrategist:
+        if CompellingSEOStrategist and openai_client.available:
             strategist = CompellingSEOStrategist(api_key=openai_client.api_key)
             
             if strategist.available:
-                logger.info("📝 Using Compelling SEO Strategist for content generation")
+                logger.info("📝 Using Compelling SEO Strategist")
                 
-                # Enhance unique insights with competitor entity data
-                enhanced_insights = inputs.get('unique_insights', '')
-                if competitor_nlp.get('nlp_available') and competitor_nlp.get('entity_summary'):
-                    entity_note = f"\n\nNote: Top competitors are covering these key entities: {', '.join(competitor_nlp['entity_summary']['top_entities'][:5])}. Consider including these where relevant."
-                    enhanced_insights += entity_note
+                # Enhance unique insights with NLP data
+                unique_insights = params.get('unique_insights', '')
+                if competitor_nlp.get('competitor_entities'):
+                    top_entities = [e['name'] for e in competitor_nlp['competitor_entities'][:5]]
+                    unique_insights += f"\n\nKey entities to cover: {', '.join(top_entities)}"
                 
-                # Use the new agent to write the article
+                # Add brand mentions
+                if params.get('brand_mentions'):
+                    unique_insights += f"\n\nMention these brands: {params['brand_mentions']}"
+                
                 result = strategist.write_article(
-                    main_keyword=inputs['main_keyword'],
-                    secondary_keywords=inputs.get('secondary_keywords', []),
-                    tone=inputs.get('tone', 'friendly'),
-                    target_country=inputs.get('target_country', 'United Kingdom'),
-                    language=inputs.get('language', 'en'),
+                    main_keyword=params['main_keyword'],
+                    secondary_keywords=params.get('secondary_keywords', []),
+                    tone=params.get('tone', 'friendly'),
+                    target_country=params.get('target_country', 'United Kingdom'),
+                    language=params.get('language', 'English'),
                     serp_data=serp_data,
                     reddit_data=reddit_data,
-                    unique_insights=enhanced_insights,
-                    title=inputs.get('title', inputs['main_keyword']),
-                    max_tokens=4000
+                    unique_insights=unique_insights,
+                    title=params.get('title', params['main_keyword']),
+                    max_tokens=int(params.get('word_count_goal', 2500) * 1.5)
                 )
                 
                 if result['success']:
-                    article_content = result['content']
-                    word_count = result['word_count']
-                    
-                    # Calculate metrics
-                    keyword_density = (article_content.lower().count(inputs['main_keyword'].lower()) / word_count) * 100 if word_count > 0 else 0
-                    
-                    add_progress("✓ Article generated successfully with enhanced quality", 70)
-                    
+                    add_progress("✓ Article generated", 70)
                     return {
-                        'content': article_content,
-                        'word_count': word_count,
-                        'keyword_density': round(keyword_density, 2),
-                        'readability_score': calculate_readability(article_content),
-                        'seo_score': calculate_seo_score(article_content, inputs, serp_data),
-                        'length_strategy': result.get('length_strategy', {})
+                        'content': result['content'],
+                        'word_count': result['word_count'],
+                        'success': True
                     }
-                else:
-                    logger.warning("⚠️ Compelling SEO Strategist failed, falling back to basic generation")
-            else:
-                logger.warning("⚠️ Compelling SEO Strategist not available, using fallback")
-        else:
-            logger.warning("⚠️ CompellingSEOStrategist not imported, using fallback")
         
-        # Fallback to basic generation
-        pain_points_text = '\n'.join([f"- {p.get('pain', '')}" for p in reddit_data['pain_points'][:5]])
-        paa_text = '\n'.join([f"- {q['question']}" for q in serp_data['people_also_ask'][:5]])
-        opportunities_text = '\n'.join([f"- {o}" for o in serp_data['opportunities'][:3]])
-        
-        prompt = f"""
-Create a comprehensive, SEO-optimized article about "{inputs['main_keyword']}"
-
-Title: {inputs.get('title', inputs['main_keyword'])}
-Tone: {inputs.get('tone', 'Professional yet friendly')}
-Target Audience: {inputs.get('target_country', 'United Kingdom')}
-
-REDDIT PAIN POINTS TO ADDRESS:
-{pain_points_text}
-
-PEOPLE ALSO ASK (Include in FAQ):
-{paa_text}
-
-CONTENT OPPORTUNITIES:
-{opportunities_text}
-
-USER'S UNIQUE INSIGHTS:
-{inputs.get('unique_insights', 'No additional insights provided')}
-
-Write a complete 2,400-3,600 word article using proper HTML formatting.
-"""
-        
-        article = openai_client.generate_seo_article(prompt) if hasattr(openai_client, 'generate_seo_article') else "<h1>Error</h1><p>Content generation unavailable</p>"
-        
-        word_count = len(article.split())
-        keyword_density = (article.lower().count(inputs['main_keyword'].lower()) / word_count) * 100 if word_count > 0 else 0
-        
-        add_progress("✓ Article generated successfully", 70)
-        
+        # Fallback
+        logger.warning("Using fallback content generation")
         return {
-            'content': article,
-            'word_count': word_count,
-            'keyword_density': round(keyword_density, 2),
-            'readability_score': calculate_readability(article),
-            'seo_score': calculate_seo_score(article, inputs, serp_data)
+            'content': f"<h1>{params.get('title', params['main_keyword'])}</h1><p>Content generation in progress...</p>",
+            'word_count': 0,
+            'success': False
         }
         
     except Exception as e:
         logger.error(f"Content generation error: {e}")
-        logger.error(traceback.format_exc())
-        return {
-            'content': f"<h1>Error Generating Content</h1><p>Failed to generate article: {str(e)}</p>",
-            'word_count': 0,
-            'keyword_density': 0,
-            'readability_score': 'N/A',
-            'seo_score': 0
-        }
+        return {'content': f"<h1>Error</h1><p>{str(e)}</p>", 'word_count': 0, 'success': False}
 
-def analyze_generated_content_nlp(article_content: str, competitor_nlp: Dict) -> Dict:
-    """
-    Use NLP Agent to analyze the generated article and compare with competitors.
-    
-    Args:
-        article_content: Generated article HTML
-        competitor_nlp: Competitor NLP analysis results
-        
-    Returns:
-        Dictionary with NLP analysis and comparison
-    """
+def analyze_article_nlp(content: str, competitor_nlp: Dict) -> Dict:
+    """NLP analysis of generated article"""
     if not nlp_agent or not nlp_agent.available:
-        logger.warning("NLP Agent not available - skipping article NLP analysis")
-        return {
-            'article_entities': [],
-            'article_categories': [],
-            'article_sentiment': {'score': 0, 'magnitude': 0, 'label': 'neutral'},
-            'entity_coverage': {},
-            'nlp_available': False
-        }
+        return {'nlp_available': False}
     
-    add_progress("🧠 Analyzing generated article with NLP...", 75)
+    add_progress("🧠 Analyzing generated article...", 75)
     
     try:
-        # Strip HTML tags for cleaner analysis
-        import re
-        clean_text = re.sub(r'<[^>]+>', ' ', article_content)
+        clean_text = re.sub(r'<[^>]+>', ' ', content)
         clean_text = re.sub(r'\s+', ' ', clean_text).strip()
         
-        # Analyze the article
-        article_analysis = nlp_agent.analyze_full(clean_text, doc_type="PLAIN_TEXT")
+        analysis = nlp_agent.analyze_full(clean_text)
         
-        # Compare with competitor entities if available
         entity_coverage = {}
         if competitor_nlp.get('competitor_entities'):
-            competitor_entity_names = set([e['name'].lower() for e in competitor_nlp['competitor_entities']])
-            article_entity_names = set([e['name'].lower() for e in article_analysis['entities']])
+            comp_names = set([e['name'].lower() for e in competitor_nlp['competitor_entities']])
+            article_names = set([e['name'].lower() for e in analysis['entities']])
             
-            covered = competitor_entity_names & article_entity_names
-            missing = competitor_entity_names - article_entity_names
+            covered = comp_names & article_names
+            missing = comp_names - article_names
             
-            coverage_score = len(covered) / len(competitor_entity_names) if competitor_entity_names else 1.0
+            coverage_score = len(covered) / len(comp_names) if comp_names else 1.0
             
             entity_coverage = {
                 'coverage_score': round(coverage_score, 4),
@@ -479,299 +321,305 @@ def analyze_generated_content_nlp(article_content: str, competitor_nlp: Dict) ->
                 'covered_count': len(covered),
                 'missing_count': len(missing),
                 'missing_entities': list(missing)[:10],
-                'grade': _get_coverage_grade(coverage_score)
+                'grade': get_grade(coverage_score)
             }
         
-        logger.info(f"✅ Article NLP analysis complete - {len(article_analysis['entities'])} entities found")
-        
         return {
-            'article_entities': article_analysis['entities'][:15],
-            'article_categories': article_analysis['categories'],
-            'article_sentiment': article_analysis['sentiment'],
+            'article_entities': analysis['entities'][:15],
+            'article_sentiment': analysis['sentiment'],
             'entity_coverage': entity_coverage,
             'nlp_available': True,
-            'stats': article_analysis['stats']
+            'stats': analysis['stats']
         }
-        
     except Exception as e:
-        logger.error(f"❌ Article NLP analysis error: {e}")
-        return {
-            'article_entities': [],
-            'article_categories': [],
-            'article_sentiment': {'score': 0, 'magnitude': 0, 'label': 'neutral'},
-            'entity_coverage': {},
-            'nlp_available': False,
-            'error': str(e)
-        }
+        logger.error(f"Article NLP error: {e}")
+        return {'nlp_available': False}
 
-def _get_coverage_grade(score: float) -> str:
-    """Get letter grade for coverage score"""
-    if score >= 0.9:
-        return "A+"
-    elif score >= 0.8:
-        return "A"
-    elif score >= 0.7:
-        return "B"
-    elif score >= 0.6:
-        return "C"
-    else:
-        return "D"
+def get_grade(score: float) -> str:
+    if score >= 0.9: return "A+"
+    elif score >= 0.8: return "A"
+    elif score >= 0.7: return "B"
+    elif score >= 0.6: return "C"
+    else: return "D"
 
-def calculate_readability(text: str) -> str:
-    """Calculate readability score"""
-    sentences = len(re.split(r'[.!?]+', text))
-    words = len(text.split())
-    if sentences == 0:
-        return "N/A"
-    avg_words_per_sentence = words / sentences
+def calculate_metrics(content: str, params: Dict) -> Dict:
+    """Calculate SEO metrics"""
+    words = len(content.split())
+    kw = params['main_keyword'].lower()
+    kw_count = content.lower().count(kw)
+    kw_density = (kw_count / words * 100) if words > 0 else 0
     
-    if avg_words_per_sentence < 15:
-        return "Easy"
-    elif avg_words_per_sentence < 20:
-        return "Medium"
-    else:
-        return "Advanced"
-
-def calculate_seo_score(content: str, inputs: Dict, serp_data: Dict) -> int:
-    """Calculate SEO score (0-100)"""
-    score = 50  # Base score
+    seo_score = 50
+    if '<h1>' in content: seo_score += 10
+    if '<h2>' in content: seo_score += 10
+    if kw_count > 0: seo_score += 10
+    if words > 2000: seo_score += 20
     
-    if '<h1>' in content: score += 10
-    if '<h2>' in content: score += 10
-    if inputs['main_keyword'].lower() in content.lower(): score += 10
-    if any(kw.lower() in content.lower() for kw in inputs.get('secondary_keywords', [])): score += 10
-    if len(content.split()) > 2000: score += 10
-    
-    return min(100, score)
-
-def generate_recommendations(article_data: Dict, inputs: Dict, serp_data: Dict, article_nlp: Dict) -> List[Dict]:
-    """Generate SEO recommendations including NLP insights"""
-    add_progress("📊 Generating SEO recommendations...", 80)
-    
-    recommendations = []
-    
-    # Keyword recommendations
-    if article_data['keyword_density'] < 1:
-        recommendations.append({
-            'tip': f"Increase '{inputs['main_keyword']}' usage to 1-2% density",
-            'impact': 5,
-            'category': 'SEO'
-        })
-    elif article_data['keyword_density'] > 3:
-        recommendations.append({
-            'tip': f"Reduce keyword density from {article_data['keyword_density']}%",
-            'impact': 4,
-            'category': 'SEO'
-        })
-    
-    if article_data['word_count'] < 2400:
-        recommendations.append({
-            'tip': f"Expand to 2,400+ words (current: {article_data['word_count']})",
-            'impact': 5,
-            'category': 'Content'
-        })
-    
-    # NLP-based recommendations
-    if article_nlp.get('nlp_available') and article_nlp.get('entity_coverage'):
-        coverage = article_nlp['entity_coverage']
-        if coverage['coverage_percentage'] < 70:
-            recommendations.append({
-                'tip': f"Entity coverage is {coverage['coverage_percentage']:.0f}% - add mentions of: {', '.join(coverage['missing_entities'][:3])}",
-                'impact': 5,
-                'category': 'Entity SEO'
-            })
-    
-    if article_nlp.get('article_sentiment', {}).get('label') == 'negative':
-        recommendations.append({
-            'tip': "Article has negative tone - consider rewriting for more positive/neutral sentiment",
-            'impact': 4,
-            'category': 'Tone'
-        })
-    
-    recommendations.extend([
-        {'tip': "Add personal story in intro for emotional connection", 'impact': 4, 'category': 'Engagement'},
-        {'tip': "Include schema markup for FAQ section", 'impact': 3, 'category': 'Technical SEO'},
-        {'tip': "Add 3-5 optimized images with alt text", 'impact': 3, 'category': 'UX'},
-        {'tip': "Add 2-3 internal links to related content", 'impact': 3, 'category': 'SEO'}
-    ])
-    
-    return recommendations[:8]
-
-def generate_competitor_comparison(article_data: Dict, serp_data: Dict, reddit_data: Dict, article_nlp: Dict) -> Dict:
-    """Generate competitor comparison including NLP insights"""
-    add_progress("🏆 Analyzing competitor comparison...", 90)
-    
-    features = [
-        {
-            'feature': 'Word Count',
-            'competitors': '1,500-2,000 avg',
-            'you': f"{article_data['word_count']} words",
-            'advantage': article_data['word_count'] > 2000
-        },
-        {
-            'feature': 'Emotional Engagement',
-            'competitors': 'Generic content',
-            'you': f"Uses {len(reddit_data['pain_points'])} real pain points",
-            'advantage': True
-        },
-        {
-            'feature': 'Keyword Optimization',
-            'competitors': 'Basic optimization',
-            'you': f"{article_data['keyword_density']}% density + LSI keywords",
-            'advantage': True
-        }
-    ]
-    
-    # Add NLP comparison if available
-    if article_nlp.get('nlp_available') and article_nlp.get('entity_coverage'):
-        coverage = article_nlp['entity_coverage']
-        features.append({
-            'feature': 'Entity Coverage',
-            'competitors': '100% (baseline)',
-            'you': f"{coverage['coverage_percentage']:.0f}% coverage (Grade: {coverage['grade']})",
-            'advantage': coverage['coverage_percentage'] >= 80
-        })
-    
-    features.extend([
-        {
-            'feature': 'Unique Insights',
-            'competitors': 'Rehashed info',
-            'you': 'Reddit insights + NLP analysis',
-            'advantage': True
-        },
-        {
-            'feature': 'Content Structure',
-            'competitors': 'Standard blog',
-            'you': 'FAQ + Tables + Examples',
-            'advantage': True
-        }
-    ])
-    
-    summary_parts = [
-        f"• Integrating {len(reddit_data['pain_points'])} real user pain points from Reddit",
-        f"• Providing {article_data['word_count']} words of comprehensive coverage",
-        f"• Achieving {article_data.get('seo_score', 80)}% SEO optimisation score"
-    ]
-    
-    if article_nlp.get('entity_coverage'):
-        summary_parts.append(f"• Entity coverage: {article_nlp['entity_coverage']['coverage_percentage']:.0f}% (Grade: {article_nlp['entity_coverage']['grade']})")
-    
-    summary_parts.append(f"• Addressing gaps in top {len(serp_data['top_results'])} SERP results")
-    
-    comparison = {
-        'features': features,
-        'summary': "Your article outperforms competitors by:\n" + "\n".join(summary_parts)
+    return {
+        'word_count': words,
+        'keyword_density': round(kw_density, 2),
+        'seo_score': min(100, seo_score)
     }
-    
-    return comparison
 
-# HTML Template (keeping existing design)
+# HTML Template with comprehensive inputs
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CompellSEO - AI Content Platform</title>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <title>CompellSEO - Professional Content Platform</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Roboto', sans-serif; background: #000; color: #fff; min-height: 100vh; line-height: 1.6; }
-        .header { background: #fff; padding: 20px 40px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); position: sticky; top: 0; z-index: 100; }
-        .logo { font-size: 32px; font-weight: 900; color: #000; letter-spacing: -1px; }
-        .logo-subtitle { font-size: 12px; font-weight: 400; color: #666; letter-spacing: 2px; text-transform: uppercase; }
+        body { font-family: 'Inter', sans-serif; background: #0a0a0a; color: #fff; line-height: 1.6; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px 40px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+        .logo { font-size: 36px; font-weight: 900; color: #fff; letter-spacing: -1px; }
+        .tagline { font-size: 14px; color: rgba(255,255,255,0.9); margin-top: 5px; }
         .container { max-width: 1400px; margin: 40px auto; padding: 0 20px; }
-        .input-section { background: #fff; color: #000; padding: 40px; margin-bottom: 40px; box-shadow: 0 10px 40px rgba(255,255,255,0.1); }
-        .section-title { font-size: 28px; font-weight: 700; margin-bottom: 30px; text-transform: uppercase; letter-spacing: 1px; }
-        .input-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 25px; margin-bottom: 25px; }
+        .section { background: #1a1a1a; border-radius: 12px; padding: 40px; margin-bottom: 30px; border: 1px solid #333; }
+        .section-title { font-size: 18px; font-weight: 700; color: #667eea; margin-bottom: 25px; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 10px; }
+        .section-title i { font-size: 20px; }
+        .input-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 25px; }
         .form-group { display: flex; flex-direction: column; }
-        label { font-size: 11px; font-weight: 700; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
-        input, select, textarea { padding: 12px 15px; border: 2px solid #000; font-size: 14px; font-family: 'Roboto', sans-serif; background: #fff; color: #000; transition: all 0.3s; }
-        input:focus, select:focus, textarea:focus { outline: none; border-color: #666; background: #f5f5f5; }
+        .form-group.full-width { grid-column: 1 / -1; }
+        label { font-size: 12px; font-weight: 600; color: #999; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+        input, select, textarea { padding: 12px 16px; border: 2px solid #333; border-radius: 8px; font-size: 14px; font-family: 'Inter', sans-serif; background: #0a0a0a; color: #fff; transition: all 0.3s; }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: #667eea; background: #1a1a1a; }
         textarea { resize: vertical; min-height: 100px; }
-        .btn { background: #000; color: #fff; border: none; padding: 18px 40px; font-weight: 700; font-size: 14px; cursor: pointer; transition: all 0.3s; text-transform: uppercase; letter-spacing: 2px; font-family: 'Roboto', sans-serif; }
-        .btn:hover { background: #333; transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
-        .btn:disabled { background: #666; cursor: not-allowed; transform: none; }
-        .progress-container { background: #fff; padding: 30px; margin-bottom: 30px; display: none; }
+        .btn { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; border: none; padding: 18px 40px; border-radius: 8px; font-weight: 700; font-size: 14px; cursor: pointer; transition: all 0.3s; text-transform: uppercase; letter-spacing: 1px; margin-top: 20px; }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .toggle { display: flex; align-items: center; gap: 10px; }
+        .toggle input[type="checkbox"] { width: 50px; height: 26px; }
+        .progress-container { background: #1a1a1a; padding: 30px; border-radius: 12px; margin-bottom: 30px; border: 1px solid #333; display: none; }
         .progress-container.active { display: block; }
-        .progress-bar { background: #e0e0e0; height: 40px; overflow: hidden; border: 2px solid #000; }
-        .progress-fill { background: #000; height: 100%; transition: width 0.5s ease; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 14px; letter-spacing: 1px; }
-        .progress-text { text-align: center; margin-top: 15px; color: #000; font-weight: 500; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; }
-        .tabs { background: #fff; overflow: hidden; box-shadow: 0 10px 40px rgba(255,255,255,0.1); display: none; }
+        .progress-bar { background: #333; height: 40px; border-radius: 20px; overflow: hidden; }
+        .progress-fill { background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); height: 100%; transition: width 0.5s ease; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; }
+        .progress-text { text-align: center; margin-top: 15px; color: #999; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; }
+        .tabs { background: #1a1a1a; border-radius: 12px; overflow: hidden; border: 1px solid #333; display: none; margin-top: 30px; }
         .tabs.active { display: block; }
-        .tab-header { display: flex; background: #000; flex-wrap: wrap; }
-        .tab-btn { flex: 1; min-width: 150px; padding: 20px; background: none; border: none; font-weight: 700; color: #fff; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.3s; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; font-family: 'Roboto', sans-serif; }
-        .tab-btn.active { background: #fff; color: #000; border-bottom-color: #000; }
-        .tab-content { display: none; padding: 40px; max-height: 600px; overflow-y: auto; color: #000; }
+        .tab-header { display: flex; background: #0a0a0a; flex-wrap: wrap; border-bottom: 2px solid #333; }
+        .tab-btn { flex: 1; min-width: 150px; padding: 20px; background: none; border: none; font-weight: 600; color: #999; cursor: pointer; transition: all 0.3s; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 3px solid transparent; }
+        .tab-btn.active { color: #667eea; border-bottom-color: #667eea; background: #1a1a1a; }
+        .tab-content { display: none; padding: 40px; max-height: 600px; overflow-y: auto; }
         .tab-content.active { display: block; }
-        .article-content h1 { color: #000; font-size: 36px; font-weight: 900; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 3px solid #000; text-transform: uppercase; letter-spacing: -1px; }
-        .article-content h2 { color: #000; font-size: 26px; font-weight: 700; margin: 35px 0 20px; padding-bottom: 10px; border-bottom: 2px solid #e0e0e0; text-transform: uppercase; letter-spacing: 1px; }
-        .article-content p { line-height: 1.8; margin-bottom: 18px; color: #333; font-weight: 400; }
-        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 25px; margin-bottom: 35px; }
-        .metric-card { background: #000; color: #fff; padding: 30px; text-align: center; border: 2px solid #000; }
-        .metric-value { font-size: 42px; font-weight: 900; color: #fff; line-height: 1; }
-        .metric-label { font-size: 11px; color: #fff; text-transform: uppercase; margin-top: 10px; font-weight: 700; letter-spacing: 1px; }
+        .metric-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 12px; text-align: center; }
+        .metric-value { font-size: 42px; font-weight: 900; }
+        .metric-label { font-size: 11px; margin-top: 10px; opacity: 0.9; text-transform: uppercase; letter-spacing: 1px; }
+        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 25px; margin-bottom: 30px; }
+        .info-box { background: rgba(102, 126, 234, 0.1); border-left: 4px solid #667eea; padding: 15px; border-radius: 8px; margin-bottom: 20px; color: #ccc; font-size: 14px; }
     </style>
 </head>
 <body>
     <div class="header">
-        <div class="logo">WAQZEE</div>
-        <div class="logo-subtitle">CompellSEO Platform</div>
+        <div class="logo">WAQZEE CompellSEO</div>
+        <div class="tagline">AI-Powered Content Generation with Advanced NLP Analysis</div>
     </div>
+    
     <div class="container">
-        <div class="input-section">
-            <h2 class="section-title">CompellSEO</h2>
-            <p>AI-powered content generator with advanced NLP analysis. Creates compelling, keyword-optimised articles with entity coverage scoring and sentiment analysis.</p>
-            <br><br>
+        <!-- Section 1: Core SEO Inputs -->
+        <div class="section">
+            <h2 class="section-title"><i class="fas fa-search"></i> Core SEO Inputs</h2>
             <div class="input-grid">
                 <div class="form-group">
                     <label>Main Keyword *</label>
-                    <input type="text" id="mainKeyword" placeholder="e.g., car insurance UK" required>
+                    <input type="text" id="mainKeyword" placeholder="how to save money on car insurance UK" required>
                 </div>
                 <div class="form-group">
-                    <label>Article Title *</label>
-                    <input type="text" id="title" placeholder="e.g., Complete Guide to Car Insurance">
+                    <label>Article Title</label>
+                    <input type="text" id="title" placeholder="10 Proven Ways to Save on Car Insurance">
                 </div>
                 <div class="form-group">
-                    <label>Secondary Keywords</label>
-                    <input type="text" id="secondaryKeywords" placeholder="auto insurance, vehicle coverage">
+                    <label>Search Intent</label>
+                    <select id="searchIntent">
+                        <option value="Informational">Informational</option>
+                        <option value="Commercial">Commercial</option>
+                        <option value="Transactional">Transactional</option>
+                        <option value="Navigational">Navigational</option>
+                    </select>
                 </div>
+                <div class="form-group">
+                    <label>Target Country</label>
+                    <select id="targetCountry">
+                        <option value="United Kingdom">United Kingdom</option>
+                        <option value="United States">United States</option>
+                        <option value="Canada">Canada</option>
+                        <option value="Australia">Australia</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Language</label>
+                    <select id="language">
+                        <option value="English">English</option>
+                        <option value="Spanish">Spanish</option>
+                        <option value="French">French</option>
+                        <option value="German">German</option>
+                    </select>
+                </div>
+                <div class="form-group full-width">
+                    <label>Secondary Keywords (comma-separated)</label>
+                    <input type="text" id="secondaryKeywords" placeholder="car insurance discounts, cheap insurance UK, best quotes">
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 2: Tone, Style & Persona -->
+        <div class="section">
+            <h2 class="section-title"><i class="fas fa-palette"></i> Tone, Style & Persona</h2>
+            <div class="input-grid">
                 <div class="form-group">
                     <label>Tone of Voice</label>
                     <select id="tone">
                         <option value="friendly">Friendly & Conversational</option>
                         <option value="professional">Professional & Expert</option>
-                        <option value="bold">Bold & Persuasive</option>
-                        <option value="emotional">Emotional & Empathetic</option>
+                        <option value="bold">Persuasive & Bold</option>
+                        <option value="emotional">Authoritative</option>
                     </select>
                 </div>
+                <div class="form-group">
+                    <label>Content Type</label>
+                    <select id="contentType">
+                        <option value="blog">Blog Post</option>
+                        <option value="landing">Landing Page</option>
+                        <option value="listicle">Listicle</option>
+                        <option value="howto">How-to Guide</option>
+                    </select>
+                </div>
+                <div class="form-group full-width">
+                    <label>Target Audience</label>
+                    <input type="text" id="targetAudience" placeholder="UK car owners, drivers under 30, cost-conscious families">
+                </div>
+                <div class="form-group full-width">
+                    <label>Brand Voice Keywords (Optional)</label>
+                    <input type="text" id="brandVoice" placeholder="trustworthy, expert, helpful, local">
+                </div>
             </div>
+        </div>
+
+        <!-- Section 3: Research & Competitor Data -->
+        <div class="section">
+            <h2 class="section-title"><i class="fas fa-chart-line"></i> Research & Competitor Data</h2>
+            <div class="input-grid">
+                <div class="form-group">
+                    <label>Number of Competitors to Analyze</label>
+                    <select id="numCompetitors">
+                        <option value="3">3 Competitors</option>
+                        <option value="5" selected>5 Competitors</option>
+                        <option value="7">7 Competitors</option>
+                        <option value="10">10 Competitors</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Competitor Analysis Depth</label>
+                    <select id="analysisDepth">
+                        <option value="basic">Basic</option>
+                        <option value="advanced" selected>Advanced (with NLP)</option>
+                    </select>
+                </div>
+                <div class="form-group full-width">
+                    <label>Subreddits to Search (comma-separated)</label>
+                    <input type="text" id="subreddits" placeholder="ukpersonalfinance, CarTalkUK, AskUK" value="ukpersonalfinance, AskUK">
+                </div>
+                <div class="form-group full-width">
+                    <label>Competitor URLs (Optional - one per line)</label>
+                    <textarea id="competitorUrls" placeholder="https://www.comparethemarket.com
+https://www.moneysupermarket.com"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 4: Unique & Contextual Inputs -->
+        <div class="section">
+            <h2 class="section-title"><i class="fas fa-lightbulb"></i> Unique Content & Context</h2>
+            <div class="input-grid">
+                <div class="form-group full-width">
+                    <label>Unique Insights & Data</label>
+                    <textarea id="uniqueInsights" placeholder="Our data shows 30% of drivers don't compare insurance yearly..."></textarea>
+                </div>
+                <div class="form-group full-width">
+                    <label>Brand or Product Mentions</label>
+                    <textarea id="brandMentions" placeholder="Include references to Aviva, Direct Line, MoneySuperMarket"></textarea>
+                </div>
+                <div class="form-group full-width">
+                    <label>Topics to Avoid</label>
+                    <textarea id="topicsAvoid" placeholder="Avoid mentioning insurance scams, controversial claims"></textarea>
+                </div>
+                <div class="form-group full-width">
+                    <label>Internal Links (Optional)</label>
+                    <textarea id="internalLinks" placeholder="/insurance-guides
+/car-tips"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 5: Output Controls -->
+        <div class="section">
+            <h2 class="section-title"><i class="fas fa-cog"></i> Output Controls</h2>
+            <div class="info-box">
+                <i class="fas fa-info-circle"></i> Output settings control the format and structure of your generated content.
+            </div>
+            <div class="input-grid">
+                <div class="form-group">
+                    <label>Word Count Goal</label>
+                    <input type="number" id="wordCountGoal" value="2500" min="500" max="5000" step="100">
+                </div>
+                <div class="form-group">
+                    <label>Output Format</label>
+                    <select id="outputFormat">
+                        <option value="html" selected>HTML</option>
+                        <option value="markdown">Markdown</option>
+                        <option value="plain">Plain Text</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Include Tables/FAQs</label>
+                    <div class="toggle">
+                        <input type="checkbox" id="includeFaqs" checked>
+                        <span>Generate FAQ section</span>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Generate Meta Tags</label>
+                    <div class="toggle">
+                        <input type="checkbox" id="generateMeta" checked>
+                        <span>Title & description</span>
+                    </div>
+                </div>
+            </div>
+            
             <button class="btn" id="generateBtn" onclick="generateContent()">
                 <i class="fas fa-magic"></i> Generate SEO Article
             </button>
         </div>
+
+        <!-- Progress Bar -->
         <div class="progress-container" id="progressContainer">
             <div class="progress-bar">
                 <div class="progress-fill" id="progressFill" style="width: 0%">0%</div>
             </div>
             <div class="progress-text" id="progressText">Initializing...</div>
         </div>
+
+        <!-- Results Tabs -->
         <div class="tabs" id="resultTabs">
             <div class="tab-header">
                 <button class="tab-btn active" onclick="switchTab(event, 'article')">
                     <i class="fas fa-file-alt"></i> Article
                 </button>
                 <button class="tab-btn" onclick="switchTab(event, 'metrics')">
-                    <i class="fas fa-chart-line"></i> Metrics
+                    <i class="fas fa-chart-bar"></i> Metrics
                 </button>
                 <button class="tab-btn" onclick="switchTab(event, 'nlp')">
                     <i class="fas fa-brain"></i> NLP Analysis
                 </button>
             </div>
+            
             <div class="tab-content active" id="articleTab">
-                <div class="article-content" id="articleContent"></div>
+                <div id="articleContent"></div>
             </div>
+            
             <div class="tab-content" id="metricsTab">
                 <div class="metrics-grid">
                     <div class="metric-card">
@@ -792,27 +640,54 @@ HTML_TEMPLATE = """
                     </div>
                 </div>
             </div>
+            
             <div class="tab-content" id="nlpTab">
-                <h3>NLP Analysis Results</h3>
+                <h3 style="margin-bottom: 20px;">NLP Analysis Results</h3>
                 <div id="nlpResults"></div>
             </div>
         </div>
     </div>
+    
     <script>
+        let progressInterval;
+        
+        function switchTab(event, tabName) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(tabName + 'Tab').classList.add('active');
+        }
+        
         async function generateContent() {
             const mainKeyword = document.getElementById('mainKeyword').value.trim();
-            const title = document.getElementById('title').value.trim();
-            if (!mainKeyword || !title) { alert('Please enter both main keyword and title'); return; }
+            if (!mainKeyword) { alert('Please enter a main keyword'); return; }
             
             document.getElementById('progressContainer').classList.add('active');
             document.getElementById('generateBtn').disabled = true;
             
             const data = {
                 main_keyword: mainKeyword,
-                title: title,
+                title: document.getElementById('title').value.trim(),
                 secondary_keywords: document.getElementById('secondaryKeywords').value.split(',').map(k => k.trim()).filter(k => k),
+                search_intent: document.getElementById('searchIntent').value,
+                target_country: document.getElementById('targetCountry').value,
+                language: document.getElementById('language').value,
                 tone: document.getElementById('tone').value,
-                subreddits: ['askreddit', 'technology']
+                content_type: document.getElementById('contentType').value,
+                target_audience: document.getElementById('targetAudience').value,
+                brand_voice: document.getElementById('brandVoice').value,
+                num_competitors: parseInt(document.getElementById('numCompetitors').value),
+                analysis_depth: document.getElementById('analysisDepth').value,
+                subreddits: document.getElementById('subreddits').value.split(',').map(s => s.trim()).filter(s => s),
+                competitor_urls: document.getElementById('competitorUrls').value.split('\n').map(u => u.trim()).filter(u => u),
+                unique_insights: document.getElementById('uniqueInsights').value,
+                brand_mentions: document.getElementById('brandMentions').value,
+                topics_avoid: document.getElementById('topicsAvoid').value,
+                internal_links: document.getElementById('internalLinks').value,
+                word_count_goal: parseInt(document.getElementById('wordCountGoal').value),
+                output_format: document.getElementById('outputFormat').value,
+                include_faqs: document.getElementById('includeFaqs').checked,
+                generate_meta: document.getElementById('generateMeta').checked
             };
             
             try {
@@ -826,9 +701,10 @@ HTML_TEMPLATE = """
                 if (result.error) { alert('Error: ' + result.error); return; }
                 displayResults(result);
                 document.getElementById('resultTabs').classList.add('active');
+                document.getElementById('resultTabs').scrollIntoView({ behavior: 'smooth' });
             } catch (error) {
                 console.error('Error:', error);
-                alert('Failed to generate content');
+                alert('Failed to generate content. Check console for details.');
             } finally {
                 stopProgressUpdates();
                 document.getElementById('generateBtn').disabled = false;
@@ -836,7 +712,6 @@ HTML_TEMPLATE = """
             }
         }
         
-        let progressInterval;
         function startProgressUpdates() {
             progressInterval = setInterval(async () => {
                 try {
@@ -851,7 +726,7 @@ HTML_TEMPLATE = """
         }
         
         function stopProgressUpdates() {
-            if (progressInterval) { clearInterval(progressInterval); progressInterval = null; }
+            if (progressInterval) { clearInterval(progressInterval); }
             updateProgress(100, 'Complete!');
         }
         
@@ -859,13 +734,6 @@ HTML_TEMPLATE = """
             document.getElementById('progressFill').style.width = percentage + '%';
             document.getElementById('progressFill').textContent = percentage + '%';
             document.getElementById('progressText').textContent = text;
-        }
-        
-        function switchTab(event, tabName) {
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-            event.currentTarget.classList.add('active');
-            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-            document.getElementById(tabName + 'Tab').classList.add('active');
         }
         
         function displayResults(data) {
@@ -878,15 +746,20 @@ HTML_TEMPLATE = """
             }
             
             if (data.article_nlp && data.article_nlp.article_sentiment) {
-                document.getElementById('sentimentLabel').textContent = data.article_nlp.article_sentiment.label.toUpperCase() || 'N/A';
+                document.getElementById('sentimentLabel').textContent = data.article_nlp.article_sentiment.label.toUpperCase();
             }
             
-            let nlpHtml = '<p>NLP analysis complete</p>';
+            let nlpHtml = '<p style="color:#999">NLP analysis complete</p>';
             if (data.article_nlp && data.article_nlp.nlp_available) {
                 nlpHtml = `
-                    <h4>Article Entities (Top 10):</h4>
-                    <ul>${data.article_nlp.article_entities.slice(0,10).map(e => `<li>${e.name} (${e.type}) - Salience: ${e.salience}</li>`).join('')}</ul>
-                    ${data.article_nlp.entity_coverage ? `<h4>Entity Coverage: ${data.article_nlp.entity_coverage.grade} (${data.article_nlp.entity_coverage.coverage_percentage}%)</h4>` : ''}
+                    <h4 style="color:#667eea; margin-bottom:15px;">Article Entities (Top 10):</h4>
+                    <ul style="color:#ccc; line-height:1.8;">${data.article_nlp.article_entities.slice(0,10).map(e => 
+                        `<li><strong>${e.name}</strong> (${e.type}) - Salience: ${e.salience}</li>`
+                    ).join('')}</ul>
+                    ${data.article_nlp.entity_coverage ? `
+                        <h4 style="color:#667eea; margin:25px 0 15px;">Entity Coverage: ${data.article_nlp.entity_coverage.grade} (${data.article_nlp.entity_coverage.coverage_percentage}%)</h4>
+                        <p style="color:#ccc;">Missing entities: ${data.article_nlp.entity_coverage.missing_entities.slice(0,5).join(', ')}</p>
+                    ` : ''}
                 `;
             }
             document.getElementById('nlpResults').innerHTML = nlpHtml;
@@ -902,49 +775,52 @@ def index():
 
 @app.route('/generate-seo-article', methods=['POST'])
 def generate_seo_article():
-    """Generate complete SEO article with NLP analysis"""
+    """Generate complete SEO article with comprehensive inputs"""
     global progress_updates
     progress_updates = []
     
     try:
-        data = request.get_json()
-        logger.info(f"📥 Received request for keyword: {data.get('main_keyword')}")
+        params = request.get_json()
+        logger.info(f"📥 Request for: {params.get('main_keyword')}")
         
         # Initialize OpenAI
         openai_client = OpenAIClient()
         if not openai_client.available:
-            return jsonify({"error": "OpenAI API not configured"}), 500
+            return jsonify({"error": "OpenAI API not configured. Please set OPENAI_API_KEY environment variable."}), 500
         
         # 1. Reddit Analysis
         reddit_data = analyze_reddit(
-            data['main_keyword'],
-            data.get('subreddits', ['askreddit', 'technology'])
+            params['main_keyword'],
+            params.get('subreddits', ['askreddit'])
         )
         
         # 2. SERP Analysis
-        serp_data = analyze_serp(data['main_keyword'])
-        
-        # 3. NLP Analysis of Competitors
-        competitor_nlp = analyze_competitor_content_nlp(serp_data)
-        
-        # 4. Generate Article
-        article_data = generate_seo_content(data, reddit_data, serp_data, competitor_nlp, openai_client)
-        
-        # 5. NLP Analysis of Generated Article
-        article_nlp = analyze_generated_content_nlp(article_data['content'], competitor_nlp)
-        
-        # 6. Generate Recommendations
-        recommendations = generate_recommendations(article_data, data, serp_data, article_nlp)
-        
-        # 7. Competitor Comparison
-        competitor_comparison = generate_competitor_comparison(
-            article_data, serp_data, reddit_data, article_nlp
+        serp_data = analyze_serp(
+            params['main_keyword'],
+            params.get('num_competitors', 5),
+            params.get('competitor_urls')
         )
         
-        add_progress("✅ Generation complete!", 100)
+        # 3. Competitor NLP
+        competitor_nlp = {}
+        if params.get('analysis_depth') == 'advanced':
+            competitor_nlp = analyze_competitor_nlp(serp_data)
+        
+        # 4. Generate Content
+        article_data = generate_content(params, reddit_data, serp_data, competitor_nlp, openai_client)
+        
+        # 5. Article NLP
+        article_nlp = {}
+        if params.get('analysis_depth') == 'advanced':
+            article_nlp = analyze_article_nlp(article_data['content'], competitor_nlp)
+        
+        # 6. Calculate Metrics
+        metrics = calculate_metrics(article_data['content'], params)
+        
+        add_progress("✅ Complete!", 100)
         
         result = {
-            "inputs": data,
+            "inputs": params,
             "reddit_pain_points": reddit_data['pain_points'],
             "serp_summary": {
                 "top_results": serp_data['top_results'],
@@ -954,65 +830,35 @@ def generate_seo_article():
             "article": {
                 "content": article_data['content']
             },
-            "metrics": {
-                "word_count": article_data['word_count'],
-                "seo_score": article_data['seo_score'],
-                "keyword_density": article_data['keyword_density']
-            },
-            "article_nlp": article_nlp,
-            "recommendations": recommendations,
-            "competitor_comparison": competitor_comparison
+            "metrics": metrics,
+            "article_nlp": article_nlp
         }
         
-        logger.info("✅ Successfully generated complete SEO article with NLP analysis")
+        logger.info("✅ Article generated successfully")
         return jsonify(result)
         
     except Exception as e:
-        logger.error(f"❌ Generation error: {e}")
+        logger.error(f"❌ Error: {e}")
         logger.error(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
 @app.route('/progress')
 def get_progress():
-    """Get progress updates"""
     global progress_updates
     return jsonify(progress_updates.copy())
 
-@app.route('/analyze-nlp', methods=['POST'])
-def analyze_nlp_endpoint():
-    """Standalone NLP analysis endpoint"""
-    if not nlp_agent or not nlp_agent.available:
-        return jsonify({"error": "NLP Agent not available"}), 503
-    
-    try:
-        data = request.get_json()
-        text = data.get('text', '')
-        
-        if not text:
-            return jsonify({"error": "No text provided"}), 400
-        
-        analysis = nlp_agent.analyze_full(text)
-        return jsonify(analysis)
-        
-    except Exception as e:
-        logger.error(f"NLP analysis error: {e}")
-        return jsonify({"error": str(e)}), 500
-
 @app.route('/health')
 def health_check():
-    """Health check endpoint"""
     return jsonify({
         "status": "healthy",
         "openai_available": OPENAI_AVAILABLE,
-        "reddit_scraper_available": RedditScraper is not None,
-        "serp_agent_available": SerpAgent is not None,
-        "writer_agent_available": CompellingSEOStrategist is not None,
-        "nlp_agent_available": nlp_agent.available if nlp_agent else False
+        "reddit_available": RedditScraper is not None,
+        "serp_available": SerpAgent is not None,
+        "writer_available": CompellingSEOStrategist is not None,
+        "nlp_available": nlp_agent.available if nlp_agent else False
     })
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     logger.info(f"🚀 Starting CompellSEO Platform on port {port}")
-    logger.info(f"   • Writer Agent: {'✅' if CompellingSEOStrategist else '❌'}")
-    logger.info(f"   • NLP Agent: {'✅' if nlp_agent and nlp_agent.available else '❌'}")
     app.run(host="0.0.0.0", port=port, debug=False)
