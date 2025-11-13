@@ -1022,8 +1022,8 @@ HTML_TEMPLATE = """
         <!-- Input Section -->
         <div class="input-section">
             <h2 class="section-title">CompellSEO</h2>
-            <p> CompellSEO is an AI-powered content generator that creates compelling, keyword-optimized articles tailored to your audience’s pain points and tone of voice. It analyzes SERPs and competitors, helping you craft content that not only ranks higher but also connects with readers on a human level.</p>
-            
+            <p> CompellSEO is an AI-powered content generator that creates compelling, keyword-optimised articles tailored to your audience’s pain points and tone of voice. It analyses SERPs and competitors, helping you craft content that not only ranks higher but also connects with readers on a human level.</p>
+<br> <br>            
             <div class="input-grid">
                 <div class="form-group">
                     <label>Main Keyword *</label>
