@@ -1,20 +1,13 @@
-# Core Framework
-flask==3.0.0
+# Core dependencies
+Flask==3.0.0
 flask-cors==4.0.0
-gunicorn==21.2.0
-
-# AI/ML
-openai>=1.30.0
-
-# Web Scraping & APIs
+openai==1.3.0
 requests==2.31.0
-beautifulsoup4==4.12.2
 
-# Reddit API
-praw==7.7.1
+# Google Cloud Natural Language API
+google-cloud-language==2.13.0
+google-auth==2.27.0
 
-# Async Support
-aiohttp==3.9.1
-
-# Utilities
+# Optional but recommended
+gunicorn==21.2.0
 python-dotenv==1.0.0
