@@ -92,21 +92,26 @@ class OpenAIClient:
             return
         
         try:
-            # Initialize OpenAI client with only supported parameters
-            # NOTE: 'proxies' parameter is NOT supported in current OpenAI library
-            self.client = openai.OpenAI(
-                api_key=self.api_key,
-                timeout=60.0
-                # DO NOT add 'proxies' parameter - it's not supported!
-            )
+            # Minimal OpenAI client - ONLY api_key
+            logger.info(f"Creating OpenAI client...")
+            logger.info(f"API Key found: {self.api_key[:15]}...")
+            
+            # Try creating client with minimal parameters
+            self.client = openai.OpenAI(api_key=self.api_key)
+            
+            # Test the client
+            logger.info("Testing OpenAI client...")
+            test_response = self.client.models.list()
+            logger.info(f"✅ OpenAI client test successful - found {len(test_response.data)} models")
+            
             self.available = True
-            logger.info("✅ OpenAI client initialized successfully")
-        except TypeError as e:
-            logger.error(f"❌ OpenAI initialization failed - parameter error: {e}")
-            logger.error("This usually means an unsupported parameter was passed")
+            logger.info("✅ OpenAI client initialized and tested successfully")
+            
         except Exception as e:
             logger.error(f"❌ OpenAI initialization failed: {e}")
             logger.error(f"Error type: {type(e).__name__}")
+            import traceback
+            logger.error(f"Full traceback:\n{traceback.format_exc()}")
     
     def generate_seo_article(self, prompt: str, max_tokens: int = 4000) -> str:
         """Generate SEO-optimized article (synchronous)"""
