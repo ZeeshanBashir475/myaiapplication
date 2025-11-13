@@ -1,0 +1,522 @@
+"""
+Google Cloud NLP Agent
+Uses Google Cloud Natural Language API to analyze text for SEO insights.
+"""
+
+import os
+import json
+import logging
+from typing import Dict, List, Optional, Tuple
+import tempfile
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Import Google Cloud dependencies
+try:
+    from google.cloud import language_v1
+    from google.oauth2 import service_account
+    GOOGLE_NLP_AVAILABLE = True
+    logger.info("✅ Google Cloud Natural Language API libraries imported")
+except ImportError:
+    GOOGLE_NLP_AVAILABLE = False
+    logger.warning("❌ Google Cloud Natural Language API not available - install google-cloud-language")
+
+
+class NLPAgent:
+    """
+    NLP Agent for analyzing text using Google Cloud Natural Language API.
+    
+    Features:
+    - Extract entities (brands, topics, people, locations)
+    - Classify content categories
+    - Analyze sentiment
+    - Compare entity coverage between texts
+    """
+    
+    def __init__(self):
+        """Initialize the NLP Agent with Google Cloud credentials"""
+        self.client = None
+        self.available = False
+        
+        if not GOOGLE_NLP_AVAILABLE:
+            logger.warning("⚠️ Google Cloud NLP libraries not available")
+            return
+        
+        try:
+            # Load credentials from environment variable
+            credentials_json = os.getenv('GOOGLE_APPLICATION_CREDENTIALS_JSON')
+            
+            if not credentials_json:
+                logger.warning("⚠️ GOOGLE_APPLICATION_CREDENTIALS_JSON not found in environment")
+                return
+            
+            # Parse the JSON credentials
+            try:
+                credentials_dict = json.loads(credentials_json)
+                logger.info("✅ Successfully parsed Google Cloud credentials from environment")
+            except json.JSONDecodeError as e:
+                logger.error(f"❌ Failed to parse credentials JSON: {e}")
+                return
+            
+            # Create credentials object
+            credentials = service_account.Credentials.from_service_account_info(
+                credentials_dict,
+                scopes=['https://www.googleapis.com/auth/cloud-platform']
+            )
+            
+            # Initialize the Language Service Client
+            self.client = language_v1.LanguageServiceClient(credentials=credentials)
+            
+            # Test the client with a simple request
+            logger.info("Testing Google Cloud NLP client...")
+            test_doc = language_v1.Document(
+                content="Test",
+                type_=language_v1.Document.Type.PLAIN_TEXT
+            )
+            self.client.analyze_sentiment(document=test_doc)
+            
+            self.available = True
+            logger.info("✅ Google Cloud NLP Agent initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize Google Cloud NLP Agent: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            self.available = False
+    
+    def _create_document(self, text: str, doc_type: str = "PLAIN_TEXT") -> language_v1.Document:
+        """
+        Create a Document object for analysis.
+        
+        Args:
+            text: Text content to analyze
+            doc_type: Document type (PLAIN_TEXT or HTML)
+            
+        Returns:
+            language_v1.Document object
+        """
+        if doc_type == "HTML":
+            type_ = language_v1.Document.Type.HTML
+        else:
+            type_ = language_v1.Document.Type.PLAIN_TEXT
+        
+        return language_v1.Document(
+            content=text,
+            type_=type_,
+            language="en"  # Default to English
+        )
+    
+    def extract_entities(self, text: str, doc_type: str = "PLAIN_TEXT") -> List[Dict]:
+        """
+        Extract named entities from text (brands, people, locations, etc.).
+        
+        Args:
+            text: Text to analyze
+            doc_type: Document type (PLAIN_TEXT or HTML)
+            
+        Returns:
+            List of entity dictionaries with name, type, salience, and metadata
+            
+        Example:
+            [
+                {"name": "Aviva", "type": "ORGANIZATION", "salience": 0.24, "mentions": 3},
+                {"name": "UK", "type": "LOCATION", "salience": 0.10, "mentions": 1}
+            ]
+        """
+        if not self.available:
+            logger.warning("NLP Agent not available - returning empty entities")
+            return []
+        
+        try:
+            document = self._create_document(text, doc_type)
+            
+            # Analyze entities
+            response = self.client.analyze_entities(
+                document=document,
+                encoding_type=language_v1.EncodingType.UTF8
+            )
+            
+            entities = []
+            for entity in response.entities:
+                entities.append({
+                    "name": entity.name,
+                    "type": language_v1.Entity.Type(entity.type_).name,
+                    "salience": round(float(entity.salience), 4),
+                    "mentions": len(entity.mentions),
+                    "metadata": dict(entity.metadata) if entity.metadata else {}
+                })
+            
+            # Sort by salience (importance)
+            entities.sort(key=lambda x: x['salience'], reverse=True)
+            
+            logger.info(f"✅ Extracted {len(entities)} entities from text")
+            return entities
+            
+        except Exception as e:
+            logger.error(f"❌ Entity extraction error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return []
+    
+    def get_category(self, text: str, doc_type: str = "PLAIN_TEXT") -> List[Dict]:
+        """
+        Classify text into content categories.
+        
+        Args:
+            text: Text to classify
+            doc_type: Document type (PLAIN_TEXT or HTML)
+            
+        Returns:
+            List of category dictionaries with category name and confidence
+            
+        Example:
+            [
+                {"category": "/Finance/Insurance", "confidence": 0.93},
+                {"category": "/Business & Industrial", "confidence": 0.76}
+            ]
+        """
+        if not self.available:
+            logger.warning("NLP Agent not available - returning empty categories")
+            return []
+        
+        try:
+            document = self._create_document(text, doc_type)
+            
+            # Classify content
+            response = self.client.classify_text(document=document)
+            
+            categories = []
+            for category in response.categories:
+                categories.append({
+                    "category": category.name,
+                    "confidence": round(float(category.confidence), 4)
+                })
+            
+            # Sort by confidence
+            categories.sort(key=lambda x: x['confidence'], reverse=True)
+            
+            logger.info(f"✅ Classified text into {len(categories)} categories")
+            return categories
+            
+        except Exception as e:
+            # Classification may fail for short or ambiguous text
+            logger.warning(f"⚠️ Category classification failed: {e}")
+            return []
+    
+    def get_sentiment(self, text: str, doc_type: str = "PLAIN_TEXT") -> Dict:
+        """
+        Analyze sentiment (tone) of text.
+        
+        Args:
+            text: Text to analyze
+            doc_type: Document type (PLAIN_TEXT or HTML)
+            
+        Returns:
+            Dictionary with sentiment score and magnitude
+            
+        Example:
+            {
+                "score": 0.21,      # -1.0 (negative) to 1.0 (positive)
+                "magnitude": 1.4,   # 0.0+ (strength of emotion)
+                "label": "positive" # "positive", "negative", or "neutral"
+            }
+        """
+        if not self.available:
+            logger.warning("NLP Agent not available - returning neutral sentiment")
+            return {"score": 0.0, "magnitude": 0.0, "label": "neutral"}
+        
+        try:
+            document = self._create_document(text, doc_type)
+            
+            # Analyze sentiment
+            response = self.client.analyze_sentiment(
+                document=document,
+                encoding_type=language_v1.EncodingType.UTF8
+            )
+            
+            sentiment = response.document_sentiment
+            score = float(sentiment.score)
+            magnitude = float(sentiment.magnitude)
+            
+            # Determine label
+            if score > 0.25:
+                label = "positive"
+            elif score < -0.25:
+                label = "negative"
+            else:
+                label = "neutral"
+            
+            result = {
+                "score": round(score, 4),
+                "magnitude": round(magnitude, 4),
+                "label": label
+            }
+            
+            logger.info(f"✅ Sentiment analysis: {label} (score: {score:.2f})")
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ Sentiment analysis error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {"score": 0.0, "magnitude": 0.0, "label": "neutral", "error": str(e)}
+    
+    def analyze_full(self, text: str, doc_type: str = "PLAIN_TEXT") -> Dict:
+        """
+        Perform complete NLP analysis (entities, categories, sentiment).
+        
+        Args:
+            text: Text to analyze
+            doc_type: Document type (PLAIN_TEXT or HTML)
+            
+        Returns:
+            Dictionary with all analysis results
+            
+        Example:
+            {
+                "entities": [...],
+                "categories": [...],
+                "sentiment": {...},
+                "stats": {
+                    "word_count": 1234,
+                    "entity_count": 15,
+                    "category_count": 3
+                }
+            }
+        """
+        logger.info("🔍 Starting full NLP analysis...")
+        
+        entities = self.extract_entities(text, doc_type)
+        categories = self.get_category(text, doc_type)
+        sentiment = self.get_sentiment(text, doc_type)
+        
+        # Calculate stats
+        word_count = len(text.split())
+        
+        result = {
+            "entities": entities,
+            "categories": categories,
+            "sentiment": sentiment,
+            "stats": {
+                "word_count": word_count,
+                "entity_count": len(entities),
+                "category_count": len(categories),
+                "top_entity": entities[0]["name"] if entities else None,
+                "top_category": categories[0]["category"] if categories else None
+            }
+        }
+        
+        logger.info("✅ Full NLP analysis complete")
+        return result
+    
+    def compare_entities(
+        self, 
+        text_a: str, 
+        text_b: str, 
+        doc_type: str = "PLAIN_TEXT"
+    ) -> Dict:
+        """
+        Compare entities between two texts (e.g., competitor vs your content).
+        
+        Args:
+            text_a: First text (e.g., competitor content)
+            text_b: Second text (e.g., your content)
+            doc_type: Document type
+            
+        Returns:
+            Dictionary with comparison results
+            
+        Example:
+            {
+                "text_a_entities": [...],
+                "text_b_entities": [...],
+                "missing_in_b": ["Aviva", "Nationwide"],
+                "unique_in_b": ["Lemonade"],
+                "coverage_score": 0.75,
+                "recommendations": [...]
+            }
+        """
+        logger.info("🔄 Comparing entities between two texts...")
+        
+        entities_a = self.extract_entities(text_a, doc_type)
+        entities_b = self.extract_entities(text_b, doc_type)
+        
+        # Extract entity names
+        names_a = set([e["name"].lower() for e in entities_a])
+        names_b = set([e["name"].lower() for e in entities_b])
+        
+        # Find differences
+        missing_in_b = names_a - names_b
+        unique_in_b = names_b - names_a
+        common = names_a & names_b
+        
+        # Calculate coverage score
+        if len(names_a) > 0:
+            coverage_score = len(common) / len(names_a)
+        else:
+            coverage_score = 1.0
+        
+        # Get top missing entities (by salience in text_a)
+        top_missing = []
+        for entity in entities_a:
+            if entity["name"].lower() in missing_in_b:
+                top_missing.append({
+                    "name": entity["name"],
+                    "type": entity["type"],
+                    "salience": entity["salience"]
+                })
+        
+        top_missing.sort(key=lambda x: x['salience'], reverse=True)
+        
+        # Generate recommendations
+        recommendations = []
+        if coverage_score < 0.7:
+            recommendations.append({
+                "type": "entity_coverage",
+                "priority": "high",
+                "message": f"Your content covers only {coverage_score*100:.0f}% of key entities from top competitors",
+                "action": f"Consider adding mentions of: {', '.join(list(missing_in_b)[:5])}"
+            })
+        
+        if len(top_missing) > 0:
+            top_3_missing = [e["name"] for e in top_missing[:3]]
+            recommendations.append({
+                "type": "missing_entities",
+                "priority": "medium",
+                "message": f"Missing important entities: {', '.join(top_3_missing)}",
+                "action": "Add sections covering these key topics or brands"
+            })
+        
+        result = {
+            "text_a_entities": entities_a,
+            "text_b_entities": entities_b,
+            "missing_in_b": list(missing_in_b),
+            "unique_in_b": list(unique_in_b),
+            "common_entities": list(common),
+            "coverage_score": round(coverage_score, 4),
+            "top_missing": top_missing[:10],
+            "recommendations": recommendations,
+            "summary": {
+                "text_a_count": len(entities_a),
+                "text_b_count": len(entities_b),
+                "coverage_percentage": round(coverage_score * 100, 2)
+            }
+        }
+        
+        logger.info(f"✅ Entity comparison complete - Coverage: {coverage_score*100:.0f}%")
+        return result
+    
+    def get_entity_coverage_score(
+        self,
+        competitor_texts: List[str],
+        your_text: str,
+        doc_type: str = "PLAIN_TEXT"
+    ) -> Dict:
+        """
+        Calculate entity coverage score across multiple competitors.
+        
+        Args:
+            competitor_texts: List of competitor content
+            your_text: Your content
+            doc_type: Document type
+            
+        Returns:
+            Dictionary with comprehensive coverage analysis
+        """
+        logger.info(f"📊 Calculating entity coverage across {len(competitor_texts)} competitors...")
+        
+        # Collect all competitor entities
+        all_competitor_entities = set()
+        competitor_analyses = []
+        
+        for i, comp_text in enumerate(competitor_texts):
+            entities = self.extract_entities(comp_text, doc_type)
+            entity_names = set([e["name"].lower() for e in entities])
+            all_competitor_entities.update(entity_names)
+            competitor_analyses.append({
+                "competitor_id": i + 1,
+                "entity_count": len(entities),
+                "entities": entity_names
+            })
+        
+        # Analyze your content
+        your_entities = self.extract_entities(your_text, doc_type)
+        your_entity_names = set([e["name"].lower() for e in your_entities])
+        
+        # Calculate coverage
+        covered = all_competitor_entities & your_entity_names
+        missing = all_competitor_entities - your_entity_names
+        
+        coverage_score = len(covered) / len(all_competitor_entities) if all_competitor_entities else 1.0
+        
+        result = {
+            "total_competitor_entities": len(all_competitor_entities),
+            "your_entity_count": len(your_entity_names),
+            "covered_entities": len(covered),
+            "missing_entities": len(missing),
+            "coverage_score": round(coverage_score, 4),
+            "coverage_percentage": round(coverage_score * 100, 2),
+            "missing_list": list(missing)[:20],  # Top 20 missing
+            "grade": self._get_coverage_grade(coverage_score)
+        }
+        
+        logger.info(f"✅ Coverage analysis: {coverage_score*100:.1f}% - Grade: {result['grade']}")
+        return result
+    
+    def _get_coverage_grade(self, score: float) -> str:
+        """Get letter grade for coverage score"""
+        if score >= 0.9:
+            return "A+"
+        elif score >= 0.8:
+            return "A"
+        elif score >= 0.7:
+            return "B"
+        elif score >= 0.6:
+            return "C"
+        else:
+            return "D"
+
+
+# Standalone test function
+if __name__ == "__main__":
+    print("Testing NLP Agent...")
+    
+    agent = NLPAgent()
+    
+    if agent.available:
+        print("✅ NLP Agent initialized successfully!\n")
+        
+        # Test text
+        test_text = """
+        Aviva is one of the UK's largest insurance companies, offering car insurance, 
+        home insurance, and life insurance. Based in London, they serve millions of 
+        customers across the United Kingdom. Their policies are comprehensive and 
+        their customer service is excellent.
+        """
+        
+        print("📝 Analyzing test text...\n")
+        
+        # Test entities
+        print("=== ENTITIES ===")
+        entities = agent.extract_entities(test_text)
+        for entity in entities[:5]:
+            print(f"  {entity['name']} ({entity['type']}) - Salience: {entity['salience']}")
+        
+        print("\n=== CATEGORIES ===")
+        categories = agent.get_category(test_text)
+        for cat in categories:
+            print(f"  {cat['category']} - Confidence: {cat['confidence']}")
+        
+        print("\n=== SENTIMENT ===")
+        sentiment = agent.get_sentiment(test_text)
+        print(f"  {sentiment['label'].upper()} (score: {sentiment['score']}, magnitude: {sentiment['magnitude']})")
+        
+        print("\n=== FULL ANALYSIS ===")
+        full = agent.analyze_full(test_text)
+        print(json.dumps(full, indent=2))
+        
+    else:
+        print("❌ NLP Agent not available")
+        print("Make sure GOOGLE_APPLICATION_CREDENTIALS_JSON is set in environment")
