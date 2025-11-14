@@ -1,21 +1,30 @@
 """
-Compelling SEO Strategist Agent - CLEAN VERSION
+Compelling SEO Strategist Agent - PRODUCTION VERSION
 2-Pass Writing System for Long-Form SEO Content (1,200-2,500+ words)
 """
 
 import os
 import logging
+import sys
 from typing import Dict, List, Optional
+
+# Configure logging FIRST - this is critical!
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stdout
+)
+logger = logging.getLogger(__name__)
 
 # Import OpenAI - Compatible with v1.x
 try:
     from openai import OpenAI
     OPENAI_AVAILABLE = True
-except ImportError:
+    logger.info("✅ OpenAI package imported successfully in CompellingSEOStrategist")
+except ImportError as e:
     OpenAI = None
     OPENAI_AVAILABLE = False
-
-logger = logging.getLogger(__name__)
+    logger.error(f"❌ OpenAI import failed: {e}")
 
 
 class CompellingSEOStrategist:
@@ -27,31 +36,75 @@ class CompellingSEOStrategist:
     
     def __init__(self, api_key: Optional[str] = None):
         """Initialize with OpenAI client"""
+        logger.info("=" * 80)
+        logger.info("🔧 INITIALIZING CompellingSEOStrategist...")
+        logger.info("=" * 80)
+        
+        # Get API key
         self.api_key = api_key or os.getenv('OPENAI_API_KEY') or os.getenv('Open_Api_Key')
         self.available = False
+        self.error_message = None
         
+        logger.info(f"🔑 API key from parameter: {bool(api_key)}")
+        logger.info(f"🔑 API key from OPENAI_API_KEY: {bool(os.getenv('OPENAI_API_KEY'))}")
+        logger.info(f"🔑 API key from Open_Api_Key: {bool(os.getenv('Open_Api_Key'))}")
+        logger.info(f"🔑 Final API key present: {bool(self.api_key)}")
+        
+        if self.api_key:
+            logger.info(f"🔑 API key starts with: {self.api_key[:10]}...")
+        
+        # Check OpenAI package
         if not OPENAI_AVAILABLE:
-            logger.warning("⚠️ OpenAI package not available")
+            self.error_message = "OpenAI package not installed"
+            logger.warning(f"⚠️ {self.error_message}")
             self.client = None
-            return
-            
-        if not self.api_key:
-            logger.warning("⚠️ No OpenAI API key provided")
-            self.client = None
+            logger.info(f"❌ INITIALIZATION FAILED: {self.error_message}")
             return
         
-        try:
-            self.client = OpenAI(api_key=self.api_key)
-            # Test connection
-            self.client.models.list()
-            self.available = True
-            logger.info("✅ Compelling SEO Strategist (2-Pass System) initialized")
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize: {e}")
+        logger.info("✅ OpenAI package is available")
+        
+        # Check API key
+        if not self.api_key:
+            self.error_message = "No OpenAI API key provided"
+            logger.warning(f"⚠️ {self.error_message}")
             self.client = None
+            logger.info(f"❌ INITIALIZATION FAILED: {self.error_message}")
+            return
+        
+        logger.info("✅ API key is present")
+        
+        # Try to create client
+        try:
+            logger.info("🔌 Creating OpenAI client...")
+            self.client = OpenAI(api_key=self.api_key)
+            logger.info("✅ OpenAI client object created")
+            
+            # Test connection
+            logger.info("🧪 Testing connection with models.list()...")
+            models = self.client.models.list()
+            logger.info(f"✅ Connection test successful! Found {len(list(models.data))} models")
+            
+            self.available = True
+            logger.info("=" * 80)
+            logger.info("✅ Compelling SEO Strategist FULLY INITIALIZED AND READY")
+            logger.info("=" * 80)
+            
+        except Exception as e:
+            self.error_message = str(e)
+            logger.error(f"❌ Failed to initialize OpenAI client: {e}")
+            
+            # Detailed error logging
+            import traceback
+            error_details = traceback.format_exc()
+            logger.error(f"❌ Full error traceback:\n{error_details}")
+            
+            self.client = None
+            logger.info(f"❌ INITIALIZATION FAILED: {self.error_message}")
     
     def analyze_competitor_length(self, serp_data: Dict) -> Dict[str, int]:
         """Analyze competitor lengths and set target 15-25% higher"""
+        logger.info("📊 Analyzing competitor article lengths...")
+        
         top_results = serp_data.get('top_results', [])
         
         snippet_lengths = []
@@ -71,6 +124,9 @@ class CompellingSEOStrategist:
         
         # Clamp to reasonable range
         target_words = max(1200, min(2500, target_words))
+        
+        logger.info(f"📊 Competitor avg: {avg_competitor} words")
+        logger.info(f"📊 Target words: {target_words} words (+20%)")
         
         return {
             'competitor_avg': avg_competitor,
@@ -94,12 +150,25 @@ class CompellingSEOStrategist:
         Returns structure with sections and word targets
         """
         if not self.available:
-            return {'error': 'OpenAI not available'}
+            error = f'OpenAI not available: {self.error_message}'
+            logger.error(f"❌ {error}")
+            return {'error': error}
+        
+        logger.info("=" * 80)
+        logger.info("📋 PASS 1: GENERATING DETAILED OUTLINE")
+        logger.info("=" * 80)
         
         # Extract key info
         top_competitors = [r['title'] for r in serp_data.get('top_results', [])[:3]]
         paa_questions = [q['question'] for q in serp_data.get('people_also_ask', [])[:5]]
         pain_points = [p.get('pain', p) if isinstance(p, dict) else str(p) for p in reddit_data.get('pain_points', [])[:5]]
+        
+        logger.info(f"📌 Main keyword: {main_keyword}")
+        logger.info(f"📌 Target: {target_words} words in {target_sections} sections")
+        logger.info(f"📌 Tone: {tone}")
+        logger.info(f"📌 Competitors analyzed: {len(top_competitors)}")
+        logger.info(f"📌 PAA questions: {len(paa_questions)}")
+        logger.info(f"📌 Pain points: {len(pain_points)}")
         
         prompt = f"""You are an expert SEO content strategist. Create a detailed article outline.
 
@@ -112,13 +181,13 @@ ARTICLE DETAILS:
 
 COMPETITOR ANALYSIS:
 Top Ranking Titles:
-{chr(10).join(['- ' + t for t in top_competitors])}
+{chr(10).join(['- ' + t for t in top_competitors]) if top_competitors else '- No competitor data'}
 
 PEOPLE ALSO ASK:
-{chr(10).join(['- ' + q for q in paa_questions])}
+{chr(10).join(['- ' + q for q in paa_questions]) if paa_questions else '- No PAA data'}
 
 REDDIT PAIN POINTS (Real user problems):
-{chr(10).join(['- ' + p[:100] for p in pain_points])}
+{chr(10).join(['- ' + p[:100] for p in pain_points]) if pain_points else '- No pain points'}
 
 UNIQUE INSIGHTS TO INCLUDE:
 {unique_insights if unique_insights else "None provided"}
@@ -147,7 +216,9 @@ Return ONLY valid JSON:
 Make it comprehensive and SEO-optimized."""
 
         try:
-            logger.info(f"📋 Pass 1: Generating outline (target: {target_words} words)...")
+            logger.info(f"🤖 Calling OpenAI API for outline generation...")
+            logger.info(f"🤖 Model: gpt-3.5-turbo-16k")
+            logger.info(f"🤖 Max tokens: 2000")
             
             response = self.client.chat.completions.create(
                 model="gpt-3.5-turbo-16k",
@@ -160,21 +231,36 @@ Make it comprehensive and SEO-optimized."""
             )
             
             outline_text = response.choices[0].message.content.strip()
+            logger.info(f"✅ Received response ({len(outline_text)} characters)")
             
             # Remove markdown code blocks if present
             if outline_text.startswith('```'):
+                logger.info("🔧 Removing markdown code blocks...")
                 outline_text = outline_text.split('```')[1]
                 if outline_text.startswith('json'):
                     outline_text = outline_text[4:]
                 outline_text = outline_text.strip()
             
-            outline = eval(outline_text) if outline_text.startswith('{') else {'error': 'Invalid JSON'}
+            # Parse JSON
+            import json
+            try:
+                outline = json.loads(outline_text)
+                logger.info(f"✅ Outline parsed successfully: {len(outline.get('sections', []))} sections")
+            except json.JSONDecodeError:
+                logger.warning("⚠️ JSON parsing failed, trying eval...")
+                outline = eval(outline_text) if outline_text.startswith('{') else {'error': 'Invalid JSON'}
             
-            logger.info(f"✅ Outline generated: {len(outline.get('sections', []))} sections")
+            if 'error' in outline:
+                logger.error(f"❌ Outline generation produced error: {outline['error']}")
+            else:
+                logger.info("✅ PASS 1 COMPLETE - Outline ready")
+            
             return outline
             
         except Exception as e:
             logger.error(f"❌ Outline generation failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return {'error': str(e)}
     
     def generate_section(
@@ -189,6 +275,7 @@ Make it comprehensive and SEO-optimized."""
         Pass 2: Generate individual section content
         """
         if not self.available:
+            logger.error("❌ OpenAI not available for section generation")
             return "<p>Error: OpenAI not available</p>"
         
         prompt = f"""Write a section for an SEO article.
@@ -218,7 +305,7 @@ REQUIREMENTS:
 Write the section now:"""
 
         try:
-            logger.info(f"✍️ Generating section: '{section['heading']}' ({section['target_words']} words)...")
+            logger.info(f"✍️ Generating: '{section['heading']}' ({section['target_words']} words)...")
             
             response = self.client.chat.completions.create(
                 model="gpt-3.5-turbo-16k",
@@ -231,6 +318,9 @@ Write the section now:"""
             )
             
             content = response.choices[0].message.content.strip()
+            word_count = len(content.split())
+            logger.info(f"✅ Section generated: {word_count} words")
+            
             return content
             
         except Exception as e:
@@ -256,11 +346,17 @@ Write the section now:"""
         Returns:
             Dict with 'success', 'content', 'word_count', etc.
         """
+        logger.info("=" * 80)
+        logger.info("📝 STARTING ARTICLE GENERATION")
+        logger.info("=" * 80)
+        
         if not self.available:
+            error_msg = f'OpenAI client not available: {self.error_message}'
+            logger.error(f"❌ {error_msg}")
             return {
                 'success': False,
-                'error': 'OpenAI client not available',
-                'content': '<h1>Error</h1><p>Writer not initialized</p>',
+                'error': error_msg,
+                'content': f'<h1>Error</h1><p>Writer not initialized: {self.error_message}</p>',
                 'word_count': 0
             }
         
@@ -268,15 +364,21 @@ Write the section now:"""
         serp_data = serp_data or {'top_results': [], 'people_also_ask': []}
         reddit_data = reddit_data or {'pain_points': []}
         
+        logger.info(f"📌 Keyword: {main_keyword}")
+        logger.info(f"📌 Title: {title}")
+        logger.info(f"📌 Tone: {tone}")
+        logger.info(f"📌 Secondary keywords: {len(secondary_keywords)}")
+        
         try:
             # Analyze competitors and set target length
             length_analysis = self.analyze_competitor_length(serp_data)
             target_words = length_analysis['target_words']
             target_sections = length_analysis['target_sections']
             
-            logger.info(f"📊 Competitor avg: {length_analysis['competitor_avg']} | Target: {target_words} words")
+            logger.info(f"🎯 Target: {target_words} words in {target_sections} sections")
             
             # PASS 1: Generate outline
+            logger.info("🚀 Starting PASS 1...")
             outline = self.generate_outline(
                 main_keyword=main_keyword,
                 secondary_keywords=secondary_keywords,
@@ -292,17 +394,24 @@ Write the section now:"""
                 raise Exception(f"Outline generation failed: {outline['error']}")
             
             # PASS 2: Generate sections
+            logger.info("=" * 80)
+            logger.info("📝 PASS 2: GENERATING ARTICLE CONTENT")
+            logger.info("=" * 80)
+            
             sections_html = []
             
             # Introduction
             intro_html = f"""<h1>{outline.get('title', title)}</h1>
 <p><strong>{outline.get('intro_hook', 'Welcome to this comprehensive guide.')}</strong></p>"""
             sections_html.append(intro_html)
+            logger.info(f"✅ Introduction added")
             
             previous_context = outline.get('intro_hook', '')
             
             # Generate each section
-            for section in outline.get('sections', []):
+            total_sections = len(outline.get('sections', []))
+            for idx, section in enumerate(outline.get('sections', []), 1):
+                logger.info(f"📝 Section {idx}/{total_sections}: {section['heading']}")
                 section_content = self.generate_section(
                     section=section,
                     main_keyword=main_keyword,
@@ -317,6 +426,7 @@ Write the section now:"""
             conclusion_html = f"""<h2>Conclusion</h2>
 <p>{outline.get('conclusion_cta', f'This guide covered everything about {main_keyword}. Take action today!')}</p>"""
             sections_html.append(conclusion_html)
+            logger.info(f"✅ Conclusion added")
             
             # Merge all sections
             full_article = '\n\n'.join(sections_html)
@@ -324,7 +434,12 @@ Write the section now:"""
             # Calculate stats
             word_count = len(full_article.split())
             
-            logger.info(f"✅ Article complete: {word_count} words")
+            logger.info("=" * 80)
+            logger.info(f"✅ ARTICLE GENERATION COMPLETE!")
+            logger.info(f"📊 Final word count: {word_count} words")
+            logger.info(f"📊 Target was: {target_words} words")
+            logger.info(f"📊 Achievement: {(word_count/target_words*100):.1f}%")
+            logger.info("=" * 80)
             
             return {
                 'success': True,
@@ -336,6 +451,8 @@ Write the section now:"""
             
         except Exception as e:
             logger.error(f"❌ Article generation failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return {
                 'success': False,
                 'error': str(e),
@@ -353,4 +470,4 @@ if __name__ == "__main__":
     if agent.available:
         print("✅ Agent initialized successfully")
     else:
-        print("❌ Agent initialization failed")
+        print(f"❌ Agent initialization failed: {agent.error_message}")
