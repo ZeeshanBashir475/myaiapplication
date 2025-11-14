@@ -1,25 +1,26 @@
 """
-Compelling SEO Strategist Agent
-Advanced content writing agent that creates high-performing SEO articles
-balanced with human connection and emotional resonance.
+Compelling SEO Strategist Agent - UPGRADED
+2-Pass Writing System for Long-Form SEO Content (1,200-2,500+ words)
 """
 
 import os
 import logging
 from typing import Dict, List, Optional
 import openai
+import json
 
 logger = logging.getLogger(__name__)
 
 
 class CompellingSEOStrategist:
     """
-    Expert SEO and content strategist specialized in writing long-form,
-    high-performing articles that balance SEO optimization with human connection.
+    Expert SEO writer with 2-pass system:
+    Pass 1: Create detailed outline with entity/pain point checklist
+    Pass 2: Generate each section individually, then merge
     """
     
     def __init__(self, api_key: Optional[str] = None):
-        """Initialize the SEO Strategist with OpenAI client"""
+        """Initialize with OpenAI client"""
         self.api_key = api_key or os.getenv('OPENAI_API_KEY') or os.getenv('Open_Api_Key')
         
         if not self.api_key:
@@ -29,328 +30,360 @@ class CompellingSEOStrategist:
         else:
             try:
                 self.client = openai.OpenAI(api_key=self.api_key)
-                # Test the client
                 self.client.models.list()
                 self.available = True
-                logger.info("✅ Compelling SEO Strategist initialized successfully")
+                logger.info("✅ Compelling SEO Strategist (2-Pass System) initialized")
             except Exception as e:
-                logger.error(f"❌ Failed to initialize OpenAI client: {e}")
+                logger.error(f"❌ Failed to initialize: {e}")
                 self.client = None
                 self.available = False
     
     def analyze_competitor_length(self, serp_data: Dict) -> Dict[str, int]:
-        """
-        Analyze competitor content lengths and determine optimal length.
-        
-        Args:
-            serp_data: SERP analysis data containing top results
-            
-        Returns:
-            Dictionary with length recommendations
-        """
+        """Analyze competitor lengths and set target 15-25% higher"""
         top_results = serp_data.get('top_results', [])
         
-        # Extract snippet lengths as proxy for content depth
-        # In production, you'd fetch full pages, but we'll estimate based on available data
         snippet_lengths = []
         for result in top_results[:5]:
             snippet = result.get('snippet', '')
-            # Rough estimate: full articles are typically 20-30x snippet length
             estimated_words = len(snippet.split()) * 25
             snippet_lengths.append(estimated_words)
         
         if not snippet_lengths:
-            # Default recommendation
             return {
-                'min_words': 2000,
-                'target_words': 2400,
-                'max_words': 3000,
-                'strategy': 'standard_depth'
+                'min_words': 1200,
+                'target_words': 1800,
+                'max_words': 2500,
+                'strategy': 'standard_depth',
+                'competitor_avg': 1500
             }
         
-        avg_competitor_length = sum(snippet_lengths) / len(snippet_lengths)
+        avg_competitor = sum(snippet_lengths) / len(snippet_lengths)
         
-        # Determine strategy based on competitor average
-        if avg_competitor_length < 800:
-            # Competitors are shallow - go deeper
-            return {
-                'min_words': 1000,
-                'target_words': 1200,
-                'max_words': 1500,
-                'strategy': 'depth_advantage',
-                'competitor_avg': int(avg_competitor_length)
-            }
-        elif avg_competitor_length < 1500:
-            # Medium depth - go 30% deeper
-            return {
-                'min_words': 1500,
-                'target_words': 2000,
-                'max_words': 2400,
-                'strategy': 'comprehensive',
-                'competitor_avg': int(avg_competitor_length)
-            }
-        else:
-            # Already deep content - go 10-20% more comprehensive
-            target = int(avg_competitor_length * 1.15)
-            return {
-                'min_words': target - 400,
-                'target_words': target,
-                'max_words': target + 600,
-                'strategy': 'ultra_comprehensive',
-                'competitor_avg': int(avg_competitor_length)
-            }
+        # Target 15-25% longer than competitors
+        target = int(avg_competitor * 1.20)
+        target = max(1200, min(target, 2500))  # Enforce bounds
+        
+        return {
+            'min_words': max(1200, target - 300),
+            'target_words': target,
+            'max_words': min(2500, target + 500),
+            'strategy': 'outperform_competitors',
+            'competitor_avg': int(avg_competitor)
+        }
     
-    def extract_competitor_topics(self, serp_data: Dict) -> List[str]:
-        """
-        Extract key topics and themes from top-ranking competitors.
+    def extract_competitor_headings(self, serp_data: Dict) -> List[str]:
+        """Extract H2/H3 topics from competitor titles and PAA"""
+        headings = []
         
-        Args:
-            serp_data: SERP analysis data
-            
-        Returns:
-            List of key topics to cover
-        """
-        topics = []
-        
-        # Extract from titles
+        # From titles
         for result in serp_data.get('top_results', [])[:5]:
             title = result.get('title', '')
-            # Extract meaningful phrases (simple approach)
-            if title:
-                topics.append(title)
+            if title and title not in headings:
+                headings.append(title)
         
-        # Extract from People Also Ask
-        for paa in serp_data.get('people_also_ask', [])[:5]:
-            question = paa.get('question', '')
-            if question:
-                topics.append(question)
+        # From People Also Ask
+        for paa in serp_data.get('people_also_ask', [])[:8]:
+            question = paa.get('question', '') if isinstance(paa, dict) else paa
+            if question and question not in headings:
+                headings.append(question)
         
-        # Extract from opportunities
-        topics.extend(serp_data.get('opportunities', [])[:3])
-        
-        return topics[:10]  # Top 10 most important topics
+        return headings[:12]
     
-    def build_strategic_prompt(
+    def generate_outline(
         self,
         main_keyword: str,
-        secondary_keywords: List[str],
-        tone: str,
-        target_country: str,
-        language: str,
+        title: str,
+        competitor_headings: List[str],
+        reddit_pain_points: List,
+        competitor_entities: List[Dict],
         serp_data: Dict,
-        reddit_data: Dict,
-        unique_insights: str,
-        title: str = ""
-    ) -> str:
+        target_words: int
+    ) -> Dict:
         """
-        Build a comprehensive, strategic prompt for content generation.
-        
-        Args:
-            main_keyword: Primary keyword to target
-            secondary_keywords: List of secondary keywords
-            tone: Desired tone of voice
-            target_country: Target country/region
-            language: Content language
-            serp_data: SERP analysis data
-            reddit_data: Reddit pain points and discussions
-            unique_insights: User-provided unique insights
-            title: Article title
-            
-        Returns:
-            Strategic prompt for content generation
+        PASS 1: Generate detailed outline with word allocations
         """
-        # Analyze competitor length
-        length_strategy = self.analyze_competitor_length(serp_data)
+        logger.info(f"📋 Pass 1: Generating outline (target: {target_words} words)...")
         
-        # Extract competitor topics
-        competitor_topics = self.extract_competitor_topics(serp_data)
+        # Format inputs
+        headings_text = '\n'.join([f"- {h}" for h in competitor_headings])
         
-        # Format Reddit pain points
-        pain_points = reddit_data.get('pain_points', [])[:8]
         pain_points_text = '\n'.join([
-            f"- {p.get('pain', p) if isinstance(p, dict) else p} (from r/{p.get('subreddit', 'general') if isinstance(p, dict) else 'general'})"
-            for p in pain_points
+            f"- {p.get('pain', p) if isinstance(p, dict) else p}"
+            for p in reddit_pain_points[:10]
         ])
         
-        # Format People Also Ask
-        paa_questions = serp_data.get('people_also_ask', [])[:8]
+        entities_text = '\n'.join([
+            f"- {e['name']} ({e['type']})"
+            for e in competitor_entities[:15]
+        ]) if competitor_entities else "No specific entities required"
+        
         paa_text = '\n'.join([
             f"- {q.get('question', q) if isinstance(q, dict) else q}"
-            for q in paa_questions
+            for q in serp_data.get('people_also_ask', [])[:8]
         ])
         
-        # Format competitor topics
-        topics_text = '\n'.join([f"- {topic}" for topic in competitor_topics])
+        prompt = f"""You are an SEO content strategist. Create a detailed outline for a {target_words}-word article.
+
+ARTICLE TITLE: {title}
+MAIN KEYWORD: {main_keyword}
+TARGET LENGTH: {target_words} words
+
+COMPETITOR TOPICS (must cover):
+{headings_text}
+
+REDDIT PAIN POINTS (must address):
+{pain_points_text}
+
+PEOPLE ALSO ASK (must answer):
+{paa_text}
+
+REQUIRED ENTITIES (must mention):
+{entities_text}
+
+Create a JSON outline with this structure:
+{{
+  "sections": [
+    {{
+      "heading": "Section Title (H2)",
+      "word_allocation": 200,
+      "subsections": [
+        {{"subheading": "Subsection (H3)", "word_allocation": 80}},
+        {{"subheading": "Another subsection (H3)", "word_allocation": 120}}
+      ],
+      "required_elements": ["Entity X", "Pain point Y"],
+      "tone_guidance": "Empathetic and solution-focused"
+    }}
+  ],
+  "total_words": {target_words},
+  "entity_checklist": ["Entity 1", "Entity 2", ...],
+  "pain_point_checklist": ["Pain 1", "Pain 2", ...]
+}}
+
+RULES:
+- Introduction: 10-12% of total words
+- Main body sections: 70-75% split across 4-6 major sections
+- FAQ section: 8-10% covering all PAA questions
+- Conclusion: 5-8% with strong CTA
+- Each section must have clear purpose and required elements
+- Allocate more words to complex topics
+- Ensure ALL competitor topics, pain points, and entities are assigned to sections
+
+Return ONLY valid JSON, no other text."""
+
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo-16k",
+                messages=[
+                    {"role": "system", "content": "You are an expert SEO content strategist who creates detailed outlines."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=2000,
+                temperature=0.3  # Lower temp for structured outline
+            )
+            
+            outline_text = response.choices[0].message.content.strip()
+            
+            # Parse JSON
+            # Remove markdown code blocks if present
+            if "```json" in outline_text:
+                outline_text = outline_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in outline_text:
+                outline_text = outline_text.split("```")[1].split("```")[0].strip()
+            
+            outline = json.loads(outline_text)
+            
+            logger.info(f"✅ Outline generated: {len(outline['sections'])} sections")
+            return outline
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ Failed to parse outline JSON: {e}")
+            # Fallback outline
+            return self._create_fallback_outline(main_keyword, title, target_words, competitor_headings, pain_points_text)
+        except Exception as e:
+            logger.error(f"❌ Outline generation error: {e}")
+            return self._create_fallback_outline(main_keyword, title, target_words, competitor_headings, pain_points_text)
+    
+    def _create_fallback_outline(self, keyword, title, target_words, headings, pain_points):
+        """Create a simple fallback outline if JSON parsing fails"""
+        sections_count = 5
+        words_per_section = target_words // sections_count
         
-        # Format opportunities
-        opportunities = serp_data.get('opportunities', [])[:5]
-        opportunities_text = '\n'.join([f"- {opp}" for opp in opportunities])
-        
-        # Secondary keywords formatted
-        secondary_kw_text = ', '.join(secondary_keywords[:5]) if secondary_keywords else 'Not provided'
-        
-        # Map tone to writing style
-        tone_mapping = {
-            'friendly': 'Friendly & Conversational - Write like you\'re talking to a friend over coffee',
-            'professional': 'Professional & Expert - Authoritative yet accessible, like a trusted consultant',
-            'bold': 'Bold & Persuasive - Confident, direct, and action-oriented',
-            'emotional': 'Emotional & Empathetic - Deeply understanding and emotionally aware'
+        return {
+            "sections": [
+                {
+                    "heading": "Introduction",
+                    "word_allocation": int(target_words * 0.12),
+                    "subsections": [],
+                    "required_elements": [keyword],
+                    "tone_guidance": "Hook with pain point"
+                },
+                {
+                    "heading": f"Understanding {keyword}",
+                    "word_allocation": words_per_section,
+                    "subsections": [],
+                    "required_elements": [keyword],
+                    "tone_guidance": "Educational"
+                },
+                {
+                    "heading": "Key Benefits and Features",
+                    "word_allocation": words_per_section,
+                    "subsections": [],
+                    "required_elements": [],
+                    "tone_guidance": "Positive"
+                },
+                {
+                    "heading": "Common Challenges and Solutions",
+                    "word_allocation": words_per_section,
+                    "subsections": [],
+                    "required_elements": pain_points[:3] if pain_points else [],
+                    "tone_guidance": "Problem-solving"
+                },
+                {
+                    "heading": "FAQ",
+                    "word_allocation": int(target_words * 0.10),
+                    "subsections": [],
+                    "required_elements": [],
+                    "tone_guidance": "Clear and concise"
+                },
+                {
+                    "heading": "Conclusion",
+                    "word_allocation": int(target_words * 0.08),
+                    "subsections": [],
+                    "required_elements": [keyword],
+                    "tone_guidance": "Action-oriented"
+                }
+            ],
+            "total_words": target_words,
+            "entity_checklist": [],
+            "pain_point_checklist": []
         }
-        tone_guidance = tone_mapping.get(tone, tone)
+    
+    def generate_section(
+        self,
+        section_data: Dict,
+        main_keyword: str,
+        tone: str,
+        context: str = ""
+    ) -> str:
+        """
+        PASS 2: Generate individual section with specified word count
+        """
+        heading = section_data['heading']
+        word_allocation = section_data['word_allocation']
+        required_elements = section_data.get('required_elements', [])
+        tone_guidance = section_data.get('tone_guidance', 'professional')
+        subsections = section_data.get('subsections', [])
         
-        prompt = f"""You are "The Compelling SEO Strategist" — an expert SEO and content strategist specialized in writing long-form, high-performing articles that balance SEO optimization with human connection.
-
-## INPUTS PROVIDED:
-
-### Core Keywords:
-- Main Keyword: "{main_keyword}"
-- Secondary Keywords: {secondary_kw_text}
-
-### Article Details:
-- Title: {title or f"Comprehensive Guide to {main_keyword}"}
-- Tone of Voice: {tone_guidance}
-- Target Audience: {target_country}
-- Language: {language}
-
-### SERP Intelligence (Top Competitors Analysis):
-**Competitor Content Strategy:**
-- Average competitor length: {length_strategy.get('competitor_avg', 'N/A')} words
-- Recommended strategy: {length_strategy.get('strategy', 'comprehensive')}
-- Your target length: {length_strategy['min_words']}-{length_strategy['target_words']} words
-
-**Key Topics Covered by Top-Ranking Pages:**
-{topics_text}
-
-### Real Human Pain Points (From Reddit):
-{pain_points_text if pain_points_text else '- General questions about ' + main_keyword}
-
-### People Also Ask (Google):
-{paa_text if paa_text else '- Common questions about ' + main_keyword}
-
-### Content Opportunities (Gaps in Current Top Results):
-{opportunities_text if opportunities_text else '- Provide comprehensive coverage\n- Include practical examples\n- Add visual elements'}
-
-### Unique Insights/Data:
-{unique_insights if unique_insights else 'Use general best practices and up-to-date information'}
-
----
-
-## YOUR OBJECTIVE:
-
-1. **Analyze & Strategize:**
-   - Review the topics covered by top SERP pages
-   - Identify what makes them rank (comprehensiveness, structure, user value)
-   - Determine content gaps and opportunities to add unique value
-
-2. **Structure for Excellence:**
-   - Create an article that's {length_strategy.get('strategy', 'comprehensive')} — aim for {length_strategy['target_words']} words
-   - This is approximately 10-20% more comprehensive than current top results
-   - Structure with clear H2 and H3 headings for scannability
-
-3. **Lead with Emotion:**
-   - Start with a powerful hook that addresses a real pain point from Reddit
-   - Make readers feel understood before you educate them
-   - Use storytelling elements where appropriate
-
-4. **Integrate All Intelligence:**
-   - Naturally weave in all competitor topics
-   - Address every pain point throughout the article
-   - Answer all "People Also Ask" questions (especially in FAQ section)
-   - Incorporate the unique insights to differentiate from competitors
-
----
-
-## WRITING GUIDELINES:
-
-### Style & Voice:
-- Write with a **natural, human-like flow** — no robotic or formulaic language
-- Adopt the specified tone: {tone_guidance}
-- Use varied sentence structures and paragraph lengths for rhythm
-- Include transitional phrases for coherence
-
-### Content Structure:
-- **Introduction (8-12% of article):**
-  - Hook with an emotional pain point or compelling scenario
-  - Promise what the reader will learn
-  - Establish credibility briefly
-
-- **Main Body (75-80% of article):**
-  - Use descriptive H2 headings for major sections
-  - Use H3 for subsections
-  - Include examples, analogies, or mini case studies
-  - Use bullet points and numbered lists strategically for readability
-  - Bold key concepts or action items
-  - Address pain points naturally throughout
-
-- **FAQ Section (5-10% of article):**
-  - Answer all "People Also Ask" questions
-  - Use clear Q&A format
-  - Keep answers concise but complete
-
-- **Conclusion (5-8% of article):**
-  - Summarize key takeaways
-  - Include a strong call-to-action
-  - End with encouragement or next steps
-
-### SEO Best Practices:
-- Use main keyword "{main_keyword}" naturally 6-10 times (target 1-2% density)
-- Include secondary keywords contextually throughout
-- Use semantic/LSI keywords naturally (related terms and phrases)
-- Front-load important keywords in H2 headings where natural
-- Write meta-worthy content (quotable stats, clear answers, unique insights)
-
-### Engagement & Value:
-- **Specificity over generality:** Use concrete examples and numbers
-- **Show, don't just tell:** Include scenarios, before/after comparisons
-- **Anticipate objections:** Address common concerns proactively
-- **Add original value:** Don't just rehash what competitors say
-- **Make it actionable:** Include clear steps or frameworks where relevant
-
----
-
-## CONTENT LENGTH STRATEGY:
-
-Based on competitor analysis:
-- **Minimum:** {length_strategy['min_words']} words (maintain quality threshold)
-- **Target:** {length_strategy['target_words']} words (optimal for outranking)
-- **Maximum:** {length_strategy['max_words']} words (comprehensive without padding)
-
-**Priority:** If the topic is inherently simple, prioritize **clarity and completeness** over hitting the maximum word count. Never pad content with fluff — every paragraph must provide value.
-
----
-
-## FORMATTING REQUIREMENTS:
-
-Use proper HTML formatting:
-- `<h1>` for the main title ONLY (use the provided title)
-- `<h2>` for major sections
-- `<h3>` for subsections
-- `<p>` for paragraphs (keep paragraphs 2-4 sentences for readability)
-- `<ul>` and `<li>` for unordered lists
-- `<ol>` and `<li>` for ordered/numbered lists
-- `<strong>` for emphasis on key terms
-- `<blockquote>` for important quotes or statistics
-- `<table>` for comparison tables if relevant
-
-Add appropriate spacing between sections for visual clarity.
-
----
-
-## DELIVERABLE:
-
-Write the complete SEO-optimized article NOW.
-
-**Important:** Return ONLY the final HTML-formatted article. Do not include any meta-commentary, reasoning steps, or explanations about your process. Start directly with the `<h1>` tag.
-
-The article should:
-- Feel expert-written and emotionally aware
-- Be distinctly more valuable than what currently ranks in SERPs
-- Balance SEO optimization with genuine human connection
-- Position the reader for success after reading
-
-BEGIN WRITING:"""
+        logger.info(f"✍️ Generating section: '{heading}' ({word_allocation} words)...")
         
-        return prompt
+        # Build subsection guidance
+        subsection_text = ""
+        if subsections:
+            subsection_text = "\n\nINCLUDE THESE SUBSECTIONS (H3):\n"
+            subsection_text += '\n'.join([
+                f"- {sub['subheading']} (~{sub['word_allocation']} words)"
+                for sub in subsections
+            ])
+        
+        required_text = ""
+        if required_elements:
+            required_text = f"\n\nMUST INCLUDE: {', '.join([str(e) for e in required_elements])}"
+        
+        context_text = ""
+        if context:
+            context_text = f"\n\nCONTEXT FROM PREVIOUS SECTIONS:\n{context}\n\nBuild upon this naturally."
+        
+        prompt = f"""Write a comprehensive section for an SEO article about "{main_keyword}".
+
+SECTION HEADING (H2): {heading}
+TARGET LENGTH: {word_allocation} words (strictly enforce this - do not write significantly less)
+TONE: {tone_guidance} with overall {tone} style
+{subsection_text}{required_text}{context_text}
+
+WRITING RULES:
+- Start with <h2>{heading}</h2>
+- If subsections exist, use <h3> tags for them
+- Write {word_allocation} words minimum - be thorough and comprehensive
+- Use <p> tags for paragraphs (2-4 sentences each)
+- Use <ul><li> for bullet points where appropriate
+- Use <strong> for key terms
+- Natural, human-like writing - no robotic tone
+- Include specific examples and actionable advice
+- Maintain flow and readability
+- Address pain points empathetically
+
+Return ONLY the HTML for this section, nothing else."""
+
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo-16k",
+                messages=[
+                    {"role": "system", "content": "You are an expert SEO content writer who writes engaging, comprehensive sections."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=int(word_allocation * 2),  # Generous token allocation
+                temperature=0.7
+            )
+            
+            section_html = response.choices[0].message.content.strip()
+            word_count = len(section_html.split())
+            
+            logger.info(f"✅ Section '{heading}' generated ({word_count} words)")
+            
+            return section_html
+            
+        except Exception as e:
+            logger.error(f"❌ Section generation error: {e}")
+            return f"<h2>{heading}</h2><p>Error generating section: {str(e)}</p>"
+    
+    def expand_section(self, section_html: str, additional_words: int = 200) -> str:
+        """Expand an existing section with more detail"""
+        logger.info(f"🔄 Expanding section by {additional_words} words...")
+        
+        prompt = f"""Expand the following section by adding {additional_words} more words of valuable content.
+
+CURRENT SECTION:
+{section_html}
+
+Add more:
+- Specific examples
+- Actionable steps
+- Supporting details
+- Practical advice
+
+Maintain the same heading and structure. Return the complete expanded section in HTML."""
+
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo-16k",
+                messages=[
+                    {"role": "system", "content": "You are an expert content editor who expands sections with valuable details."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=int(additional_words * 2),
+                temperature=0.7
+            )
+            
+            expanded = response.choices[0].message.content.strip()
+            logger.info(f"✅ Section expanded")
+            return expanded
+            
+        except Exception as e:
+            logger.error(f"❌ Expansion error: {e}")
+            return section_html
+    
+    def regenerate_section(self, section_data: Dict, main_keyword: str, tone: str, reason: str = "") -> str:
+        """Regenerate a section with specific improvements"""
+        logger.info(f"🔁 Regenerating section: {section_data['heading']}")
+        
+        additional_guidance = f"\n\nIMPROVEMENT NEEDED: {reason}" if reason else ""
+        
+        # Add improvement context to section data
+        section_data_copy = section_data.copy()
+        if 'tone_guidance' in section_data_copy:
+            section_data_copy['tone_guidance'] += additional_guidance
+        
+        return self.generate_section(section_data_copy, main_keyword, tone)
     
     def write_article(
         self,
@@ -364,120 +397,105 @@ BEGIN WRITING:"""
         unique_insights: str = "",
         title: str = "",
         max_tokens: int = 4000
-    ) -> Dict[str, any]:
+    ) -> Dict:
         """
-        Generate a comprehensive SEO article using the Compelling SEO Strategist approach.
-        
-        Args:
-            main_keyword: Primary keyword
-            secondary_keywords: List of secondary keywords
-            tone: Desired tone of voice
-            target_country: Target country/region
-            language: Content language
-            serp_data: SERP analysis data
-            reddit_data: Reddit pain points
-            unique_insights: User-provided unique insights
-            title: Article title
-            max_tokens: Maximum tokens for generation
-            
-        Returns:
-            Dictionary containing the article and metadata
+        Main 2-pass writing method
         """
         if not self.available:
-            logger.error("❌ Cannot generate article - OpenAI client not available")
+            logger.error("❌ Cannot write - OpenAI client not available")
             return {
-                'content': "<h1>Content Generation Unavailable</h1><p>OpenAI API key not configured. Please check your environment variables.</p>",
+                'content': "<h1>Error</h1><p>OpenAI not configured</p>",
                 'word_count': 0,
                 'success': False
             }
         
         try:
-            # Build strategic prompt
-            logger.info(f"🎯 Building strategic prompt for '{main_keyword}'...")
-            prompt = self.build_strategic_prompt(
+            # Analyze competitors
+            length_strategy = self.analyze_competitor_length(serp_data)
+            target_words = length_strategy['target_words']
+            
+            logger.info(f"🎯 Target length: {target_words} words (competitors avg: {length_strategy['competitor_avg']})")
+            
+            # Extract data
+            competitor_headings = self.extract_competitor_headings(serp_data)
+            pain_points = reddit_data.get('pain_points', [])
+            
+            # Get competitor entities if available (from NLP analysis)
+            competitor_entities = []
+            if 'competitor_entities' in serp_data:
+                competitor_entities = serp_data['competitor_entities']
+            
+            # PASS 1: Generate outline
+            outline = self.generate_outline(
                 main_keyword=main_keyword,
-                secondary_keywords=secondary_keywords,
-                tone=tone,
-                target_country=target_country,
-                language=language,
+                title=title or main_keyword,
+                competitor_headings=competitor_headings,
+                reddit_pain_points=pain_points,
+                competitor_entities=competitor_entities,
                 serp_data=serp_data,
-                reddit_data=reddit_data,
-                unique_insights=unique_insights,
-                title=title
+                target_words=target_words
             )
             
-            logger.info("🤖 Generating article with Compelling SEO Strategist...")
+            # PASS 2: Generate each section
+            sections_html = []
+            context_summary = ""
             
-            # Generate content using OpenAI
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo-16k",  # Use 16k for longer content
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert SEO content strategist who writes compelling, human-centric articles that rank highly in search engines while deeply connecting with readers."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                max_tokens=max_tokens,
-                temperature=0.7,
-                presence_penalty=0.1,  # Encourage diverse vocabulary
-                frequency_penalty=0.1   # Reduce repetition
-            )
+            # Add title
+            sections_html.append(f"<h1>{title or main_keyword}</h1>")
             
-            article_content = response.choices[0].message.content.strip()
-            word_count = len(article_content.split())
+            for i, section in enumerate(outline['sections']):
+                section_html = self.generate_section(
+                    section_data=section,
+                    main_keyword=main_keyword,
+                    tone=tone,
+                    context=context_summary
+                )
+                
+                sections_html.append(section_html)
+                
+                # Update context for next section (keep it brief)
+                context_summary = f"Covered: {section['heading']}"
+                if i < len(outline['sections']) - 1:
+                    context_summary += f". Next: {outline['sections'][i+1]['heading']}"
+                
+                # Respect rate limits
+                if i < len(outline['sections']) - 1:
+                    import time
+                    time.sleep(1)
             
-            logger.info(f"✅ Article generated successfully ({word_count} words)")
+            # Merge all sections
+            final_content = '\n\n'.join(sections_html)
+            word_count = len(final_content.split())
+            
+            logger.info(f"✅ Article complete: {word_count} words (target: {target_words})")
             
             return {
-                'content': article_content,
+                'content': final_content,
                 'word_count': word_count,
                 'success': True,
-                'model_used': 'gpt-3.5-turbo-16k',
-                'length_strategy': self.analyze_competitor_length(serp_data)
+                'outline': outline,
+                'target_words': target_words,
+                'length_strategy': length_strategy
             }
             
-        except openai.APIError as e:
-            logger.error(f"❌ OpenAI API error: {e}")
-            return {
-                'content': f"<h1>API Error</h1><p>OpenAI API Error: {str(e)}</p>",
-                'word_count': 0,
-                'success': False,
-                'error': str(e)
-            }
         except Exception as e:
-            logger.error(f"❌ Article generation error: {e}")
+            logger.error(f"❌ Writing error: {e}")
             import traceback
             logger.error(traceback.format_exc())
             return {
-                'content': f"<h1>Generation Error</h1><p>Error: {str(e)}</p>",
+                'content': f"<h1>Error</h1><p>{str(e)}</p>",
                 'word_count': 0,
                 'success': False,
                 'error': str(e)
             }
 
 
-# Standalone test function
+# Test
 if __name__ == "__main__":
-    # Test the agent
     logging.basicConfig(level=logging.INFO)
     
-    strategist = CompellingSEOStrategist()
-    
-    if strategist.available:
-        print("✅ Compelling SEO Strategist is ready!")
-        
-        # Test competitor length analysis
-        test_serp = {
-            'top_results': [
-                {'title': 'Test Article', 'snippet': 'This is a test snippet with some words ' * 10}
-            ] * 5
-        }
-        
-        length_rec = strategist.analyze_competitor_length(test_serp)
-        print(f"Length recommendation: {length_rec}")
+    writer = CompellingSEOStrategist()
+    if writer.available:
+        print("✅ Writer ready with 2-pass system")
     else:
-        print("❌ Agent not available - check API key")
+        print("❌ Writer not available")
