@@ -42,6 +42,34 @@ SerpAgent = None
 CompellingSEOStrategist = None
 NLPAgent = None
 
+# Import CompellingSEOStrategist with detailed debugging
+CompellingSEOStrategist = None
+try:
+    logger.info(f"🔍 Attempting to import from: {agents_path}")
+    logger.info(f"🔍 Directory exists: {os.path.exists(agents_path)}")
+    
+    if os.path.exists(agents_path):
+        files = os.listdir(agents_path)
+        logger.info(f"🔍 Files in agents directory: {files}")
+    
+    from Compelling_seo_strategist import CompellingSEOStrategist
+    logger.info("✅ CompellingSEOStrategist imported")
+    
+    # Test instantiation
+    test_agent = CompellingSEOStrategist()
+    logger.info(f"✅ Test agent created. Available: {test_agent.available}")
+    if not test_agent.available:
+        logger.warning(f"⚠️ Agent not available. Error: {test_agent.error_message}")
+    
+except ImportError as e:
+    logger.error(f"❌ Import error: {e}")
+    import traceback
+    logger.error(traceback.format_exc())
+except Exception as e:
+    logger.error(f"❌ Failed to import CompellingSEOStrategist: {e}")
+    import traceback
+    logger.error(traceback.format_exc())
+
 try:
     from Reddit_scraper import RedditScraper
     logger.info("✅ RedditScraper imported")
@@ -54,11 +82,6 @@ try:
 except Exception as e:
     logger.error(f"❌ Failed to import SerpAgent: {e}")
 
-try:
-    from Compelling_seo_strategist import CompellingSEOStrategist
-    logger.info("✅ CompellingSEOStrategist imported")
-except Exception as e:
-    logger.error(f"❌ Failed to import CompellingSEOStrategist: {e}")
 
 try:
     from Nlp_agent import NLPAgent
