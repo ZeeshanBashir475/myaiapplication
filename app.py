@@ -58,6 +58,14 @@ try:
 except Exception as e:
     logger.error(f"❌ Failed to import NLPAgent: {e}")
 
+# Import SEO Engine (NEW!)
+SEOEngine = None
+try:
+    from seo_engine import SEOEngine
+    logger.info("✅ SEO Engine imported")
+except Exception as e:
+    logger.warning(f"⚠️ SEO Engine not available: {e}")
+    
 app = Flask(__name__)
 CORS(app)
 
@@ -72,6 +80,15 @@ try:
         logger.info("✅ Global NLP Agent initialized")
 except Exception as e:
     logger.error(f"❌ Failed to initialize NLP Agent: {e}")
+
+# Initialize SEO Engine globally (NEW!)
+seo_engine = None
+if SEOEngine:
+    try:
+        seo_engine = SEOEngine(nlp_agent=nlp_agent)
+        logger.info("✅ Global SEO Engine initialized")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize SEO Engine: {e}")
 
 def add_progress(message: str, percentage: int):
     """Add progress update"""
@@ -362,7 +379,34 @@ def analyze_article_nlp(content: str, competitor_nlp: Dict) -> Dict:
         return {'nlp_available': False}
 
 def calculate_metrics(content: str, params: Dict) -> Dict:
-    """Calculate SEO metrics"""
+    """Calculate SEO metrics using SEO Engine if available"""
+    
+    # Use SEO Engine if available (NEW!)
+    if seo_engine:
+        logger.info("📊 Using SEO Engine for metrics")
+        
+        # Get comprehensive SEO score
+        seo_score_data = seo_engine.seo_score(
+            text=content,
+            keyword=params['main_keyword'],
+            competitor_entities=None,  # Will be passed from competitor_nlp in future
+            target_word_count=2000
+        )
+        
+        # Get basic metrics
+        word_count = seo_engine.get_word_count(content)
+        kw_data = seo_engine.get_keyword_density(content, params['main_keyword'])
+        read_data = seo_engine.readability(content)
+        
+        return {
+            'word_count': word_count,
+            'keyword_density': kw_data['density'],
+            'seo_score': seo_score_data['total_score'],
+            'readability': read_data['grade_level']
+        }
+    
+    # Fallback to basic calculation if SEO Engine not available
+    logger.info("📊 Using fallback metrics calculation")
     words = len(content.split())
     kw = params['main_keyword'].lower()
     kw_count = content.lower().count(kw)
@@ -385,10 +429,27 @@ def calculate_metrics(content: str, params: Dict) -> Dict:
         'readability': readability
     }
 
-def generate_recommendations(metrics: Dict, params: Dict, article_nlp: Dict) -> List[Dict]:
-    """Generate SEO recommendations"""
+def generate_recommendations(metrics: Dict, params: Dict, article_nlp: Dict, serp_data: Dict = None, reddit_data: Dict = None, content: str = "") -> List[Dict]:
+    """Generate SEO recommendations using SEO Engine if available"""
     add_progress("📊 Generating recommendations...", 80)
     
+    # Use SEO Engine if available (NEW!)
+    if seo_engine and content:
+        logger.info("💡 Using SEO Engine for recommendations")
+        
+        recs = seo_engine.recommendations(
+            text=content,
+            keyword=params['main_keyword'],
+            competitor_entities=article_nlp.get('article_entities', []),
+            reddit_pain_points=reddit_data.get('pain_points', []) if reddit_data else [],
+            competitor_headings=None,
+            target_word_count=2000
+        )
+        
+        return recs
+    
+    # Fallback to basic recommendations
+    logger.info("💡 Using fallback recommendations")
     recs = []
     
     if metrics['keyword_density'] < 1:
@@ -885,7 +946,14 @@ def generate_seo_article():
         metrics = calculate_metrics(article_data['content'], params)
         
         # 7. Recommendations
-        recommendations = generate_recommendations(metrics, params, article_nlp)
+      recommendations = generate_recommendations(
+    metrics, 
+    params, 
+    article_nlp,
+    serp_data=serp_data,
+    reddit_data=reddit_data,
+    content=article_data['content']
+)
         
         # 8. Competitor Comparison
         competitor_comparison = generate_competitor_comparison(metrics, serp_data, reddit_data, article_nlp)
