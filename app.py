@@ -28,6 +28,14 @@ except ImportError:
     OPENAI_AVAILABLE = False
     logger.warning("❌ OpenAI not available")
 
+# Import SEO Engine
+SEOEngine = None
+try:
+    from seo_engine import SEOEngine
+    logger.info("✅ SEO Engine imported")
+except Exception as e:
+    logger.warning(f"⚠️ SEO Engine not available: {e}")
+
 # Import agents
 RedditScraper = None
 SerpAgent = None
@@ -58,14 +66,6 @@ try:
 except Exception as e:
     logger.error(f"❌ Failed to import NLPAgent: {e}")
 
-# Import SEO Engine (NEW!)
-SEOEngine = None
-try:
-    from seo_engine import SEOEngine
-    logger.info("✅ SEO Engine imported")
-except Exception as e:
-    logger.warning(f"⚠️ SEO Engine not available: {e}")
-    
 app = Flask(__name__)
 CORS(app)
 
@@ -81,7 +81,7 @@ try:
 except Exception as e:
     logger.error(f"❌ Failed to initialize NLP Agent: {e}")
 
-# Initialize SEO Engine globally (NEW!)
+# Initialize SEO Engine globally
 seo_engine = None
 if SEOEngine:
     try:
@@ -381,31 +381,35 @@ def analyze_article_nlp(content: str, competitor_nlp: Dict) -> Dict:
 def calculate_metrics(content: str, params: Dict) -> Dict:
     """Calculate SEO metrics using SEO Engine if available"""
     
-    # Use SEO Engine if available (NEW!)
+    # Use SEO Engine if available
     if seo_engine:
         logger.info("📊 Using SEO Engine for metrics")
         
-        # Get comprehensive SEO score
-        seo_score_data = seo_engine.seo_score(
-            text=content,
-            keyword=params['main_keyword'],
-            competitor_entities=None,  # Will be passed from competitor_nlp in future
-            target_word_count=2000
-        )
-        
-        # Get basic metrics
-        word_count = seo_engine.get_word_count(content)
-        kw_data = seo_engine.get_keyword_density(content, params['main_keyword'])
-        read_data = seo_engine.readability(content)
-        
-        return {
-            'word_count': word_count,
-            'keyword_density': kw_data['density'],
-            'seo_score': seo_score_data['total_score'],
-            'readability': read_data['grade_level']
-        }
+        try:
+            # Get comprehensive SEO score
+            seo_score_data = seo_engine.seo_score(
+                text=content,
+                keyword=params['main_keyword'],
+                competitor_entities=None,
+                target_word_count=2000
+            )
+            
+            # Get basic metrics
+            word_count = seo_engine.get_word_count(content)
+            kw_data = seo_engine.get_keyword_density(content, params['main_keyword'])
+            read_data = seo_engine.readability(content)
+            
+            return {
+                'word_count': word_count,
+                'keyword_density': kw_data['density'],
+                'seo_score': seo_score_data['total_score'],
+                'readability': read_data['grade_level']
+            }
+        except Exception as e:
+            logger.error(f"SEO Engine metrics error: {e}")
+            # Fall through to fallback
     
-    # Fallback to basic calculation if SEO Engine not available
+    # Fallback to basic calculation
     logger.info("📊 Using fallback metrics calculation")
     words = len(content.split())
     kw = params['main_keyword'].lower()
@@ -433,20 +437,24 @@ def generate_recommendations(metrics: Dict, params: Dict, article_nlp: Dict, ser
     """Generate SEO recommendations using SEO Engine if available"""
     add_progress("📊 Generating recommendations...", 80)
     
-    # Use SEO Engine if available (NEW!)
+    # Use SEO Engine if available
     if seo_engine and content:
         logger.info("💡 Using SEO Engine for recommendations")
         
-        recs = seo_engine.recommendations(
-            text=content,
-            keyword=params['main_keyword'],
-            competitor_entities=article_nlp.get('article_entities', []),
-            reddit_pain_points=reddit_data.get('pain_points', []) if reddit_data else [],
-            competitor_headings=None,
-            target_word_count=2000
-        )
-        
-        return recs
+        try:
+            recs = seo_engine.recommendations(
+                text=content,
+                keyword=params['main_keyword'],
+                competitor_entities=article_nlp.get('article_entities', []),
+                reddit_pain_points=reddit_data.get('pain_points', []) if reddit_data else [],
+                competitor_headings=None,
+                target_word_count=2000
+            )
+            
+            return recs
+        except Exception as e:
+            logger.error(f"SEO Engine recommendations error: {e}")
+            # Fall through to fallback
     
     # Fallback to basic recommendations
     logger.info("💡 Using fallback recommendations")
@@ -513,7 +521,8 @@ def generate_competitor_comparison(metrics: Dict, serp_data: Dict, reddit_data: 
     
     return {'features': features, 'summary': summary}
 
-# Keep the exact same HTML template from original (with Waqzee black/white theme)
+
+# HTML Template (same as original)
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -591,10 +600,9 @@ HTML_TEMPLATE = """
     <div class="container">
         <div class="input-section">
             <h2 class="section-title">CompellSEO</h2>
-            <p>CompellSEO is an AI-powered content optimiSation tool that helps you create SEO-ready articles backed by real-time data. </p>
-<p> It analySes top-ranking competitors, Reddit discussions, and Google NLP insights to show exactly what makes great content perform, then helps you write something better. </p>
-
-<p> Get real-time SEO scores, entity coverage, and keyword optimization feedback as you write — just like SurferSEO, but smarter, faster, and uniquely tailored to your niche.  </p>
+            <p>CompellSEO is an AI-powered content optimiSation tool that helps you create SEO-ready articles backed by real-time data.</p>
+            <p>It analySes top-ranking competitors, Reddit discussions, and Google NLP insights to show exactly what makes great content perform, then helps you write something better.</p>
+            <p>Get real-time SEO scores, entity coverage, and keyword optimization feedback as you write — just like SurferSEO, but smarter, faster, and uniquely tailored to your niche.</p>
             <br><br>
             
             <div class="input-grid">
@@ -945,15 +953,15 @@ def generate_seo_article():
         # 6. Calculate Metrics
         metrics = calculate_metrics(article_data['content'], params)
         
-        # 7. Recommendations
-      recommendations = generate_recommendations(
-    metrics, 
-    params, 
-    article_nlp,
-    serp_data=serp_data,
-    reddit_data=reddit_data,
-    content=article_data['content']
-)
+        # 7. Recommendations (pass content for SEO Engine)
+        recommendations = generate_recommendations(
+            metrics, 
+            params, 
+            article_nlp,
+            serp_data=serp_data,
+            reddit_data=reddit_data,
+            content=article_data['content']
+        )
         
         # 8. Competitor Comparison
         competitor_comparison = generate_competitor_comparison(metrics, serp_data, reddit_data, article_nlp)
@@ -995,7 +1003,8 @@ def health_check():
         "reddit_available": RedditScraper is not None,
         "serp_available": SerpAgent is not None,
         "writer_available": CompellingSEOStrategist is not None,
-        "nlp_available": nlp_agent.available if nlp_agent else False
+        "nlp_available": nlp_agent.available if nlp_agent else False,
+        "seo_engine_available": seo_engine is not None
     })
 
 if __name__ == "__main__":
