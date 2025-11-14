@@ -1,13 +1,19 @@
 """
-Compelling SEO Strategist Agent - UPGRADED
+Compelling SEO Strategist Agent - CLEAN VERSION
 2-Pass Writing System for Long-Form SEO Content (1,200-2,500+ words)
 """
 
 import os
 import logging
 from typing import Dict, List, Optional
-import openai
-import json
+
+# Import OpenAI - Compatible with v1.x
+try:
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OpenAI = None
+    OPENAI_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -22,21 +28,27 @@ class CompellingSEOStrategist:
     def __init__(self, api_key: Optional[str] = None):
         """Initialize with OpenAI client"""
         self.api_key = api_key or os.getenv('OPENAI_API_KEY') or os.getenv('Open_Api_Key')
+        self.available = False
         
+        if not OPENAI_AVAILABLE:
+            logger.warning("⚠️ OpenAI package not available")
+            self.client = None
+            return
+            
         if not self.api_key:
             logger.warning("⚠️ No OpenAI API key provided")
             self.client = None
-            self.available = False
-        else:
-            try:
-                self.client = openai.OpenAI(api_key=self.api_key)
-                self.client.models.list()
-                self.available = True
-                logger.info("✅ Compelling SEO Strategist (2-Pass System) initialized")
-            except Exception as e:
-                logger.error(f"❌ Failed to initialize: {e}")
-                self.client = None
-                self.available = False
+            return
+        
+        try:
+            self.client = OpenAI(api_key=self.api_key)
+            # Test connection
+            self.client.models.list()
+            self.available = True
+            logger.info("✅ Compelling SEO Strategist (2-Pass System) initialized")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize: {e}")
+            self.client = None
     
     def analyze_competitor_length(self, serp_data: Dict) -> Dict[str, int]:
         """Analyze competitor lengths and set target 15-25% higher"""
@@ -45,457 +57,300 @@ class CompellingSEOStrategist:
         snippet_lengths = []
         for result in top_results[:5]:
             snippet = result.get('snippet', '')
+            # Rough estimate: snippet is ~50-100 words, article is ~15-30x longer
             estimated_words = len(snippet.split()) * 25
             snippet_lengths.append(estimated_words)
         
-        if not snippet_lengths:
-            return {
-                'min_words': 1200,
-                'target_words': 1800,
-                'max_words': 2500,
-                'strategy': 'standard_depth',
-                'competitor_avg': 1500
-            }
+        if snippet_lengths:
+            avg_competitor = sum(snippet_lengths) // len(snippet_lengths)
+        else:
+            avg_competitor = 1500  # Default if no data
         
-        avg_competitor = sum(snippet_lengths) / len(snippet_lengths)
+        # Target 15-25% higher than competitors
+        target_words = int(avg_competitor * 1.20)
         
-        # Target 15-25% longer than competitors
-        target = int(avg_competitor * 1.20)
-        target = max(1200, min(target, 2500))  # Enforce bounds
+        # Clamp to reasonable range
+        target_words = max(1200, min(2500, target_words))
         
         return {
-            'min_words': max(1200, target - 300),
-            'target_words': target,
-            'max_words': min(2500, target + 500),
-            'strategy': 'outperform_competitors',
-            'competitor_avg': int(avg_competitor)
+            'competitor_avg': avg_competitor,
+            'target_words': target_words,
+            'target_sections': 5 + (target_words // 300)  # More sections for longer articles
         }
-    
-    def extract_competitor_headings(self, serp_data: Dict) -> List[str]:
-        """Extract H2/H3 topics from competitor titles and PAA"""
-        headings = []
-        
-        # From titles
-        for result in serp_data.get('top_results', [])[:5]:
-            title = result.get('title', '')
-            if title and title not in headings:
-                headings.append(title)
-        
-        # From People Also Ask
-        for paa in serp_data.get('people_also_ask', [])[:8]:
-            question = paa.get('question', '') if isinstance(paa, dict) else paa
-            if question and question not in headings:
-                headings.append(question)
-        
-        return headings[:12]
     
     def generate_outline(
         self,
         main_keyword: str,
-        title: str,
-        competitor_headings: List[str],
-        reddit_pain_points: List,
-        competitor_entities: List[Dict],
+        secondary_keywords: List[str],
         serp_data: Dict,
-        target_words: int
+        reddit_data: Dict,
+        target_words: int,
+        target_sections: int,
+        unique_insights: str,
+        tone: str
     ) -> Dict:
         """
-        PASS 1: Generate detailed outline with word allocations
+        Pass 1: Generate detailed content outline
+        Returns structure with sections and word targets
         """
-        logger.info(f"📋 Pass 1: Generating outline (target: {target_words} words)...")
+        if not self.available:
+            return {'error': 'OpenAI not available'}
         
-        # Format inputs
-        headings_text = '\n'.join([f"- {h}" for h in competitor_headings])
+        # Extract key info
+        top_competitors = [r['title'] for r in serp_data.get('top_results', [])[:3]]
+        paa_questions = [q['question'] for q in serp_data.get('people_also_ask', [])[:5]]
+        pain_points = [p.get('pain', p) if isinstance(p, dict) else str(p) for p in reddit_data.get('pain_points', [])[:5]]
         
-        pain_points_text = '\n'.join([
-            f"- {p.get('pain', p) if isinstance(p, dict) else p}"
-            for p in reddit_pain_points[:10]
-        ])
-        
-        entities_text = '\n'.join([
-            f"- {e['name']} ({e['type']})"
-            for e in competitor_entities[:15]
-        ]) if competitor_entities else "No specific entities required"
-        
-        paa_text = '\n'.join([
-            f"- {q.get('question', q) if isinstance(q, dict) else q}"
-            for q in serp_data.get('people_also_ask', [])[:8]
-        ])
-        
-        prompt = f"""You are an SEO content strategist. Create a detailed outline for a {target_words}-word article.
+        prompt = f"""You are an expert SEO content strategist. Create a detailed article outline.
 
-ARTICLE TITLE: {title}
-MAIN KEYWORD: {main_keyword}
-TARGET LENGTH: {target_words} words
+ARTICLE DETAILS:
+- Main Keyword: "{main_keyword}"
+- Secondary Keywords: {', '.join(secondary_keywords[:5]) if secondary_keywords else 'None'}
+- Target Word Count: {target_words} words
+- Target Sections: {target_sections} sections (H2 headings)
+- Tone: {tone}
 
-COMPETITOR TOPICS (must cover):
-{headings_text}
+COMPETITOR ANALYSIS:
+Top Ranking Titles:
+{chr(10).join(['- ' + t for t in top_competitors])}
 
-REDDIT PAIN POINTS (must address):
-{pain_points_text}
+PEOPLE ALSO ASK:
+{chr(10).join(['- ' + q for q in paa_questions])}
 
-PEOPLE ALSO ASK (must answer):
-{paa_text}
+REDDIT PAIN POINTS (Real user problems):
+{chr(10).join(['- ' + p[:100] for p in pain_points])}
 
-REQUIRED ENTITIES (must mention):
-{entities_text}
+UNIQUE INSIGHTS TO INCLUDE:
+{unique_insights if unique_insights else "None provided"}
 
-Create a JSON outline with this structure:
+TASK: Create a detailed outline with {target_sections} main sections (H2 headings). Each section should:
+1. Have a clear, compelling H2 heading (include keywords where natural)
+2. Specify target word count (distribute {target_words} words across sections)
+3. List 2-3 key points to cover
+4. Note which pain points or PAA questions to address
+
+Return ONLY valid JSON:
 {{
-  "sections": [
-    {{
-      "heading": "Section Title (H2)",
-      "word_allocation": 200,
-      "subsections": [
-        {{"subheading": "Subsection (H3)", "word_allocation": 80}},
-        {{"subheading": "Another subsection (H3)", "word_allocation": 120}}
-      ],
-      "required_elements": ["Entity X", "Pain point Y"],
-      "tone_guidance": "Empathetic and solution-focused"
-    }}
-  ],
-  "total_words": {target_words},
-  "entity_checklist": ["Entity 1", "Entity 2", ...],
-  "pain_point_checklist": ["Pain 1", "Pain 2", ...]
+    "title": "Article title with main keyword",
+    "intro_hook": "Opening sentence that grabs attention",
+    "sections": [
+        {{
+            "heading": "Section H2 heading",
+            "target_words": 200,
+            "key_points": ["point 1", "point 2", "point 3"],
+            "addresses": ["pain point or PAA question"]
+        }}
+    ],
+    "conclusion_cta": "Call to action for conclusion"
 }}
 
-RULES:
-- Introduction: 10-12% of total words
-- Main body sections: 70-75% split across 4-6 major sections
-- FAQ section: 8-10% covering all PAA questions
-- Conclusion: 5-8% with strong CTA
-- Each section must have clear purpose and required elements
-- Allocate more words to complex topics
-- Ensure ALL competitor topics, pain points, and entities are assigned to sections
-
-Return ONLY valid JSON, no other text."""
+Make it comprehensive and SEO-optimized."""
 
         try:
+            logger.info(f"📋 Pass 1: Generating outline (target: {target_words} words)...")
+            
             response = self.client.chat.completions.create(
                 model="gpt-3.5-turbo-16k",
                 messages=[
-                    {"role": "system", "content": "You are an expert SEO content strategist who creates detailed outlines."},
+                    {"role": "system", "content": "You are an expert SEO content strategist. Always respond with valid JSON only."},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=2000,
-                temperature=0.3  # Lower temp for structured outline
+                temperature=0.7,
+                max_tokens=2000
             )
             
             outline_text = response.choices[0].message.content.strip()
             
-            # Parse JSON
             # Remove markdown code blocks if present
-            if "```json" in outline_text:
-                outline_text = outline_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in outline_text:
-                outline_text = outline_text.split("```")[1].split("```")[0].strip()
+            if outline_text.startswith('```'):
+                outline_text = outline_text.split('```')[1]
+                if outline_text.startswith('json'):
+                    outline_text = outline_text[4:]
+                outline_text = outline_text.strip()
             
-            outline = json.loads(outline_text)
+            outline = eval(outline_text) if outline_text.startswith('{') else {'error': 'Invalid JSON'}
             
-            logger.info(f"✅ Outline generated: {len(outline['sections'])} sections")
+            logger.info(f"✅ Outline generated: {len(outline.get('sections', []))} sections")
             return outline
             
-        except json.JSONDecodeError as e:
-            logger.error(f"❌ Failed to parse outline JSON: {e}")
-            # Fallback outline
-            return self._create_fallback_outline(main_keyword, title, target_words, competitor_headings, pain_points_text)
         except Exception as e:
-            logger.error(f"❌ Outline generation error: {e}")
-            return self._create_fallback_outline(main_keyword, title, target_words, competitor_headings, pain_points_text)
-    
-    def _create_fallback_outline(self, keyword, title, target_words, headings, pain_points):
-        """Create a simple fallback outline if JSON parsing fails"""
-        sections_count = 5
-        words_per_section = target_words // sections_count
-        
-        return {
-            "sections": [
-                {
-                    "heading": "Introduction",
-                    "word_allocation": int(target_words * 0.12),
-                    "subsections": [],
-                    "required_elements": [keyword],
-                    "tone_guidance": "Hook with pain point"
-                },
-                {
-                    "heading": f"Understanding {keyword}",
-                    "word_allocation": words_per_section,
-                    "subsections": [],
-                    "required_elements": [keyword],
-                    "tone_guidance": "Educational"
-                },
-                {
-                    "heading": "Key Benefits and Features",
-                    "word_allocation": words_per_section,
-                    "subsections": [],
-                    "required_elements": [],
-                    "tone_guidance": "Positive"
-                },
-                {
-                    "heading": "Common Challenges and Solutions",
-                    "word_allocation": words_per_section,
-                    "subsections": [],
-                    "required_elements": pain_points[:3] if pain_points else [],
-                    "tone_guidance": "Problem-solving"
-                },
-                {
-                    "heading": "FAQ",
-                    "word_allocation": int(target_words * 0.10),
-                    "subsections": [],
-                    "required_elements": [],
-                    "tone_guidance": "Clear and concise"
-                },
-                {
-                    "heading": "Conclusion",
-                    "word_allocation": int(target_words * 0.08),
-                    "subsections": [],
-                    "required_elements": [keyword],
-                    "tone_guidance": "Action-oriented"
-                }
-            ],
-            "total_words": target_words,
-            "entity_checklist": [],
-            "pain_point_checklist": []
-        }
+            logger.error(f"❌ Outline generation failed: {e}")
+            return {'error': str(e)}
     
     def generate_section(
         self,
-        section_data: Dict,
+        section: Dict,
         main_keyword: str,
         tone: str,
-        context: str = ""
+        article_title: str,
+        previous_context: str = ""
     ) -> str:
         """
-        PASS 2: Generate individual section with specified word count
+        Pass 2: Generate individual section content
         """
-        heading = section_data['heading']
-        word_allocation = section_data['word_allocation']
-        required_elements = section_data.get('required_elements', [])
-        tone_guidance = section_data.get('tone_guidance', 'professional')
-        subsections = section_data.get('subsections', [])
+        if not self.available:
+            return "<p>Error: OpenAI not available</p>"
         
-        logger.info(f"✍️ Generating section: '{heading}' ({word_allocation} words)...")
-        
-        # Build subsection guidance
-        subsection_text = ""
-        if subsections:
-            subsection_text = "\n\nINCLUDE THESE SUBSECTIONS (H3):\n"
-            subsection_text += '\n'.join([
-                f"- {sub['subheading']} (~{sub['word_allocation']} words)"
-                for sub in subsections
-            ])
-        
-        required_text = ""
-        if required_elements:
-            required_text = f"\n\nMUST INCLUDE: {', '.join([str(e) for e in required_elements])}"
-        
-        context_text = ""
-        if context:
-            context_text = f"\n\nCONTEXT FROM PREVIOUS SECTIONS:\n{context}\n\nBuild upon this naturally."
-        
-        prompt = f"""Write a comprehensive section for an SEO article about "{main_keyword}".
+        prompt = f"""Write a section for an SEO article.
 
-SECTION HEADING (H2): {heading}
-TARGET LENGTH: {word_allocation} words (strictly enforce this - do not write significantly less)
-TONE: {tone_guidance} with overall {tone} style
-{subsection_text}{required_text}{context_text}
+ARTICLE TITLE: {article_title}
+MAIN KEYWORD: {main_keyword}
+TONE: {tone}
 
-WRITING RULES:
-- Start with <h2>{heading}</h2>
-- If subsections exist, use <h3> tags for them
-- Write {word_allocation} words minimum - be thorough and comprehensive
-- Use <p> tags for paragraphs (2-4 sentences each)
-- Use <ul><li> for bullet points where appropriate
-- Use <strong> for key terms
-- Natural, human-like writing - no robotic tone
-- Include specific examples and actionable advice
-- Maintain flow and readability
-- Address pain points empathetically
+SECTION TO WRITE:
+Heading: {section['heading']}
+Target: ~{section['target_words']} words
+Key Points: {', '.join(section['key_points'])}
+Address: {', '.join(section.get('addresses', []))}
 
-Return ONLY the HTML for this section, nothing else."""
+PREVIOUS CONTEXT (for flow):
+{previous_context[-200:] if previous_context else "This is the first section."}
+
+REQUIREMENTS:
+- Write ONLY this section (H2 + paragraphs)
+- Use HTML: <h2>, <p>, <ul>, <li>
+- Include keyword naturally 1-2 times
+- Make it engaging and informative
+- Target ~{section['target_words']} words
+- Use {tone} tone
+- Provide value, examples, and insights
+
+Write the section now:"""
 
         try:
+            logger.info(f"✍️ Generating section: '{section['heading']}' ({section['target_words']} words)...")
+            
             response = self.client.chat.completions.create(
                 model="gpt-3.5-turbo-16k",
                 messages=[
-                    {"role": "system", "content": "You are an expert SEO content writer who writes engaging, comprehensive sections."},
+                    {"role": "system", "content": f"You are an expert SEO content writer. Write in {tone} tone using HTML formatting."},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=int(word_allocation * 2),  # Generous token allocation
-                temperature=0.7
+                temperature=0.7,
+                max_tokens=section['target_words'] * 2  # 2 tokens ~= 1 word
             )
             
-            section_html = response.choices[0].message.content.strip()
-            word_count = len(section_html.split())
-            
-            logger.info(f"✅ Section '{heading}' generated ({word_count} words)")
-            
-            return section_html
+            content = response.choices[0].message.content.strip()
+            return content
             
         except Exception as e:
-            logger.error(f"❌ Section generation error: {e}")
-            return f"<h2>{heading}</h2><p>Error generating section: {str(e)}</p>"
-    
-    def expand_section(self, section_html: str, additional_words: int = 200) -> str:
-        """Expand an existing section with more detail"""
-        logger.info(f"🔄 Expanding section by {additional_words} words...")
-        
-        prompt = f"""Expand the following section by adding {additional_words} more words of valuable content.
-
-CURRENT SECTION:
-{section_html}
-
-Add more:
-- Specific examples
-- Actionable steps
-- Supporting details
-- Practical advice
-
-Maintain the same heading and structure. Return the complete expanded section in HTML."""
-
-        try:
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo-16k",
-                messages=[
-                    {"role": "system", "content": "You are an expert content editor who expands sections with valuable details."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=int(additional_words * 2),
-                temperature=0.7
-            )
-            
-            expanded = response.choices[0].message.content.strip()
-            logger.info(f"✅ Section expanded")
-            return expanded
-            
-        except Exception as e:
-            logger.error(f"❌ Expansion error: {e}")
-            return section_html
-    
-    def regenerate_section(self, section_data: Dict, main_keyword: str, tone: str, reason: str = "") -> str:
-        """Regenerate a section with specific improvements"""
-        logger.info(f"🔁 Regenerating section: {section_data['heading']}")
-        
-        additional_guidance = f"\n\nIMPROVEMENT NEEDED: {reason}" if reason else ""
-        
-        # Add improvement context to section data
-        section_data_copy = section_data.copy()
-        if 'tone_guidance' in section_data_copy:
-            section_data_copy['tone_guidance'] += additional_guidance
-        
-        return self.generate_section(section_data_copy, main_keyword, tone)
+            logger.error(f"❌ Section generation failed: {e}")
+            return f"<h2>{section['heading']}</h2><p>Error generating content.</p>"
     
     def write_article(
         self,
         main_keyword: str,
-        secondary_keywords: List[str],
-        tone: str,
-        target_country: str,
-        language: str,
-        serp_data: Dict,
-        reddit_data: Dict,
+        title: str,
+        secondary_keywords: List[str] = None,
+        tone: str = "friendly",
+        target_country: str = "United Kingdom",
+        language: str = "English",
+        serp_data: Dict = None,
+        reddit_data: Dict = None,
         unique_insights: str = "",
-        title: str = "",
         max_tokens: int = 4000
     ) -> Dict:
         """
-        Main 2-pass writing method
+        Main method: 2-pass article generation
+        
+        Returns:
+            Dict with 'success', 'content', 'word_count', etc.
         """
         if not self.available:
-            logger.error("❌ Cannot write - OpenAI client not available")
             return {
-                'content': "<h1>Error</h1><p>OpenAI not configured</p>",
-                'word_count': 0,
-                'success': False
+                'success': False,
+                'error': 'OpenAI client not available',
+                'content': '<h1>Error</h1><p>Writer not initialized</p>',
+                'word_count': 0
             }
         
+        secondary_keywords = secondary_keywords or []
+        serp_data = serp_data or {'top_results': [], 'people_also_ask': []}
+        reddit_data = reddit_data or {'pain_points': []}
+        
         try:
-            # Analyze competitors
-            length_strategy = self.analyze_competitor_length(serp_data)
-            target_words = length_strategy['target_words']
+            # Analyze competitors and set target length
+            length_analysis = self.analyze_competitor_length(serp_data)
+            target_words = length_analysis['target_words']
+            target_sections = length_analysis['target_sections']
             
-            logger.info(f"🎯 Target length: {target_words} words (competitors avg: {length_strategy['competitor_avg']})")
-            
-            # Extract data
-            competitor_headings = self.extract_competitor_headings(serp_data)
-            pain_points = reddit_data.get('pain_points', [])
-            
-            # Get competitor entities if available (from NLP analysis)
-            competitor_entities = []
-            if 'competitor_entities' in serp_data:
-                competitor_entities = serp_data['competitor_entities']
+            logger.info(f"📊 Competitor avg: {length_analysis['competitor_avg']} | Target: {target_words} words")
             
             # PASS 1: Generate outline
             outline = self.generate_outline(
                 main_keyword=main_keyword,
-                title=title or main_keyword,
-                competitor_headings=competitor_headings,
-                reddit_pain_points=pain_points,
-                competitor_entities=competitor_entities,
+                secondary_keywords=secondary_keywords,
                 serp_data=serp_data,
-                target_words=target_words
+                reddit_data=reddit_data,
+                target_words=target_words,
+                target_sections=target_sections,
+                unique_insights=unique_insights,
+                tone=tone
             )
             
-            # PASS 2: Generate each section
+            if 'error' in outline:
+                raise Exception(f"Outline generation failed: {outline['error']}")
+            
+            # PASS 2: Generate sections
             sections_html = []
-            context_summary = ""
             
-            # Add title
-            sections_html.append(f"<h1>{title or main_keyword}</h1>")
+            # Introduction
+            intro_html = f"""<h1>{outline.get('title', title)}</h1>
+<p><strong>{outline.get('intro_hook', 'Welcome to this comprehensive guide.')}</strong></p>"""
+            sections_html.append(intro_html)
             
-            for i, section in enumerate(outline['sections']):
-                section_html = self.generate_section(
-                    section_data=section,
+            previous_context = outline.get('intro_hook', '')
+            
+            # Generate each section
+            for section in outline.get('sections', []):
+                section_content = self.generate_section(
+                    section=section,
                     main_keyword=main_keyword,
                     tone=tone,
-                    context=context_summary
+                    article_title=title,
+                    previous_context=previous_context
                 )
-                
-                sections_html.append(section_html)
-                
-                # Update context for next section (keep it brief)
-                context_summary = f"Covered: {section['heading']}"
-                if i < len(outline['sections']) - 1:
-                    context_summary += f". Next: {outline['sections'][i+1]['heading']}"
-                
-                # Respect rate limits
-                if i < len(outline['sections']) - 1:
-                    import time
-                    time.sleep(1)
+                sections_html.append(section_content)
+                previous_context = section_content[-300:]  # Keep last 300 chars for context
+            
+            # Conclusion
+            conclusion_html = f"""<h2>Conclusion</h2>
+<p>{outline.get('conclusion_cta', f'This guide covered everything about {main_keyword}. Take action today!')}</p>"""
+            sections_html.append(conclusion_html)
             
             # Merge all sections
-            final_content = '\n\n'.join(sections_html)
-            word_count = len(final_content.split())
+            full_article = '\n\n'.join(sections_html)
             
-            logger.info(f"✅ Article complete: {word_count} words (target: {target_words})")
+            # Calculate stats
+            word_count = len(full_article.split())
+            
+            logger.info(f"✅ Article complete: {word_count} words")
             
             return {
-                'content': final_content,
-                'word_count': word_count,
                 'success': True,
-                'outline': outline,
-                'target_words': target_words,
-                'length_strategy': length_strategy
+                'content': full_article,
+                'word_count': word_count,
+                'sections_count': len(outline.get('sections', [])),
+                'target_was': target_words
             }
             
         except Exception as e:
-            logger.error(f"❌ Writing error: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
+            logger.error(f"❌ Article generation failed: {e}")
             return {
-                'content': f"<h1>Error</h1><p>{str(e)}</p>",
-                'word_count': 0,
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'content': f'<h1>{title}</h1><p>Error: {str(e)}</p>',
+                'word_count': 0
             }
 
 
 # Test
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+    print("Testing CompellingSEOStrategist...")
     
-    writer = CompellingSEOStrategist()
-    if writer.available:
-        print("✅ Writer ready with 2-pass system")
+    agent = CompellingSEOStrategist()
+    if agent.available:
+        print("✅ Agent initialized successfully")
     else:
-        print("❌ Writer not available")
+        print("❌ Agent initialization failed")
