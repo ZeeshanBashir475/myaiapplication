@@ -7,7 +7,7 @@ gunicorn==21.2.0
 eventlet==0.35.2
 
 # OpenAI
-openai==1.54.0
+openai>=2.8.0
 
 # Google Cloud NLP
 google-cloud-language==2.13.0
